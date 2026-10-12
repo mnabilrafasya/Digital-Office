@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -12,7 +13,7 @@ const nextConfig: NextConfig = {
         as: "*.css",
       },
     },
-    root: 'C:\\Users\\USER\\GitHub\\Digital-Office\\',
+    root: path.resolve(__dirname, ".."),
   },
 };
 
