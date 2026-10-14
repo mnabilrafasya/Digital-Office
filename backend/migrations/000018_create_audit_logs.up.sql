@@ -1,5 +1,3 @@
--- Jejak permanen. Sengaja TANPA FK supaya tetap utuh walau data aslinya berubah.
--- Tidak boleh di-soft delete (dijaga di Go).
 CREATE TABLE audit_logs (
     id                        BIGINT IDENTITY(1,1) NOT NULL,
     company_code              VARCHAR(20)      NULL,

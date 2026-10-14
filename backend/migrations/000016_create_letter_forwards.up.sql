@@ -1,6 +1,3 @@
--- Penerusan surat (disposisi/pengalihan). Tidak boleh di-soft delete (dijaga di Go).
--- FK source_inbox_item_id -> inbox_items ditambahkan di migration 000017,
--- karena inbox_items dan letter_forwards saling merujuk.
 CREATE TABLE letter_forwards (
     id                        BIGINT IDENTITY(1,1) NOT NULL,
     letter_id                 BIGINT           NOT NULL,

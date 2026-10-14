@@ -1,4 +1,3 @@
--- 1 baris = 1 surat di inbox 1 orang. Tidak boleh di-soft delete (dijaga di Go).
 CREATE TABLE inbox_items (
     id                        BIGINT IDENTITY(1,1) NOT NULL,
     letter_id                 BIGINT           NOT NULL,
@@ -26,6 +25,5 @@ CREATE TABLE inbox_items (
 
 CREATE INDEX ix_inbox_items_user_status ON inbox_items (user_id, status);
 
--- Sambungkan relasi balik yang tertunda dari migration 000016
 ALTER TABLE letter_forwards ADD CONSTRAINT fk_letter_forwards_source_inbox
     FOREIGN KEY (source_inbox_item_id) REFERENCES inbox_items (id);

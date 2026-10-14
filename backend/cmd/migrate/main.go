@@ -1,10 +1,3 @@
-// Alat migration Digital Office.
-// Jalankan dari folder backend:
-//
-//	go run ./cmd/migrate up         -> buat database bila belum ada, lalu jalankan semua migration baru
-//	go run ./cmd/migrate down N     -> bongkar N migration terakhir (N wajib diisi)
-//	go run ./cmd/migrate version    -> tampilkan versi migration saat ini
-//	go run ./cmd/migrate force V    -> tandai versi V sebagai bersih (hanya untuk memperbaiki status dirty)
 package main
 
 import (
@@ -28,7 +21,7 @@ import (
 
 const migrationsSource = "file://migrations"
 
-// logger menampilkan setiap migration yang dijalankan, contoh: "11/u create_letters (25ms)"
+// logger menampilkan setiap migration yang dijalankan
 type logger struct{}
 
 func (logger) Printf(format string, v ...any) { fmt.Printf(format, v...) }

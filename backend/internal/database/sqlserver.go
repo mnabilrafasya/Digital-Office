@@ -12,9 +12,7 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
 )
 
-// BuildDSN menyusun alamat koneksi SQL Server ke database tertentu.
-// dbName dibuat parameter supaya alat migration bisa terhubung ke "master"
-// (untuk membuat database) maupun ke database aplikasi.
+
 func BuildDSN(cfg *config.Config, dbName string) string {
 	query := url.Values{}
 	query.Set("database", dbName)
