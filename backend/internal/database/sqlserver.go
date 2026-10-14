@@ -12,10 +12,12 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
 )
 
-// membuka koneksi ke SQL Server
-func NewSQLServer(cfg *config.Config) (*sql.DB, error) {
+// BuildDSN menyusun alamat koneksi SQL Server ke database tertentu.
+// dbName dibuat parameter supaya alat migration bisa terhubung ke "master"
+// (untuk membuat database) maupun ke database aplikasi.
+func BuildDSN(cfg *config.Config, dbName string) string {
 	query := url.Values{}
-	query.Set("database", cfg.DBName)
+	query.Set("database", dbName)
 	query.Set("encrypt", "true")
 	query.Set("TrustServerCertificate", "true")
 
@@ -25,8 +27,12 @@ func NewSQLServer(cfg *config.Config) (*sql.DB, error) {
 		Host:     fmt.Sprintf("%s:%s", cfg.DBHost, cfg.DBPort),
 		RawQuery: query.Encode(),
 	}
+	return dsn.String()
+}
 
-	db, err := sql.Open("sqlserver", dsn.String())
+// membuka koneksi ke SQL Server
+func NewSQLServer(cfg *config.Config) (*sql.DB, error) {
+	db, err := sql.Open("sqlserver", BuildDSN(cfg, cfg.DBName))
 	if err != nil {
 		return nil, err
 	}
