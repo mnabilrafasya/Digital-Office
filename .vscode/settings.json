@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "**/migrations/*.sql": "sql"
+        "**/migrations/*.sql": "sql",
+        "**/seeds/*.sql": "sql"
     }
 }
