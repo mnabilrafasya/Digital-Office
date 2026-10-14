@@ -9,6 +9,7 @@ import (
 
 // menampung semua pengaturan aplikasi dari .env
 type Config struct {
+	AppEnv  string
 	AppPort string
 
 	DBHost     string
@@ -28,6 +29,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
+		AppEnv:  getEnv("APP_ENV", "production"),
 		AppPort: getEnv("APP_PORT", "8080"),
 
 		DBHost:     getEnv("DB_HOST", "localhost"),
