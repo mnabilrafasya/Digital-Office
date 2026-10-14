@@ -1,4 +1,3 @@
--- Riwayat dokumen. Tidak boleh di-soft delete (dijaga di Go).
 CREATE TABLE letter_versions (
     id                        BIGINT IDENTITY(1,1) NOT NULL,
     letter_id                 BIGINT           NOT NULL,

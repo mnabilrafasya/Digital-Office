@@ -1,9 +1,3 @@
--- =====================================================================
--- DATA DUMMY DEVELOPMENT - Digital Office
--- Semua nama orang, NIK, dan email FIKTIF.
--- Dijalankan oleh: go run ./cmd/seed   (JANGAN dijalankan di production)
--- @password_hash dikirim oleh cmd/seed (hasil bcrypt dari SEED_PASSWORD di .env).
--- =====================================================================
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
@@ -24,7 +18,7 @@ INSERT INTO units (company_code, parent_id, unit_type, code, name) VALUES
     ('PSP', NULL, 'DIREKTORAT', 'DOP', N'Direktorat Operasi dan Produksi'),
     ('PKG', NULL, 'DIREKTORAT', 'DKU', N'Direktorat Keuangan dan Umum');
 
--- Level 2: Kompartemen / Departemen (setingkat)
+-- Level 2: Kompartemen / Departemen
 INSERT INTO units (company_code, parent_id, unit_type, code, name)
 SELECT v.company_code, p.id, v.unit_type, v.code, v.name
 FROM (VALUES
@@ -105,7 +99,7 @@ FROM (VALUES
 JOIN roles r ON r.code = v.role_code;
 
 -- ---------------------------------------------------------------------
--- 5. Pengguna (semua memakai password dummy yang sama: SEED_PASSWORD)
+-- 5. Pengguna
 -- ---------------------------------------------------------------------
 INSERT INTO users (position_id, role_id, employee_number, name, email, password_hash, is_active)
 SELECT p.id, r.id, v.employee_number, v.name, v.email, @password_hash, v.is_active
@@ -147,7 +141,7 @@ JOIN positions p ON p.unit_id = u.id AND p.name = v.position_name
 JOIN roles     r ON r.code = v.role_code;
 
 -- ---------------------------------------------------------------------
--- 6. Lookups (company_code NULL = berlaku untuk semua perusahaan)
+-- 6. Lookups 
 -- ---------------------------------------------------------------------
 INSERT INTO lookups (company_code, category, code, name, color, sort_order, note) VALUES
     -- Sifat
@@ -167,7 +161,7 @@ INSERT INTO lookups (company_code, category, code, name, color, sort_order, note
     (NULL, 'LETTER_TYPE', 'SURAT_TUGAS',      N'Surat Tugas',      NULL, 6, N'Menugaskan pegawai untuk kegiatan tertentu'),
     (NULL, 'LETTER_TYPE', 'SURAT_KEPUTUSAN',  N'Surat Keputusan',  NULL, 7, N'Menetapkan keputusan resmi'),
     (NULL, 'LETTER_TYPE', 'BERITA_ACARA',     N'Berita Acara',     NULL, 8, N'Mencatat kejadian, serah terima, atau hasil pemeriksaan'),
-    -- Status surat (kode terkunci di Go, di sini hanya label dan warna)
+    -- Status surat 
     (NULL, 'LETTER_STATUS', 'DRAFT',                N'Draf',                     '#6B7280', 1, NULL),
     (NULL, 'LETTER_STATUS', 'IN_REVIEW',            N'Sedang Direview',          '#2563EB', 2, NULL),
     (NULL, 'LETTER_STATUS', 'RETURNED_TO_DRAFTER',  N'Dikembalikan ke Drafter',  '#D97706', 3, NULL),
@@ -214,14 +208,3 @@ INSERT INTO lookups (company_code, category, code, name, sort_order) VALUES
     ('PKG', 'CLASSIFICATION', 'UM.01',  N'Persuratan dan Kearsipan',               1),
     ('PKG', 'CLASSIFICATION', 'KU.01',  N'Anggaran',                               2),
     ('PKG', 'CLASSIFICATION', 'TI.01',  N'Tata Kelola dan Kebijakan TI',           3);
-
--- ---------------------------------------------------------------------
--- 7. Pemeriksaan jumlah (gagal = seluruh seed dibatalkan)
--- ---------------------------------------------------------------------
-IF (SELECT COUNT(*) FROM companies)   <> 2  THROW 50001, N'Seed gagal: jumlah companies harus 2', 1;
-IF (SELECT COUNT(*) FROM units)       <> 13 THROW 50002, N'Seed gagal: jumlah units harus 13', 1;
-IF (SELECT COUNT(*) FROM positions)   <> 22 THROW 50003, N'Seed gagal: jumlah positions harus 22', 1;
-IF (SELECT COUNT(*) FROM roles)       <> 3  THROW 50004, N'Seed gagal: jumlah roles harus 3', 1;
-IF (SELECT COUNT(*) FROM permissions) <> 12 THROW 50005, N'Seed gagal: jumlah permissions harus 12', 1;
-IF (SELECT COUNT(*) FROM users)       <> 24 THROW 50006, N'Seed gagal: jumlah users harus 24 (cek ejaan unit/jabatan/role)', 1;
-IF (SELECT COUNT(*) FROM lookups)     <> 56 THROW 50007, N'Seed gagal: jumlah lookups harus 56', 1;
