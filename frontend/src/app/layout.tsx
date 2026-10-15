@@ -10,14 +10,15 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Digital Office — Sistem Persuratan PT Pusri Nusantara",
-  description: "Sistem persuratan digital untuk PT Pusri Nusantara (Persero). Buat, review, dan kelola surat korporat secara digital.",
+  title: "Digital Office — Sistem Persuratan Perusahaan Pupuk ",
+  description: "Sistem persuratan digital untuk Perusahaan Pupuk. Buat, review, dan kelola surat korporat secara digital.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="id"
+      data-scroll-behavior="smooth"
       className={`${plusJakartaSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

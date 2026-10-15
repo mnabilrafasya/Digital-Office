@@ -27,7 +27,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 
 interface NavItem {
   label: string;
@@ -183,14 +183,16 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-        {NAV_ITEMS.map((item) => (
-          <NavGroup key={item.label} item={item} />
-        ))}
+        <Suspense fallback={null}>
+          {NAV_ITEMS.map((item) => (
+            <NavGroup key={item.label} item={item} />
+          ))}
+        </Suspense>
       </nav>
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 shrink-0">
-        <p className="text-slate-500 text-[10px]">© 2026 PT Pusri Nusantara</p>
+        <p className="text-slate-500 text-[10px]">© 2026 PT Pupuk Indonesia (Persero)</p>
       </div>
     </aside>
   );
