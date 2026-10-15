@@ -79,3 +79,24 @@ export const buatSuratSchema = z.object({
 });
 
 export type BuatSuratFormValues = z.infer<typeof buatSuratSchema>;
+
+// ─── Form login ──────────────────────────────
+
+export const loginSchema = z.object({
+  nik: z.string().trim().min(1, { message: "NIP / NIK wajib diisi." }).max(30, { message: "NIP / NIK maksimal 30 karakter." }),
+  password: z.string().min(1, { message: "Kata sandi wajib diisi." }),
+  remember: z.boolean(),
+});
+
+/** Nilai awal form Buat Surat */
+export const BUAT_SURAT_DEFAULTS: Partial<BuatSuratFormValues> = {
+  letterTypeId: "lt-01",
+  sifat: "BIASA",
+  title: "",
+  specialNote: "",
+  summary: "",
+  reviewers: [],
+  approvers: [],
+  toUnits: [],
+  ccUnits: [],
+};
