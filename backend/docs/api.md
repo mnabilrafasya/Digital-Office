@@ -1,0 +1,253 @@
+# Dokumentasi API Digital Office
+
+Versi API: `v1`. Semua endpoint aplikasi berada di bawah prefix `/api/v1`.
+
+## 1. Cara menjalankan
+
+Dari folder `backend`, dengan Docker Desktop berjalan dan `.env` sudah diisi (salin dari `.env.example`):
+
+```powershell
+docker compose up -d          # SQL Server dan MinIO
+go run ./cmd/migrate up       # buat database + jalankan migration
+go run ./cmd/seed             # isi data dummy (hanya development, database kosong)
+go run ./cmd/api              # server di http://localhost:8080
+```
+
+Konfigurasi yang dipakai API (di `.env`):
+
+| Env | Keterangan |
+|---|---|
+| `JWT_SECRET` | Wajib untuk server API (tidak dibutuhkan `migrate` dan `seed`), minimal 32 karakter, dan tidak boleh berisi nilai contoh dari `.env.example`. Kunci tanda tangan token, jangan dibagikan. |
+| `JWT_TTL` | Masa berlaku token, default `8h`. |
+| `CORS_ALLOWED_ORIGINS` | Origin front-end yang diizinkan, dipisah koma. Default `http://localhost:3000`. |
+
+## 2. Format response
+
+Sukses:
+
+```json
+{ "data": ... }
+```
+
+Error:
+
+```json
+{ "error": { "code": "KODE", "message": "Pesan untuk pengguna" } }
+```
+
+| HTTP | `code` | Kapan |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Input tidak valid atau kurang (termasuk body JSON rusak atau lebih dari 1 MB) |
+| 401 | `INVALID_CREDENTIALS` | Login gagal (NIK atau password salah, user nonaktif, belum punya password) |
+| 401 | `UNAUTHORIZED` | Token tidak ada, rusak, kedaluwarsa, atau user sudah dinonaktifkan |
+| 403 | `FORBIDDEN` | Login valid tetapi tidak punya permission |
+| 404 | `NOT_FOUND` | Route atau data tidak ditemukan |
+| 405 | `METHOD_NOT_ALLOWED` | Method HTTP salah |
+| 500 | `INTERNAL_ERROR` | Error tak terduga. Detail hanya ada di log server. |
+
+Aturan JSON:
+
+- Nama field memakai camelCase.
+- Semua ID dikirim sebagai **string**, misalnya `"id": "8"`.
+- Body request maksimal 1 MB.
+
+## 3. Autentikasi
+
+1. Login lewat `POST /api/v1/auth/login` untuk mendapatkan `accessToken`.
+2. Kirim token di setiap request yang wajib login:
+
+   ```
+   Authorization: Bearer <accessToken>
+   ```
+
+3. Token berlaku **8 jam** (`expiresIn` dalam detik). Setelah kedaluwarsa, API menjawab `401 UNAUTHORIZED` dan pengguna harus login ulang.
+4. Data user dimuat ulang dari database di setiap request. Kalau user dinonaktifkan atau role-nya dinonaktifkan, token lamanya langsung ditolak (`401`).
+
+Login dengan NIK + password bersifat sementara sampai SSO tersedia.
+
+## 4. Endpoint
+
+### Ringkasan
+
+| Method | Path | Login | Permission |
+|---|---|---|---|
+| GET | `/health` | Tidak | - |
+| POST | `/api/v1/auth/login` | Tidak | - |
+| GET | `/api/v1/auth/me` | Ya | - |
+| GET | `/api/v1/lookups` | Ya | - |
+| GET | `/api/v1/units` | Ya | - |
+| GET | `/api/v1/users/candidates` | Ya | `LETTER_CREATE` |
+
+Angka ID di contoh response hanya ilustrasi.
+
+Semua data di endpoint yang wajib login otomatis disaring ke **perusahaan user yang login**. Perusahaan tidak bisa dipilih lewat parameter.
+
+**Aturan parameter pencarian `q`** (berlaku di semua endpoint yang menerimanya): spasi di awal/akhir dibuang, kosong berarti tidak mencari, maksimal 100 karakter. Karakter `%`, `_`, dan `[` dicari apa adanya, bukan sebagai wildcard.
+
+---
+
+### GET `/health`
+
+Mengecek koneksi database dan storage. Tidak memakai format `{"data": ...}`.
+
+```json
+{ "database": "ok", "storage": "ok" }
+```
+
+Bila salah satu tidak bisa dihubungi: HTTP 503 dengan nilai `"error"` pada bagian yang bermasalah.
+
+---
+
+### POST `/api/v1/auth/login`
+
+Login dengan NIK dan password.
+
+Request:
+
+```json
+{ "employeeNumber": "2015047", "password": "..." }
+```
+
+Response 200:
+
+```json
+{
+  "data": {
+    "accessToken": "eyJ...",
+    "tokenType": "Bearer",
+    "expiresIn": 28800,
+    "user": { "...": "sama persis dengan isi data di GET /api/v1/auth/me" }
+  }
+}
+```
+
+Error:
+
+| HTTP | `code` | Penyebab |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Body kosong, JSON rusak, atau `employeeNumber`/`password` kosong |
+| 401 | `INVALID_CREDENTIALS` | Selalu dengan pesan "NIK atau password salah", apa pun penyebabnya (NIK tidak ada, password salah, user nonaktif, belum punya password, role nonaktif) |
+
+---
+
+### GET `/api/v1/auth/me`
+
+Data user yang sedang login. Wajib login.
+
+Response 200:
+
+```json
+{
+  "data": {
+    "id": "8",
+    "employeeNumber": "2015047",
+    "name": "Andi Kurniawan",
+    "email": "andi.kurniawan@pusri.test",
+    "position": { "id": "13", "name": "Staf Pengembangan Aplikasi", "isUnitHead": false },
+    "unit": { "id": "9", "code": "PA", "name": "Bagian Pengembangan Aplikasi" },
+    "company": { "code": "PSP", "name": "PT Pupuk Sriwidjaja Palembang" },
+    "role": { "code": "PEGAWAI", "name": "Pegawai" },
+    "permissions": ["LETTER_CREATE", "LETTER_REVIEW", "TEMPLATE_CREATE"]
+  }
+}
+```
+
+Front-end memakai `permissions` untuk menampilkan atau menyembunyikan menu. Kode permission: `LETTER_CREATE`, `LETTER_REVIEW`, `LETTER_APPROVE`, `INBOX_DISPOSE`, `TEMPLATE_CREATE`, `AUDIT_VIEW`.
+
+Error: `401 UNAUTHORIZED`.
+
+---
+
+### GET `/api/v1/lookups?category=...`
+
+Pilihan dropdown. Wajib login.
+
+| Parameter | Wajib | Keterangan |
+|---|---|---|
+| `category` | Ya | `LETTER_TYPE`, `CONFIDENTIALITY`, `URGENCY`, `CLASSIFICATION`, `LETTER_STATUS`, atau `INBOX_STATUS` |
+
+Berisi lookup aktif yang berlaku untuk semua perusahaan ditambah milik perusahaan user. Urut `sortOrder`, lalu `name`.
+
+Contoh: `GET /api/v1/lookups?category=LETTER_TYPE`
+
+```json
+{
+  "data": [
+    { "id": "7", "code": "NOTA_DINAS", "name": "Nota Dinas", "color": null,
+      "note": "Komunikasi resmi antar unit atau pejabat", "sortOrder": 1 }
+  ]
+}
+```
+
+Error: `400 VALIDATION_ERROR` (category kosong/tidak dikenal), `401 UNAUTHORIZED`.
+
+---
+
+### GET `/api/v1/units?q=...`
+
+Unit kerja aktif di perusahaan user, untuk memilih tujuan surat. Wajib login.
+
+| Parameter | Wajib | Keterangan |
+|---|---|---|
+| `q` | Tidak | Cari di nama unit |
+
+Urut berdasarkan nama. `parentId` bernilai `null` untuk direktorat. `headPositionName` adalah nama jabatan pimpinan unit (penerima surat), `null` bila unit belum punya jabatan pimpinan.
+
+```json
+{
+  "data": [
+    { "id": "7", "code": "SDM", "name": "Departemen Sumber Daya Manusia", "unitType": "DEPARTEMEN",
+      "parentId": "2", "headPositionName": "VP Sumber Daya Manusia" }
+  ]
+}
+```
+
+Error: `400 VALIDATION_ERROR` (`q` lebih dari 100 karakter), `401 UNAUTHORIZED`.
+
+---
+
+### GET `/api/v1/users/candidates?type=...&q=...&limit=...`
+
+Kandidat reviewer atau approver untuk form Buat Surat. Wajib login dan punya permission `LETTER_CREATE`.
+
+| Parameter | Wajib | Keterangan |
+|---|---|---|
+| `type` | Ya | `REVIEWER` (punya `LETTER_REVIEW`) atau `APPROVER` (punya `LETTER_APPROVE`) |
+| `q` | Tidak | Cari di **nama user dan nama jabatan** (NIK tidak ikut dicari) |
+| `limit` | Tidak | 1 sampai 50, default 20 |
+
+Aturan:
+
+- Hanya user aktif di perusahaan yang sama, dengan jabatan, unit, dan role yang aktif.
+- `REVIEWER`: user yang login **boleh** muncul (boleh memilih dirinya sendiri).
+- `APPROVER`: user yang login **tidak** muncul (tidak menyetujui suratnya sendiri).
+- Urut berdasarkan nama.
+
+Contoh: `GET /api/v1/users/candidates?type=APPROVER&q=agus`
+
+```json
+{
+  "data": [
+    { "id": "6", "name": "Agus Setiawan, S.Kom., M.T.", "employeeNumber": "1995021",
+      "positionName": "SVP Teknologi Informasi", "unitName": "Kompartemen Teknologi Informasi" }
+  ]
+}
+```
+
+Error: `400 VALIDATION_ERROR` (`type` tidak valid, `limit` di luar 1 sampai 50, `q` lebih dari 100 karakter), `401 UNAUTHORIZED`, `403 FORBIDDEN` (tidak punya `LETTER_CREATE`).
+
+## 5. Akun uji (data dummy development)
+
+Semua akun memakai password yang sama: **lihat `SEED_PASSWORD` di `.env`**. Semua nama, NIK, dan email fiktif.
+
+| Peran dalam uji | Nama | NIK | Role |
+|---|---|---|---|
+| Drafter | Andi Kurniawan (Staf Pengembangan Aplikasi) | 2015047 | PEGAWAI |
+| Reviewer 1 | Fajar Nugroho (Analis Sistem Informasi) | 2012060 | PEGAWAI |
+| Reviewer 2 | Dewi Lestari (AVP Pengembangan Aplikasi) | 2003035 | PIMPINAN |
+| Approver 1 | Agus Setiawan (SVP Teknologi Informasi) | 1995021 | PIMPINAN |
+| Approver 2 | Ratna Kusumawati (Direktur Keuangan dan Umum) | 1889002 | PIMPINAN |
+| Penerima (tujuan Departemen SDM) | Sri Wahyuni (VP Sumber Daya Manusia) | 1998102 | PIMPINAN |
+| Admin | Rudi Hartono (Administrator Sistem) | 2014090 | ADMIN |
+| User nonaktif (login harus ditolak) | Slamet Riyadi | 1990170 | PEGAWAI |
+| User perusahaan lain (PKG) | Lestari Ningsih | 2019203 | PEGAWAI |
