@@ -63,34 +63,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     try {
       // TODO: ganti dengan getLastDraft() saat backend siap
       await new Promise((r) => setTimeout(r, 300));
-      reset({
-        ...BUAT_SURAT_DEFAULTS,
-        letterTypeId: "lt-01",
-        templateId: "tmpl-01",
-        classificationId: "cls-002",
-        kecepatan: "SEGERA",
-        sifat: "BIASA",
-        title: "Pembaruan Sistem Informasi Kepegawaian Triwulan IV 2026",
-        reviewers: [
-          {
-            id: "draft-r1",
-            employeeId: "emp-002",
-            employeeName: "Budi Santoso",
-            jabatan: "Koordinator Pengembangan Sistem",
-            unitName: "Sub-Direktorat Pengembangan Sistem",
-          },
-        ],
-        approvers: [
-          {
-            id: "draft-a1",
-            employeeId: "emp-004",
-            employeeName: "Darmawan Hidayat",
-            jabatan: "Manajer Teknologi Informasi",
-            unitName: "Direktori Teknologi Informasi",
-          },
-        ],
-        toUnits: [{ id: "unit-sdm", name: "Direktori Sumber Daya Manusia" }],
-      });
+      // Catatan: endpoint GET /letters/draft-terakhir belum ada di backend.
+      // Mereset ke default bersih agar tidak mencampur ID mock usang dengan ID database.
+      reset(BUAT_SURAT_DEFAULTS);
       await trigger();
     } finally {
       setLoadingDraft(false);

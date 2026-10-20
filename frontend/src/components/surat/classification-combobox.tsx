@@ -2,12 +2,13 @@
 
 // ─────────────────────────────────────────────
 // components/surat/classification-combobox.tsx
-// Combobox klasifikasi arsip (cari berdasarkan kode atau nama)
+// Combobox klasifikasi arsip — data dari backend
+// (GET /api/v1/lookups?category=CLASSIFICATION)
 // ─────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
-import { CLASSIFICATIONS } from "@/lib/mock-data";
+import { Search, X, Loader2 } from "lucide-react";
+import { fetchLookups, type LookupItem } from "@/lib/api/form";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -17,13 +18,31 @@ interface Props {
 }
 
 export function ClassificationCombobox({ value, onChange, hasError }: Props) {
+  const [items, setItems] = useState<LookupItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const selected = CLASSIFICATIONS.find((c) => c.id === value);
+  // Fetch saat mount
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setFetchError(null);
+    fetchLookups("CLASSIFICATION")
+      .then((data) => { if (!cancelled) setItems(data); })
+      .catch((e: unknown) => {
+        if (!cancelled)
+          setFetchError(e instanceof Error ? e.message : "Gagal memuat klasifikasi.");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selected = items.find((c) => c.id === value);
   const q = query.toLowerCase();
-  const filtered = CLASSIFICATIONS.filter(
+  const filtered = items.filter(
     (c) => q === "" || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q),
   );
 
@@ -42,12 +61,42 @@ export function ClassificationCombobox({ value, onChange, hasError }: Props) {
     setQuery("");
   }
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2.5 border border-border-input rounded-lg bg-surface text-sm text-text-muted">
+        <Loader2 size={14} className="animate-spin shrink-0" />
+        Memuat klasifikasi arsip...
+      </div>
+    );
+  }
+
+  // Error state
+  if (fetchError) {
+    return (
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border border-status-danger-text/40 rounded-lg bg-status-danger-bg text-xs text-status-danger-text">
+        <span>{fetchError}</span>
+        <button
+          type="button"
+          onClick={() => { setFetchError(null); setLoading(true); }}
+          className="underline shrink-0"
+        >
+          Coba lagi
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className="relative">
       <div
         className={cn(
           "w-full flex items-center gap-2 px-3 py-2.5 text-sm border rounded-lg bg-surface cursor-pointer transition-colors",
-          open ? "border-primary ring-2 ring-primary/15" : hasError ? "border-status-danger-text" : "border-border-input",
+          open
+            ? "border-primary ring-2 ring-primary/15"
+            : hasError
+              ? "border-status-danger-text"
+              : "border-border-input",
         )}
         onClick={() => setOpen((v) => !v)}
       >

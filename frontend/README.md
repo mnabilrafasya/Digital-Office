@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Digital Office — Frontend
 
-## Getting Started
+Aplikasi antarmuka web persuratan digital menggunakan Next.js (App Router), TypeScript, dan Tailwind CSS, terintegrasi dengan backend Go.
 
-First, run the development server:
+---
 
+## 🚀 Panduan Memulai (Getting Started)
+
+### 1. Konfigurasi Environment
+Salin file `.env.example` menjadi `.env.local`:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
+```
+Isi konfigurasi default:
+```env
+# URL server backend Go (default: port 8080)
+BACKEND_URL=http://localhost:8080
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Menjalankan Server Development
+Pastikan dependensi sudah terpasang, lalu jalankan server:
+```bash
+npm install
+npm run dev
+```
+Aplikasi dapat diakses di [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🔐 Autentikasi & Akun Uji Coba
 
-## Learn More
+Frontend menggunakan sistem autentikasi cookie `httpOnly` yang dikelola oleh Next.js Server Actions dan dilindungi oleh `middleware.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+### Akun Uji Coba (Seed Accounts)
+Pada halaman login (`/login`), terdapat fitur **"Akses Cepat Developer"** untuk login instan dalam 1 klik tanpa perlu mengetik kredensial secara manual:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Peran | Nama | NIP / NIK | Fungsi Uji Coba |
+|---|---|---|---|
+| **Drafter** | Andi Kurniawan | `2015047` | Membuat dan mengedit draf surat |
+| **Reviewer** | Fajar Nugroho | `2012060` | Meninjau dan memverifikasi surat |
+| **Approver** | Agus Setiawan | `1995021` | Menyetujui dan menandatangani surat |
+| **Admin** | Rudi Hartono | `2014090` | Manajemen master data & sistem |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+> **Password default**: Mengikuti nilai `SEED_PASSWORD` pada file `.env` di direktori backend (`Apalahkauni03!`).
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📋 Status Integrasi Backend
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 1. Modul Autentikasi
+- `POST /api/v1/auth/login` &rarr; Terintegrasi penuh (menyimpan session cookie).
+- `GET /api/v1/auth/me` &rarr; Terintegrasi (menampilkan nama user dan jabatan pada Header).
+- Middleware proteksi rute &rarr; Mengarahkan pengunjung belum login ke `/login`.
+
+### 2. Modul Buat Surat (`/surat/baru`)
+- **Jenis Surat** &rarr; Mengambil data live via `GET /api/v1/lookups?category=LETTER_TYPE`.
+- **Klasifikasi Arsip** &rarr; Pencarian live combobox via `GET /api/v1/lookups?category=CLASSIFICATION`.
+- **Kecepatan Surat** &rarr; Mengambil data live via `GET /api/v1/lookups?category=URGENCY`.
+- **Unit Tujuan & Tembusan** &rarr; Pencarian live via `GET /api/v1/units?q=...`.
+- **Reviewer & Approver** &rarr; Pencarian kandidat pegawai live via `GET /api/v1/users/candidates?type=...`.
+
+*(Catatan: Fitur penyimpanan surat sungguhan dan upload lampiran menunggu endpoint `POST /api/v1/letters` dari tim backend).*

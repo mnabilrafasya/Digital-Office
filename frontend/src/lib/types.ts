@@ -13,10 +13,10 @@ export type LetterStatus =
   | "SENT"
   | "CANCELLED";
 
-export type InboxStatus = "UNREAD" | "READ" | "REDIRECTED";
+export type InboxStatus = "UNREAD" | "READ" | "DISPOSED" | "REDIRECTED";
 
 export type Sifat = "BIASA" | "TERBATAS" | "RAHASIA";
-export type Kecepatan = "SEGERA" | "SANGAT_SEGERA";
+export type Kecepatan = "BIASA" | "SEGERA" | "SANGAT_SEGERA";
 
 // ─── Workflow ───────────────────────────────
 
@@ -114,4 +114,69 @@ export interface StepEntry {
   employeeName: string;
   jabatan: string;
   unitName: string;
+}
+
+// ─── API Lookup ──────────────────────────────
+
+export interface LookupItem {
+  id: string;
+  code: string;
+  name: string;
+  note?: string;
+}
+
+// ─── Letter List (kontrak bagian 13) ─────────
+
+export interface CurrentAssigneeSummary {
+  id: string;
+  name: string;
+  role: "REVIEWER" | "APPROVER";
+  order: number;
+}
+
+export interface RecipientsSummary {
+  first: string | null;
+  total: number;
+}
+
+export interface LetterListItem {
+  id: string;
+  status: LetterStatus;
+  letterNumber: string | null;
+  title: string | null;
+  letterType: { id: string; code: string; name: string };
+  confidentiality: { id: string; code: string; name: string };
+  urgency: { id: string; code: string; name: string };
+  senderUnit: { id: string; name: string };
+  recipientsSummary: RecipientsSummary;
+  createdAt: string;
+  currentAssignee: CurrentAssigneeSummary | null;
+  lastReturnNote: string | null;
+  allowedActions: string[];
+}
+
+export interface ListLettersResponse {
+  data: LetterListItem[];
+  meta: { page: number; pageSize: number; total: number };
+  counts: {
+    ALL: number;
+    DRAFT: number;
+    IN_REVIEW: number;
+    RETURNED: number;
+    IN_APPROVAL: number;
+    SENT: number;
+    CANCELLED: number;
+  };
+}
+
+export interface ListLettersParams {
+  scope?: "mine" | "review" | "approval";
+  status?: LetterStatus | "";
+  q?: string;
+  letterTypeId?: string;
+  confidentialityId?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
 }

@@ -2,13 +2,13 @@
 
 // ─────────────────────────────────────────────
 // components/surat/step-picker.tsx
-// Picker reviewer / approver bertahap
-// Static mock dulu — nanti diganti API
+// Picker reviewer / approver — kandidat dari backend
+// GET /api/v1/users/candidates?type=REVIEWER|APPROVER&q=...
 // ─────────────────────────────────────────────
 
-import { useState } from "react";
-import { Search, X, Plus, GripVertical, AlertTriangle } from "lucide-react";
-import { EMPLOYEES } from "@/lib/mock-data";
+import { useState, useEffect, useRef } from "react";
+import { Search, X, Plus, GripVertical, AlertTriangle, Loader2 } from "lucide-react";
+import { fetchCandidates, type CandidateItem } from "@/lib/api/form";
 import type { StepEntry } from "@/lib/types";
 import { cn, generateId } from "@/lib/utils";
 
@@ -17,7 +17,7 @@ interface StepPickerProps {
   value: StepEntry[];
   onChange: (entries: StepEntry[]) => void;
   error?: string;
-  /** ID pegawai yang sudah dipilih di role lain (untuk warning duplikat lintas role) */
+  /** ID pegawai yang sudah dipilih di role lain (warning duplikat lintas role) */
   otherRoleIds?: string[];
 }
 
@@ -30,29 +30,46 @@ export function StepPicker({
 }: StepPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [candidates, setCandidates] = useState<CandidateItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const roleLabel = role === "REVIEWER" ? "Reviewer" : "Approver";
 
-  // Filter: exclude yang sudah ada di list ini
-  const selectedIds = new Set(value.map((e) => e.employeeId));
-  const filtered = EMPLOYEES.filter(
-    (emp) =>
-      !selectedIds.has(emp.id) &&
-      (query === "" ||
-        emp.name.toLowerCase().includes(query.toLowerCase()) ||
-        emp.jabatan.toLowerCase().includes(query.toLowerCase()) ||
-        emp.unitName.toLowerCase().includes(query.toLowerCase())),
-  );
+  // Fetch kandidat dari backend, dipicu saat panel terbuka atau query berubah
+  useEffect(() => {
+    if (!open) return;
 
-  function addEmployee(empId: string) {
-    const emp = EMPLOYEES.find((e) => e.id === empId);
-    if (!emp) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setLoading(true);
+      setFetchError(null);
+      fetchCandidates({ type: role, q: query || undefined, limit: 30 })
+        .then((data) => setCandidates(data))
+        .catch((e: unknown) => {
+          setFetchError(e instanceof Error ? e.message : "Gagal memuat kandidat.");
+        })
+        .finally(() => setLoading(false));
+    }, 300); // debounce 300ms
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [open, query, role]);
+
+  const selectedIds = new Set(value.map((e) => e.employeeId));
+
+  // Filter lokal: sembunyikan yang sudah dipilih
+  const filtered = candidates.filter((c) => !selectedIds.has(c.id));
+
+  function addCandidate(candidate: CandidateItem) {
     const entry: StepEntry = {
       id: generateId(),
-      employeeId: emp.id,
-      employeeName: emp.name,
-      jabatan: emp.jabatan,
-      unitName: emp.unitName,
+      employeeId: candidate.id,
+      employeeName: candidate.name,
+      jabatan: candidate.positionName,
+      unitName: candidate.unitName,
     };
     onChange([...value, entry]);
     setQuery("");
@@ -85,7 +102,7 @@ export function StepPicker({
                     : "border-border bg-surface",
                 )}
               >
-                {/* Grip (visual only, drag belum diimplementasikan) */}
+                {/* Grip (visual only) */}
                 <GripVertical size={14} className="text-text-muted shrink-0 cursor-grab" />
 
                 {/* Chip tahap */}
@@ -149,7 +166,7 @@ export function StepPicker({
             <input
               autoFocus
               type="text"
-              placeholder="Cari nama, jabatan, atau unit..."
+              placeholder="Cari nama atau jabatan..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="flex-1 text-sm outline-none bg-transparent text-text placeholder-text-muted"
@@ -167,21 +184,30 @@ export function StepPicker({
 
           {/* Hasil */}
           <ul className="max-h-52 overflow-y-auto divide-y divide-border">
-            {filtered.length === 0 ? (
+            {loading ? (
+              <li className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-text-muted">
+                <Loader2 size={14} className="animate-spin" />
+                Mencari kandidat...
+              </li>
+            ) : fetchError ? (
+              <li className="px-4 py-6 text-center text-status-danger-text text-sm">
+                {fetchError}
+              </li>
+            ) : filtered.length === 0 ? (
               <li className="px-4 py-6 text-center text-text-muted text-sm">
-                Tidak ada pegawai yang ditemukan.
+                {query ? "Tidak ditemukan." : `Tidak ada kandidat ${roleLabel} tersedia.`}
               </li>
             ) : (
-              filtered.map((emp) => (
-                <li key={emp.id}>
+              filtered.map((c) => (
+                <li key={c.id}>
                   <button
                     type="button"
-                    onClick={() => addEmployee(emp.id)}
+                    onClick={() => addCandidate(c)}
                     className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors"
                   >
-                    <div className="text-sm font-medium text-text">{emp.name}</div>
+                    <div className="text-sm font-medium text-text">{c.name}</div>
                     <div className="text-xs text-text-muted">
-                      {emp.jabatan} &bull; {emp.unitName}
+                      {c.positionName} &bull; {c.unitName}
                     </div>
                   </button>
                 </li>
@@ -193,7 +219,7 @@ export function StepPicker({
           <div className="px-3 py-2 border-t border-border flex justify-end">
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => { setOpen(false); setQuery(""); }}
               className="text-xs text-text-muted hover:text-text"
             >
               Tutup
@@ -202,7 +228,7 @@ export function StepPicker({
         </div>
       )}
 
-      {/* Error */}
+      {/* Error validasi */}
       {error && (
         <p className="text-status-danger-text text-xs mt-1">{error}</p>
       )}

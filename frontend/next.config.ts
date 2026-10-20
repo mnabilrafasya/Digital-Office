@@ -12,8 +12,11 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  cacheComponents: true,
-  partialPrefetching: true,
+  // cacheComponents dan partialPrefetching dimatikan:
+  // semua halaman bersifat per-user, caching tidak berguna dan
+  // bisa menampilkan data stale setelah integrasi auth.
+  // cacheComponents: false,   // default false
+  // partialPrefetching: false, // default false
   reactCompiler: true,
   turbopack: {
     rules: {

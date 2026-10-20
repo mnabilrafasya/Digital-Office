@@ -2,13 +2,13 @@
 
 // ─────────────────────────────────────────────
 // components/surat/unit-picker.tsx
-// Picker tujuan surat / tembusan (unit, bukan orang)
-// Static mock dulu
+// Picker tujuan surat / tembusan — unit dari backend
+// GET /api/v1/units?q=... (dengan debounce)
 // ─────────────────────────────────────────────
 
-import { useState } from "react";
-import { Search, X, Plus, Building2 } from "lucide-react";
-import { ORG_UNITS } from "@/lib/mock-data";
+import { useState, useEffect, useRef } from "react";
+import { Search, X, Plus, Building2, Loader2 } from "lucide-react";
+import { fetchUnits, type UnitItem } from "@/lib/api/form";
 import { cn } from "@/lib/utils";
 
 interface UnitEntry {
@@ -21,7 +21,7 @@ interface UnitPickerProps {
   value: UnitEntry[];
   onChange: (entries: UnitEntry[]) => void;
   error?: string;
-  /** Unit yang tidak boleh dipilih (contoh: unit yang sudah ada di Tujuan tidak bisa ada di Tembusan) */
+  /** Unit yang tidak boleh dipilih (unit yang sudah ada di Tujuan tidak bisa di Tembusan) */
   excludeIds?: string[];
 }
 
@@ -34,19 +34,40 @@ export function UnitPicker({
 }: UnitPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [units, setUnits] = useState<UnitItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedIds = new Set(value.map((u) => u.id));
 
-  const filtered = ORG_UNITS.filter(
-    (u) =>
-      !selectedIds.has(u.id) &&
-      !excludeIds.includes(u.id) &&
-      (query === "" || u.name.toLowerCase().includes(query.toLowerCase())),
+  // Fetch dari backend saat panel terbuka atau query berubah
+  useEffect(() => {
+    if (!open) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setLoading(true);
+      setFetchError(null);
+      fetchUnits(query || undefined)
+        .then((data) => setUnits(data))
+        .catch((e: unknown) => {
+          setFetchError(e instanceof Error ? e.message : "Gagal memuat unit.");
+        })
+        .finally(() => setLoading(false));
+    }, 300); // debounce 300ms
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [open, query]);
+
+  // Filter lokal: sembunyikan yang sudah dipilih dan yang di-exclude
+  const filtered = units.filter(
+    (u) => !selectedIds.has(u.id) && !excludeIds.includes(u.id),
   );
 
-  function addUnit(unitId: string) {
-    const unit = ORG_UNITS.find((u) => u.id === unitId);
-    if (!unit) return;
+  function addUnit(unit: UnitItem) {
     onChange([...value, { id: unit.id, name: unit.name }]);
     setQuery("");
     setOpen(false);
@@ -120,20 +141,34 @@ export function UnitPicker({
           </div>
 
           <ul className="max-h-52 overflow-y-auto divide-y divide-border">
-            {filtered.length === 0 ? (
+            {loading ? (
+              <li className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-text-muted">
+                <Loader2 size={14} className="animate-spin" />
+                Mencari unit...
+              </li>
+            ) : fetchError ? (
+              <li className="px-4 py-6 text-center text-status-danger-text text-sm">
+                {fetchError}
+              </li>
+            ) : filtered.length === 0 ? (
               <li className="px-4 py-6 text-center text-text-muted text-sm">
-                Tidak ada unit yang tersedia.
+                {query ? "Unit tidak ditemukan." : "Tidak ada unit tersedia."}
               </li>
             ) : (
               filtered.map((unit) => (
                 <li key={unit.id}>
                   <button
                     type="button"
-                    onClick={() => addUnit(unit.id)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-center gap-2"
+                    onClick={() => addUnit(unit)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-start gap-2"
                   >
-                    <Building2 size={13} className="text-text-muted shrink-0" />
-                    <span className="text-sm text-text">{unit.name}</span>
+                    <Building2 size={13} className="text-text-muted shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-sm text-text">{unit.name}</div>
+                      {unit.headPositionName && (
+                        <div className="text-xs text-text-muted">{unit.headPositionName}</div>
+                      )}
+                    </div>
                   </button>
                 </li>
               ))
@@ -143,7 +178,7 @@ export function UnitPicker({
           <div className="px-3 py-2 border-t border-border flex justify-end">
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => { setOpen(false); setQuery(""); }}
               className="text-xs text-text-muted hover:text-text"
             >
               Tutup
@@ -152,7 +187,7 @@ export function UnitPicker({
         </div>
       )}
 
-      {/* Error */}
+      {/* Error validasi */}
       {error && (
         <p className="text-status-danger-text text-xs mt-1">{error}</p>
       )}
