@@ -12,9 +12,9 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/repository"
 )
 
-// TokenVerifier memeriksa access token dan mengembalikan user id di dalamnya
+// TokenVerifier memeriksa access token dan mengembalikan user id serta token_version di dalamnya.
 type TokenVerifier interface {
-	Verify(token string) (int64, error)
+	Verify(token string) (userID int64, tokenVersion int, err error)
 }
 
 // UserLoader memuat user aktif dari database (repository.ErrNotFound bila tidak aktif/tidak ada)
@@ -36,8 +36,8 @@ func WithCurrentUser(ctx context.Context, u *model.CurrentUser) context.Context 
 }
 
 // Authenticate mewajibkan header "Authorization: Bearer <token>" yang valid. User dimuat
-// ulang dari database setiap request, sehingga penonaktifan user atau perubahan role
-// langsung berlaku tanpa menunggu token kedaluwarsa.
+// ulang dari database setiap request, sehingga penonaktifan user, perubahan role, dan logout
+// (token_version naik) langsung berlaku tanpa menunggu token kedaluwarsa.
 func Authenticate(tokens TokenVerifier, users UserLoader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +47,7 @@ func Authenticate(tokens TokenVerifier, users UserLoader) func(http.Handler) htt
 				return
 			}
 
-			userID, err := tokens.Verify(token)
+			userID, tokenVersion, err := tokens.Verify(token)
 			if err != nil {
 				httpx.Unauthorized(w)
 				return
@@ -60,6 +60,10 @@ func Authenticate(tokens TokenVerifier, users UserLoader) func(http.Handler) htt
 			}
 			if err != nil {
 				httpx.Internal(w, r, err)
+				return
+			}
+			if user.TokenVersion != tokenVersion {
+				httpx.Unauthorized(w) // token dibuat sebelum logout
 				return
 			}
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/model"
@@ -41,30 +42,40 @@ WHERE u.employee_number = @employeeNumber AND u.deleted_at IS NULL`
 	return &rec, nil
 }
 
-// FindActiveByID memuat user aktif (role aktif) beserta jabatan, unit, perusahaan, dan permission-nya
+// FindActiveByID memuat user aktif (role aktif) beserta jabatan, level jabatan, unit, perusahaan,
+// permission, dan token_version dalam satu query (dipanggil di setiap request yang wajib login).
 func (r *UserRepository) FindActiveByID(ctx context.Context, userID int64) (*model.CurrentUser, error) {
 	const q = `
-SELECT u.id, u.employee_number, u.name, u.email,
-       p.id, p.name, p.is_unit_head,
+SELECT u.id, u.employee_number, u.name, u.email, u.token_version,
+       p.id, p.name, p.is_unit_head, lv.code, lv.name,
        un.id, un.code, un.name,
        c.code, c.name,
-       r.code, r.name, r.id
+       r.code, r.name, r.id,
+       (SELECT STRING_AGG(pm.code, ',') WITHIN GROUP (ORDER BY pm.code)
+        FROM permissions pm
+        WHERE pm.role_id = r.id AND pm.deleted_at IS NULL)
 FROM users u
-JOIN positions p  ON p.id = u.position_id
-JOIN units un     ON un.id = p.unit_id
-JOIN companies c  ON c.code = un.company_code
-JOIN roles r      ON r.id = u.role_id
+JOIN positions p     ON p.id = u.position_id
+JOIN units un        ON un.id = p.unit_id
+JOIN companies c     ON c.code = un.company_code
+JOIN roles r         ON r.id = u.role_id
+LEFT JOIN lookups lv ON lv.id = p.level_id AND lv.deleted_at IS NULL
 WHERE u.id = @userId
   AND u.is_active = 1 AND u.deleted_at IS NULL
   AND r.is_active = 1 AND r.deleted_at IS NULL`
 
-	var u model.CurrentUser
+	var (
+		u                    model.CurrentUser
+		levelCode, levelName sql.NullString
+		perms                sql.NullString
+	)
 	err := r.q.QueryRowContext(ctx, q, sql.Named("userId", userID)).Scan(
-		&u.ID, &u.EmployeeNumber, &u.Name, &u.Email,
-		&u.Position.ID, &u.Position.Name, &u.Position.IsUnitHead,
+		&u.ID, &u.EmployeeNumber, &u.Name, &u.Email, &u.TokenVersion,
+		&u.Position.ID, &u.Position.Name, &u.Position.IsUnitHead, &levelCode, &levelName,
 		&u.Unit.ID, &u.Unit.Code, &u.Unit.Name,
 		&u.Company.Code, &u.Company.Name,
 		&u.Role.Code, &u.Role.Name, &u.Role.ID,
+		&perms,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -73,29 +84,31 @@ WHERE u.id = @userId
 		return nil, fmt.Errorf("memuat user: %w", err)
 	}
 
-	const qPerm = `
-SELECT code FROM permissions
-WHERE role_id = @roleId AND deleted_at IS NULL
-ORDER BY code`
-
-	rows, err := r.q.QueryContext(ctx, qPerm, sql.Named("roleId", u.Role.ID))
-	if err != nil {
-		return nil, fmt.Errorf("memuat permission: %w", err)
+	if levelCode.Valid {
+		u.Position.Level = &model.PositionLevel{Code: levelCode.String, Name: levelName.String}
 	}
-	defer rows.Close()
-
 	u.Permissions = []string{}
-	for rows.Next() {
-		var code string
-		if err := rows.Scan(&code); err != nil {
-			return nil, fmt.Errorf("membaca permission: %w", err)
-		}
-		u.Permissions = append(u.Permissions, code)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("membaca permission: %w", err)
+	if perms.Valid && perms.String != "" {
+		u.Permissions = strings.Split(perms.String, ",")
 	}
 	return &u, nil
+}
+
+// IncrementTokenVersion menaikkan token_version sehingga semua access token lama user tidak berlaku.
+func (r *UserRepository) IncrementTokenVersion(ctx context.Context, userID int64) error {
+	const q = `
+UPDATE users
+SET token_version = token_version + 1, updated_at = SYSDATETIMEOFFSET()
+WHERE id = @userId AND deleted_at IS NULL`
+
+	res, err := r.q.ExecContext(ctx, q, sql.Named("userId", userID))
+	if err != nil {
+		return fmt.Errorf("menaikkan token_version: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // CandidateFilter adalah kriteria pencarian kandidat reviewer/approver

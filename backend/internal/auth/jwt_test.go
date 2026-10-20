@@ -6,74 +6,80 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const testSecret = "rahasia-uji-yang-panjangnya-lebih-dari-32-karakter"
 
 func TestIssueAndVerify(t *testing.T) {
 	j := NewJWT(testSecret, time.Hour)
-	token, err := j.Issue(42)
+	token, err := j.Issue(42, 3)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	id, err := j.Verify(token)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	if id != 42 {
-		t.Fatalf("user id = %d, want 42", id)
+	id, tv, err := j.Verify(token)
+	if err != nil || id != 42 || tv != 3 {
+		t.Fatalf("Verify() = %d, %d, %v; want 42, 3, nil", id, tv, err)
 	}
 }
 
-func TestVerifyRejectsOtherSecret(t *testing.T) {
-	token, _ := NewJWT("secret-lain-yang-juga-panjangnya-lebih-dari-32", time.Hour).Issue(42)
-	if _, err := NewJWT(testSecret, time.Hour).Verify(token); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("err = %v, want ErrInvalidToken", err)
-	}
-}
-
-func TestVerifyRejectsAlgNone(t *testing.T) {
-	claims := jwt.RegisteredClaims{
-		Subject:   "42",
-		Issuer:    Issuer,
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodNone, claims).SignedString(jwt.UnsafeAllowNoneSignatureType)
-	if err != nil {
-		t.Fatalf("membuat token none: %v", err)
-	}
-	if _, err := NewJWT(testSecret, time.Hour).Verify(token); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("err = %v, want ErrInvalidToken", err)
-	}
-}
-
-func TestVerifyRejectsExpired(t *testing.T) {
+func TestVerifyRejects(t *testing.T) {
 	j := NewJWT(testSecret, time.Hour)
-	j.now = func() time.Time { return time.Now().Add(-2 * time.Hour) }
-	token, _ := j.Issue(42)
+	future := jwt.NewNumericDate(time.Now().Add(time.Hour))
 
-	j.now = time.Now
-	if _, err := j.Verify(token); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("err = %v, want ErrInvalidToken", err)
+	sign := func(method jwt.SigningMethod, key any, claims jwt.Claims) string {
+		t.Helper()
+		s, err := jwt.NewWithClaims(method, claims).SignedString(key)
+		if err != nil {
+			t.Fatalf("membuat token uji: %v", err)
+		}
+		return s
+	}
+	valid := func() accessClaims {
+		return accessClaims{
+			RegisteredClaims: jwt.RegisteredClaims{Subject: "42", Issuer: Issuer, ExpiresAt: future},
+			TokenVersion:     1,
+		}
+	}
+	other, _ := NewJWT("secret-lain-yang-juga-panjangnya-lebih-dari-32", time.Hour).Issue(42, 1)
+
+	expired := NewJWT(testSecret, time.Hour)
+	expired.now = func() time.Time { return time.Now().Add(-2 * time.Hour) }
+	expiredToken, _ := expired.Issue(42, 1)
+
+	wrongIssuer := valid()
+	wrongIssuer.Issuer = "aplikasi-lain"
+	noExpiry := valid()
+	noExpiry.ExpiresAt = nil
+	noTV := valid()
+	noTV.TokenVersion = 0
+
+	tests := map[string]string{
+		"secret lain":                 other,
+		"algoritma none":              sign(jwt.SigningMethodNone, jwt.UnsafeAllowNoneSignatureType, valid()),
+		"kedaluwarsa":                 expiredToken,
+		"issuer salah":                sign(jwt.SigningMethodHS256, []byte(testSecret), wrongIssuer),
+		"tanpa exp":                   sign(jwt.SigningMethodHS256, []byte(testSecret), noExpiry),
+		"tanpa klaim tv (token lama)": sign(jwt.SigningMethodHS256, []byte(testSecret), noTV),
+		"bukan JWT":                   "abc.def.ghi",
+	}
+	for name, token := range tests {
+		if _, _, err := j.Verify(token); !errors.Is(err, ErrInvalidToken) {
+			t.Errorf("%s: err = %v, want ErrInvalidToken", name, err)
+		}
 	}
 }
 
-func TestVerifyRejectsWrongIssuer(t *testing.T) {
-	claims := jwt.RegisteredClaims{
-		Subject:   "42",
-		Issuer:    "aplikasi-lain",
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+func TestPasswordChecker(t *testing.T) {
+	p, err := NewPasswordChecker()
+	if err != nil {
+		t.Fatal(err)
 	}
-	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(testSecret))
-	if _, err := NewJWT(testSecret, time.Hour).Verify(token); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("err = %v, want ErrInvalidToken", err)
+	hash, _ := bcrypt.GenerateFromPassword([]byte("rahasia123"), bcrypt.MinCost)
+	if !p.Check(string(hash), "rahasia123") || p.Check(string(hash), "salah") {
+		t.Error("Check salah")
 	}
-}
-
-func TestVerifyRejectsMissingExpiry(t *testing.T) {
-	claims := jwt.RegisteredClaims{Subject: "42", Issuer: Issuer}
-	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(testSecret))
-	if _, err := NewJWT(testSecret, time.Hour).Verify(token); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("err = %v, want ErrInvalidToken", err)
+	if p.CheckDummy("rahasia123") {
+		t.Error("CheckDummy harus selalu false")
 	}
 }

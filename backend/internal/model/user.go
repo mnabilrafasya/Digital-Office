@@ -15,13 +15,21 @@ type CurrentUser struct {
 	Company        UserCompany  `json:"company"`
 	Role           UserRole     `json:"role"`
 	Permissions    []string     `json:"permissions"`
+	TokenVersion   int          `json:"-"` // dibandingkan dengan klaim "tv" di access token
 }
 
 // UserPosition adalah jabatan user.
 type UserPosition struct {
-	ID         int64  `json:"id,string"`
-	Name       string `json:"name"`
-	IsUnitHead bool   `json:"isUnitHead"`
+	ID         int64          `json:"id,string"`
+	Name       string         `json:"name"`
+	IsUnitHead bool           `json:"isUnitHead"`
+	Level      *PositionLevel `json:"level"`
+}
+
+// PositionLevel adalah level jabatan (lookup POSITION_LEVEL), contoh VP.
+type PositionLevel struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
 }
 
 // UserUnit adalah unit kerja user.
