@@ -13,6 +13,7 @@ type FormHandler struct {
 	form *service.FormService
 }
 
+// NewFormHandler membuat FormHandler.
 func NewFormHandler(form *service.FormService) *FormHandler {
 	return &FormHandler{form: form}
 }

@@ -25,6 +25,7 @@ type JWT struct {
 	now    func() time.Time
 }
 
+// NewJWT membuat penerbit access token dengan secret dan masa berlaku tertentu.
 func NewJWT(secret string, ttl time.Duration) *JWT {
 	return &JWT{secret: []byte(secret), ttl: ttl, now: time.Now}
 }

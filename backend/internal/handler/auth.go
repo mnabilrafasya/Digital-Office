@@ -10,11 +10,13 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
 )
 
+// AuthHandler menangani login dan data user yang login.
 type AuthHandler struct {
 	auth     *service.AuthService
 	tokenTTL time.Duration
 }
 
+// NewAuthHandler membuat AuthHandler.
 func NewAuthHandler(auth *service.AuthService, tokenTTL time.Duration) *AuthHandler {
 	return &AuthHandler{auth: auth, tokenTTL: tokenTTL}
 }

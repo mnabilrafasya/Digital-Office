@@ -4,7 +4,7 @@ package model
 
 import "slices"
 
-// CurrentUser adalah user yang sedang login beserta jabatan, unit, perusahaan, role, dan permission-nya
+// CurrentUser adalah user yang sedang login beserta jabatan, unit, perusahaan, role, dan permission-nya.
 type CurrentUser struct {
 	ID             int64        `json:"id,string"`
 	EmployeeNumber string       `json:"employeeNumber"`
@@ -17,35 +17,39 @@ type CurrentUser struct {
 	Permissions    []string     `json:"permissions"`
 }
 
+// UserPosition adalah jabatan user.
 type UserPosition struct {
 	ID         int64  `json:"id,string"`
 	Name       string `json:"name"`
 	IsUnitHead bool   `json:"isUnitHead"`
 }
 
+// UserUnit adalah unit kerja user.
 type UserUnit struct {
 	ID   int64  `json:"id,string"`
 	Code string `json:"code"`
 	Name string `json:"name"`
 }
 
+// UserCompany adalah perusahaan user.
 type UserCompany struct {
 	Code string `json:"code"`
 	Name string `json:"name"`
 }
 
+// UserRole adalah role user. ID tidak dikirim ke klien.
 type UserRole struct {
 	ID   int64  `json:"-"`
 	Code string `json:"code"`
 	Name string `json:"name"`
 }
 
-// HasPermission mengecek apakah role user memiliki permission dengan kode tertentu
+// HasPermission mengecek apakah role user memiliki permission dengan kode tertentu.
 func (u *CurrentUser) HasPermission(code string) bool {
 	return slices.Contains(u.Permissions, code)
 }
 
-// LoginRecord adalah data minimal untuk memeriksa login dengan NIK + password
+// LoginRecord adalah data minimal untuk memeriksa login dengan NIK + password.
 type LoginRecord struct {
 	UserID       int64
 	PasswordHash *string
@@ -53,27 +57,7 @@ type LoginRecord struct {
 	RoleIsActive bool
 }
 
-// Lookup adalah satu pilihan dropdown (jenis surat, sifat, kecepatan, klasifikasi, status)
-type Lookup struct {
-	ID        int64   `json:"id,string"`
-	Code      string  `json:"code"`
-	Name      string  `json:"name"`
-	Color     *string `json:"color"`
-	Note      *string `json:"note"`
-	SortOrder int     `json:"sortOrder"`
-}
-
-// Unit adalah unit kerja beserta nama jabatan pimpinannya
-type Unit struct {
-	ID               int64   `json:"id,string"`
-	Code             string  `json:"code"`
-	Name             string  `json:"name"`
-	UnitType         string  `json:"unitType"`
-	ParentID         *int64  `json:"parentId,string"`
-	HeadPositionName *string `json:"headPositionName"`
-}
-
-// Candidate adalah user yang bisa dipilih sebagai reviewer atau approver
+// Candidate adalah user yang bisa dipilih sebagai reviewer atau approver.
 type Candidate struct {
 	ID             int64  `json:"id,string"`
 	Name           string `json:"name"`

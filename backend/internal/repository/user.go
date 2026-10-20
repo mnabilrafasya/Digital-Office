@@ -6,15 +6,18 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/model"
 )
 
+// UserRepository berisi query tabel users.
 type UserRepository struct {
-	db *sql.DB
+	q db.DBTX
 }
 
-func NewUserRepository(db *sql.DB) *UserRepository {
-	return &UserRepository{db: db}
+// NewUserRepository membuat UserRepository di atas koneksi atau transaksi.
+func NewUserRepository(q db.DBTX) *UserRepository {
+	return &UserRepository{q: q}
 }
 
 // FindLoginByEmployeeNumber mengambil data untuk memeriksa login berdasarkan NIK
@@ -27,7 +30,7 @@ JOIN roles r ON r.id = u.role_id
 WHERE u.employee_number = @employeeNumber AND u.deleted_at IS NULL`
 
 	var rec model.LoginRecord
-	err := r.db.QueryRowContext(ctx, q, sql.Named("employeeNumber", employeeNumber)).
+	err := r.q.QueryRowContext(ctx, q, sql.Named("employeeNumber", employeeNumber)).
 		Scan(&rec.UserID, &rec.PasswordHash, &rec.IsActive, &rec.RoleIsActive)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -56,7 +59,7 @@ WHERE u.id = @userId
   AND r.is_active = 1 AND r.deleted_at IS NULL`
 
 	var u model.CurrentUser
-	err := r.db.QueryRowContext(ctx, q, sql.Named("userId", userID)).Scan(
+	err := r.q.QueryRowContext(ctx, q, sql.Named("userId", userID)).Scan(
 		&u.ID, &u.EmployeeNumber, &u.Name, &u.Email,
 		&u.Position.ID, &u.Position.Name, &u.Position.IsUnitHead,
 		&u.Unit.ID, &u.Unit.Code, &u.Unit.Name,
@@ -75,7 +78,7 @@ SELECT code FROM permissions
 WHERE role_id = @roleId AND deleted_at IS NULL
 ORDER BY code`
 
-	rows, err := r.db.QueryContext(ctx, qPerm, sql.Named("roleId", u.Role.ID))
+	rows, err := r.q.QueryContext(ctx, qPerm, sql.Named("roleId", u.Role.ID))
 	if err != nil {
 		return nil, fmt.Errorf("memuat permission: %w", err)
 	}
@@ -136,7 +139,7 @@ WHERE un.company_code = @companyCode
 	}
 	q += "\nORDER BY u.name"
 
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	rows, err := r.q.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mencari kandidat: %w", err)
 	}

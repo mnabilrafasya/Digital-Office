@@ -26,14 +26,17 @@ const (
 	maxCandidateLimit     = 50
 )
 
+// LookupRepository adalah query lookup untuk dropdown.
 type LookupRepository interface {
 	List(ctx context.Context, companyCode, category string) ([]model.Lookup, error)
 }
 
+// UnitRepository adalah query daftar unit.
 type UnitRepository interface {
 	List(ctx context.Context, companyCode, search string) ([]model.Unit, error)
 }
 
+// CandidateRepository adalah query kandidat reviewer/approver.
 type CandidateRepository interface {
 	ListCandidates(ctx context.Context, f repository.CandidateFilter) ([]model.Candidate, error)
 }
@@ -46,10 +49,12 @@ type FormService struct {
 	candidates CandidateRepository
 }
 
+// NewFormService membuat FormService.
 func NewFormService(lookups LookupRepository, units UnitRepository, candidates CandidateRepository) *FormService {
 	return &FormService{lookups: lookups, units: units, candidates: candidates}
 }
 
+// Lookups mengambil pilihan dropdown satu kategori.
 func (s *FormService) Lookups(ctx context.Context, user *model.CurrentUser, category string) ([]model.Lookup, error) {
 	if !slices.Contains(lookupCategories, category) {
 		return nil, invalid("Parameter category wajib salah satu dari: LETTER_TYPE, CONFIDENTIALITY, URGENCY, CLASSIFICATION, LETTER_STATUS, INBOX_STATUS")
@@ -57,6 +62,7 @@ func (s *FormService) Lookups(ctx context.Context, user *model.CurrentUser, cate
 	return s.lookups.List(ctx, user.Company.Code, category)
 }
 
+// Units mengambil unit aktif di perusahaan user, opsional dicari berdasarkan nama.
 func (s *FormService) Units(ctx context.Context, user *model.CurrentUser, q string) ([]model.Unit, error) {
 	search, err := normalizeSearch(q)
 	if err != nil {

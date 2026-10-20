@@ -1,102 +1,66 @@
+// Server API digioffice. File ini hanya merangkai komponen: config -> dependency -> server.Run.
 package main
 
 import (
+	"context"
 	"log"
-	"net/http"
-	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
+	_ "time/tzdata" // data zona waktu ikut di binary, tidak bergantung pada OS
 
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/auth"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/database"
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/handler"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/httpx"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/middleware"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/permission"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/repository"
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/server"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/storage"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := cfg.ValidateJWT(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	db, err := database.NewSQLServer(cfg)
+	ctx, stop := server.SignalContext(context.Background())
+	defer stop()
+
+	conn, err := db.Open(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer db.Close()
+	defer conn.Close()
 	log.Println("Terhubung ke SQL Server")
 
-	minioClient, err := storage.NewMinio(cfg)
+	files, err := storage.New(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	log.Println("Terhubung ke MinIO")
 
 	// Repository -> service -> handler
-	userRepo := repository.NewUserRepository(db)
-	lookupRepo := repository.NewLookupRepository(db)
-	unitRepo := repository.NewUnitRepository(db)
-
+	users := repository.NewUserRepository(conn)
 	tokens := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
-	authService := service.NewAuthService(userRepo, tokens)
-	formService := service.NewFormService(lookupRepo, unitRepo, userRepo)
+	authService := service.NewAuthService(users, tokens)
+	formService := service.NewFormService(repository.NewLookupRepository(conn), repository.NewUnitRepository(conn), users)
 
-	health := &handler.HealthHandler{DB: db, Minio: minioClient}
-	authHandler := handler.NewAuthHandler(authService, cfg.JWTTTL)
-	formHandler := handler.NewFormHandler(formService)
-
-	r := chi.NewRouter()
-	r.Use(chimw.RequestID) // ID unik per request, memudahkan melacak log
-	r.Use(chimw.RealIP)    // IP asli klien bila berada di belakang proxy
-	r.Use(chimw.Logger)    // mencatat setiap request di terminal
-	r.Use(chimw.Recoverer) // mencegah server mati kalau ada error tak terduga
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.CORSAllowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "If-Match"},
-		AllowCredentials: false,
-		MaxAge:           300,
-	}))
-
-	// Route tidak ada / method salah tetap dijawab dalam format JSON
-	r.NotFound(httpx.NotFound)
-	r.MethodNotAllowed(httpx.MethodNotAllowed)
-
-	r.Get("/health", health.Check)
-
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/auth/login", authHandler.Login)
-
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.Authenticate(tokens, userRepo))
-
-			r.Get("/auth/me", authHandler.Me)
-			r.Get("/lookups", formHandler.Lookups)
-			r.Get("/units", formHandler.Units)
-			r.With(middleware.RequirePermission(permission.LetterCreate)).
-				Get("/users/candidates", formHandler.Candidates)
-		})
+	router := server.NewRouter(server.RouterDeps{
+		Health:      handler.NewHealthHandler(conn, files),
+		Auth:        handler.NewAuthHandler(authService, cfg.JWTTTL),
+		Form:        handler.NewFormHandler(formService),
+		Tokens:      tokens,
+		Users:       users,
+		CORSOrigins: cfg.CORSAllowedOrigins,
 	})
-
-	srv := &http.Server{
-		Addr:              ":" + cfg.AppPort,
-		Handler:           r,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-	log.Printf("Server berjalan di http://localhost%s", srv.Addr)
-	log.Fatal(srv.ListenAndServe())
+	return server.Run(ctx, ":"+cfg.AppPort, router)
 }

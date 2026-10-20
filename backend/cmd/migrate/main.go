@@ -16,7 +16,7 @@ import (
 	_ "github.com/microsoft/go-mssqldb"
 
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/database"
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 )
 
 const migrationsSource = "file://migrations"
@@ -45,19 +45,19 @@ func main() {
 		}
 	}
 
-	db, err := sql.Open("sqlserver", database.BuildDSN(cfg, cfg.DBName))
+	conn, err := sql.Open("sqlserver", db.BuildDSN(cfg, cfg.DBName))
 	if err != nil {
 		log.Fatalf("Gagal membuka koneksi: %v", err)
 	}
-	defer db.Close()
+	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
+	if err := conn.PingContext(ctx); err != nil {
 		log.Fatalf("Gagal terhubung ke database %q: %v\nPastikan Docker berjalan dan database sudah dibuat (go run ./cmd/migrate up).", cfg.DBName, err)
 	}
 
-	driver, err := sqlserver.WithInstance(db, &sqlserver.Config{})
+	driver, err := sqlserver.WithInstance(conn, &sqlserver.Config{})
 	if err != nil {
 		log.Fatalf("Gagal menyiapkan driver migration: %v", err)
 	}
@@ -92,17 +92,17 @@ func main() {
 
 // ensureDatabase membuat database (misalnya digioffice) bila belum ada.
 func ensureDatabase(cfg *config.Config) error {
-	db, err := sql.Open("sqlserver", database.BuildDSN(cfg, "master"))
+	conn, err := sql.Open("sqlserver", db.BuildDSN(cfg, "master"))
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	var exists int
-	if err := db.QueryRowContext(ctx,
+	if err := conn.QueryRowContext(ctx,
 		"SELECT CASE WHEN DB_ID(@p1) IS NULL THEN 0 ELSE 1 END", cfg.DBName).Scan(&exists); err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func ensureDatabase(cfg *config.Config) error {
 	}
 
 	// QUOTENAME mencegah nama database disalahgunakan (SQL injection)
-	if _, err := db.ExecContext(ctx,
+	if _, err := conn.ExecContext(ctx,
 		"DECLARE @sql NVARCHAR(400) = N'CREATE DATABASE ' + QUOTENAME(@p1); EXEC (@sql);", cfg.DBName); err != nil {
 		return err
 	}
