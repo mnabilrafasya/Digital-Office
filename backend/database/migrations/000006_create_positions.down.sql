@@ -1,0 +1,7 @@
+-- 000006_create_positions.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DROP TABLE IF EXISTS positions;
+
+COMMIT TRANSACTION;

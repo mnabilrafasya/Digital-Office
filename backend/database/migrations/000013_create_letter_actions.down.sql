@@ -1,0 +1,7 @@
+-- 000013_create_letter_actions.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DROP TABLE IF EXISTS letter_actions;
+
+COMMIT TRANSACTION;

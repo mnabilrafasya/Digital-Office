@@ -1,0 +1,7 @@
+-- 000001_create_companies.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DROP TABLE IF EXISTS companies;
+
+COMMIT TRANSACTION;

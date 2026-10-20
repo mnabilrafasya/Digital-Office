@@ -1,6 +1,0 @@
-DELETE FROM lookups WHERE category = 'CLASSIFICATION';
-
-ALTER TABLE lookups DROP CONSTRAINT ck_lookups_category;
-
-ALTER TABLE lookups ADD CONSTRAINT ck_lookups_category
-    CHECK (category IN ('LETTER_TYPE','CONFIDENTIALITY','URGENCY','LETTER_STATUS','INBOX_STATUS'));
