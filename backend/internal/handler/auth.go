@@ -10,11 +10,13 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
 )
 
+// AuthHandler menangani login, logout, dan data user yang login.
 type AuthHandler struct {
 	auth     *service.AuthService
 	tokenTTL time.Duration
 }
 
+// NewAuthHandler membuat AuthHandler.
 func NewAuthHandler(auth *service.AuthService, tokenTTL time.Duration) *AuthHandler {
 	return &AuthHandler{auth: auth, tokenTTL: tokenTTL}
 }
@@ -31,14 +33,18 @@ type loginResponse struct {
 	User        *model.CurrentUser `json:"user"`
 }
 
-// Login menangani POST /api/v1/auth/login
+// Login menangani POST /api/v1/auth/login.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 
-	res, err := h.auth.Login(r.Context(), req.EmployeeNumber, req.Password)
+	res, err := h.auth.Login(r.Context(), service.LoginInput{
+		EmployeeNumber: req.EmployeeNumber,
+		Password:       req.Password,
+		ClientIP:       middleware.ClientIPFrom(r.Context()),
+	})
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
@@ -52,7 +58,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Me menangani GET /api/v1/auth/me
+// Logout menangani POST /api/v1/auth/logout: semua token user (semua perangkat) tidak berlaku lagi.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if err := h.auth.Logout(r.Context(), middleware.CurrentUser(r.Context())); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
+// Me menangani GET /api/v1/auth/me.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, middleware.CurrentUser(r.Context()))
 }

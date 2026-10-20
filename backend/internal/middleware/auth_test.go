@@ -29,9 +29,10 @@ func (f fakeUsers) FindActiveByID(_ context.Context, id int64) (*model.CurrentUs
 }
 
 var andi = &model.CurrentUser{
-	ID:          8,
-	Name:        "Andi Kurniawan",
-	Permissions: []string{permission.LetterCreate, permission.LetterReview, permission.TemplateCreate},
+	ID:           8,
+	Name:         "Andi Kurniawan",
+	Permissions:  []string{permission.LetterCreate, permission.LetterReview, permission.TemplateCreate},
+	TokenVersion: 2,
 }
 
 // okHandler menulis nama user yang login, untuk memastikan context terisi
@@ -57,11 +58,12 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorResponse {
 
 func signToken(t *testing.T, secret string, sub string, exp time.Time) string {
 	t.Helper()
-	claims := jwt.RegisteredClaims{
-		Subject:   sub,
-		Issuer:    auth.Issuer,
-		IssuedAt:  jwt.NewNumericDate(exp.Add(-time.Hour)),
-		ExpiresAt: jwt.NewNumericDate(exp),
+	claims := jwt.MapClaims{
+		"sub": sub,
+		"iss": auth.Issuer,
+		"iat": exp.Add(-time.Hour).Unix(),
+		"exp": exp.Unix(),
+		"tv":  andi.TokenVersion,
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 	if err != nil {
@@ -75,7 +77,8 @@ func TestAuthenticate(t *testing.T) {
 	users := fakeUsers{8: andi}
 	h := Authenticate(tokens, users)(okHandler)
 
-	validToken, _ := tokens.Issue(8)
+	validToken, _ := tokens.Issue(8, andi.TokenVersion)
+	loggedOutToken, _ := tokens.Issue(8, andi.TokenVersion-1)
 	future := time.Now().Add(time.Hour)
 
 	tests := []struct {
@@ -90,6 +93,7 @@ func TestAuthenticate(t *testing.T) {
 		{"tanda tangan salah", "Bearer " + signToken(t, "secret-lain-yang-juga-panjangnya-lebih-dari-32", "8", future), http.StatusUnauthorized},
 		{"kedaluwarsa", "Bearer " + signToken(t, testSecret, "8", time.Now().Add(-time.Minute)), http.StatusUnauthorized},
 		{"user tidak aktif/terhapus", "Bearer " + signToken(t, testSecret, "99", future), http.StatusUnauthorized},
+		{"token lama setelah logout", "Bearer " + loggedOutToken, http.StatusUnauthorized},
 		{"token valid", "Bearer " + validToken, http.StatusOK},
 		{"skema huruf kecil", "bearer " + validToken, http.StatusOK},
 	}

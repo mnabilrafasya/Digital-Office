@@ -1,4 +1,4 @@
-// Package middleware berisi middleware HTTP untuk autentikasi dan otorisasi.
+// Package middleware berisi middleware HTTP untuk autentikasi, otorisasi, dan IP klien.
 package middleware
 
 import (
@@ -12,32 +12,32 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/repository"
 )
 
-// TokenVerifier memeriksa access token dan mengembalikan user id di dalamnya
+// TokenVerifier memeriksa access token dan mengembalikan user id serta token_version di dalamnya.
 type TokenVerifier interface {
-	Verify(token string) (int64, error)
+	Verify(token string) (userID int64, tokenVersion int, err error)
 }
 
-// UserLoader memuat user aktif dari database (repository.ErrNotFound bila tidak aktif/tidak ada)
+// UserLoader memuat user aktif dari database (repository.ErrNotFound bila tidak aktif/tidak ada).
 type UserLoader interface {
 	FindActiveByID(ctx context.Context, userID int64) (*model.CurrentUser, error)
 }
 
-type ctxKey struct{}
+type currentUserKey struct{}
 
-// CurrentUser mengambil user yang login dari context (nil bila belum melewati Authenticate)
+// CurrentUser mengambil user yang login dari context (nil bila belum melewati Authenticate).
 func CurrentUser(ctx context.Context) *model.CurrentUser {
-	u, _ := ctx.Value(ctxKey{}).(*model.CurrentUser)
+	u, _ := ctx.Value(currentUserKey{}).(*model.CurrentUser)
 	return u
 }
 
-// WithCurrentUser menyimpan user ke context (dipakai Authenticate dan tes)
+// WithCurrentUser menyimpan user ke context (dipakai Authenticate dan tes).
 func WithCurrentUser(ctx context.Context, u *model.CurrentUser) context.Context {
-	return context.WithValue(ctx, ctxKey{}, u)
+	return context.WithValue(ctx, currentUserKey{}, u)
 }
 
 // Authenticate mewajibkan header "Authorization: Bearer <token>" yang valid. User dimuat
-// ulang dari database setiap request, sehingga penonaktifan user atau perubahan role
-// langsung berlaku tanpa menunggu token kedaluwarsa.
+// ulang dari database setiap request, sehingga penonaktifan user, perubahan role, dan logout
+// (token_version naik) langsung berlaku tanpa menunggu token kedaluwarsa.
 func Authenticate(tokens TokenVerifier, users UserLoader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +47,7 @@ func Authenticate(tokens TokenVerifier, users UserLoader) func(http.Handler) htt
 				return
 			}
 
-			userID, err := tokens.Verify(token)
+			userID, tokenVersion, err := tokens.Verify(token)
 			if err != nil {
 				httpx.Unauthorized(w)
 				return
@@ -60,6 +60,10 @@ func Authenticate(tokens TokenVerifier, users UserLoader) func(http.Handler) htt
 			}
 			if err != nil {
 				httpx.Internal(w, r, err)
+				return
+			}
+			if user.TokenVersion != tokenVersion {
+				httpx.Unauthorized(w)
 				return
 			}
 
@@ -87,7 +91,7 @@ func RequirePermission(code string) func(http.Handler) http.Handler {
 	}
 }
 
-// bearerToken mengambil token dari nilai header "Bearer <token>" (skema tidak peka huruf besar/kecil)
+// bearerToken mengambil token dari nilai header "Bearer <token>" (skema tidak peka huruf besar/kecil).
 func bearerToken(header string) (string, bool) {
 	scheme, token, found := strings.Cut(header, " ")
 	if !found || !strings.EqualFold(scheme, "Bearer") {

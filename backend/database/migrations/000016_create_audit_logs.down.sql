@@ -1,0 +1,7 @@
+-- 000016_create_audit_logs.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DROP TABLE IF EXISTS audit_logs;
+
+COMMIT TRANSACTION;

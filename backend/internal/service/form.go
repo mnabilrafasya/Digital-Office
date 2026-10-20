@@ -10,12 +10,13 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/repository"
 )
 
-// Kategori lookup yang boleh diminta klien (sama dengan CHECK ck_lookups_category)
+// lookupCategories adalah kategori lookup yang boleh diminta klien lewat GET /lookups.
 var lookupCategories = []string{
-	"LETTER_TYPE", "CONFIDENTIALITY", "URGENCY", "CLASSIFICATION", "LETTER_STATUS", "INBOX_STATUS",
+	model.CategoryLetterType, model.CategoryConfidentiality, model.CategoryUrgency,
+	model.CategoryClassification, model.CategoryLetterStatus, model.CategoryInboxStatus,
 }
 
-// Jenis kandidat yang bisa dicari di form Buat Surat
+// Jenis kandidat yang bisa dicari di form Buat Surat.
 const (
 	CandidateReviewer = "REVIEWER"
 	CandidateApprover = "APPROVER"
@@ -26,14 +27,18 @@ const (
 	maxCandidateLimit     = 50
 )
 
+// LookupRepository adalah query lookup untuk dropdown dan alias penerima.
 type LookupRepository interface {
 	List(ctx context.Context, companyCode, category string) ([]model.Lookup, error)
+	ListAliases(ctx context.Context, companyCode string) ([]repository.AliasRow, error)
 }
 
+// UnitRepository adalah query daftar unit.
 type UnitRepository interface {
 	List(ctx context.Context, companyCode, search string) ([]model.Unit, error)
 }
 
+// CandidateRepository adalah query kandidat reviewer/approver.
 type CandidateRepository interface {
 	ListCandidates(ctx context.Context, f repository.CandidateFilter) ([]model.Candidate, error)
 }
@@ -46,10 +51,12 @@ type FormService struct {
 	candidates CandidateRepository
 }
 
+// NewFormService membuat FormService.
 func NewFormService(lookups LookupRepository, units UnitRepository, candidates CandidateRepository) *FormService {
 	return &FormService{lookups: lookups, units: units, candidates: candidates}
 }
 
+// Lookups mengambil pilihan dropdown satu kategori.
 func (s *FormService) Lookups(ctx context.Context, user *model.CurrentUser, category string) ([]model.Lookup, error) {
 	if !slices.Contains(lookupCategories, category) {
 		return nil, invalid("Parameter category wajib salah satu dari: LETTER_TYPE, CONFIDENTIALITY, URGENCY, CLASSIFICATION, LETTER_STATUS, INBOX_STATUS")
@@ -57,12 +64,34 @@ func (s *FormService) Lookups(ctx context.Context, user *model.CurrentUser, cate
 	return s.lookups.List(ctx, user.Company.Code, category)
 }
 
+// Units mengambil unit aktif di perusahaan user, opsional dicari berdasarkan nama.
 func (s *FormService) Units(ctx context.Context, user *model.CurrentUser, q string) ([]model.Unit, error) {
 	search, err := normalizeSearch(q)
 	if err != nil {
 		return nil, err
 	}
 	return s.units.List(ctx, user.Company.Code, search)
+}
+
+// Aliases mengambil alias penerima (level jabatan) yang punya minimal satu anggota.
+func (s *FormService) Aliases(ctx context.Context, user *model.CurrentUser) ([]model.Alias, error) {
+	rows, err := s.lookups.ListAliases(ctx, user.Company.Code)
+	if err != nil {
+		return nil, err
+	}
+	out := []model.Alias{}
+	for _, r := range rows {
+		if r.MemberCount > 0 {
+			out = append(out, aliasView(r))
+		}
+	}
+	return out, nil
+}
+
+func aliasView(r repository.AliasRow) model.Alias {
+	a := r.Alias
+	a.Label = "Seluruh " + r.Name
+	return a
 }
 
 // CandidateQuery adalah parameter pencarian kandidat, apa adanya dari query string.

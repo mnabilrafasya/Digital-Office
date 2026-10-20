@@ -1,0 +1,7 @@
+-- 000004_create_permissions.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+DROP TABLE IF EXISTS permissions;
+
+COMMIT TRANSACTION;

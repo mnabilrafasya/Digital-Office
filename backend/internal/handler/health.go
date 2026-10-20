@@ -2,20 +2,33 @@ package handler
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"github.com/minio/minio-go/v7"
 )
 
-// mengecek apakah database dan storage bisa dihubungi
-type HealthHandler struct {
-	DB    *sql.DB
-	Minio *minio.Client
+// Pinger adalah komponen yang bisa dicek ketersediaannya (database, storage).
+type Pinger interface {
+	PingContext(ctx context.Context) error
 }
 
+// StoragePinger adalah storage yang bisa dicek ketersediaannya.
+type StoragePinger interface {
+	Ping(ctx context.Context) error
+}
+
+// HealthHandler mengecek apakah database dan storage bisa dihubungi.
+type HealthHandler struct {
+	db      Pinger
+	storage StoragePinger
+}
+
+// NewHealthHandler membuat HealthHandler.
+func NewHealthHandler(db Pinger, storage StoragePinger) *HealthHandler {
+	return &HealthHandler{db: db, storage: storage}
+}
+
+// Check menangani GET /health: {"database":"ok|error","storage":"ok|error"}, 503 bila ada yang error.
 func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
@@ -23,11 +36,11 @@ func (h *HealthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	result := map[string]string{"database": "ok", "storage": "ok"}
 	code := http.StatusOK
 
-	if err := h.DB.PingContext(ctx); err != nil {
+	if err := h.db.PingContext(ctx); err != nil {
 		result["database"] = "error"
 		code = http.StatusServiceUnavailable
 	}
-	if _, err := h.Minio.ListBuckets(ctx); err != nil {
+	if err := h.storage.Ping(ctx); err != nil {
 		result["storage"] = "error"
 		code = http.StatusServiceUnavailable
 	}

@@ -8,11 +8,12 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
 )
 
-// FormHandler menyediakan data untuk form Buat Surat
+// FormHandler menyediakan data untuk form Buat Surat.
 type FormHandler struct {
 	form *service.FormService
 }
 
+// NewFormHandler membuat FormHandler.
 func NewFormHandler(form *service.FormService) *FormHandler {
 	return &FormHandler{form: form}
 }
@@ -30,6 +31,16 @@ func (h *FormHandler) Lookups(w http.ResponseWriter, r *http.Request) {
 // Units menangani GET /api/v1/units?q=...
 func (h *FormHandler) Units(w http.ResponseWriter, r *http.Request) {
 	items, err := h.form.Units(r.Context(), middleware.CurrentUser(r.Context()), r.URL.Query().Get("q"))
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, items)
+}
+
+// Aliases menangani GET /api/v1/recipients/aliases
+func (h *FormHandler) Aliases(w http.ResponseWriter, r *http.Request) {
+	items, err := h.form.Aliases(r.Context(), middleware.CurrentUser(r.Context()))
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
