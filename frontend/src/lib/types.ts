@@ -16,7 +16,7 @@ export type LetterStatus =
 export type InboxStatus = "UNREAD" | "READ" | "DISPOSED" | "REDIRECTED";
 
 export type Sifat = "BIASA" | "TERBATAS" | "RAHASIA";
-export type Kecepatan = "SEGERA" | "SANGAT_SEGERA";
+export type Kecepatan = "BIASA" | "SEGERA" | "SANGAT_SEGERA";
 
 // ─── Workflow ───────────────────────────────
 

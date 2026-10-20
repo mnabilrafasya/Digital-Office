@@ -66,7 +66,7 @@ export function StatusTabs({ counts, activeTab, onTabChange }: Props) {
             {tab.label}
             <span
               className={cn(
-                "inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold",
+                "inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-xs font-semibold",
                 isActive
                   ? "bg-primary text-white"
                   : "bg-panel text-text-muted"

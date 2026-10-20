@@ -81,7 +81,7 @@ function SkeletonRow() {
     <tr>
       {Array.from({ length: 9 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <div className="h-3 bg-panel rounded animate-pulse w-full max-w-[120px]" />
+          <div className="h-3 bg-panel rounded animate-pulse w-full max-w-30" />
         </td>
       ))}
     </tr>
@@ -167,7 +167,7 @@ export function LettersTable({ items, loading, error, isFiltered, onRetry }: Pro
   return (
     <div className="bg-surface rounded-xl border border-border overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[900px]">
+        <table className="w-full text-sm min-w-225">
           <thead>
             <tr className="border-b border-border bg-panel/50">
               {HEADERS.map((h) => (
@@ -210,7 +210,7 @@ export function LettersTable({ items, loading, error, isFiltered, onRetry }: Pro
                   </td>
 
                   {/* Judul */}
-                  <td className="px-4 py-3 max-w-[220px]">
+                  <td className="px-4 py-3 max-w-55">
                     <div className="flex items-start gap-1.5">
                       {isReturned && item.lastReturnNote && (
                         <span
@@ -229,7 +229,7 @@ export function LettersTable({ items, loading, error, isFiltered, onRetry }: Pro
                   </td>
 
                   {/* Pengirim */}
-                  <td className="px-4 py-3 text-text-muted text-xs max-w-[140px]">
+                  <td className="px-4 py-3 text-text-muted text-xs max-w-35">
                     <span className="line-clamp-2">{item.senderUnit.name}</span>
                   </td>
 
@@ -279,7 +279,7 @@ export function LettersTable({ items, loading, error, isFiltered, onRetry }: Pro
                   </td>
 
                   {/* Tahap Saat Ini */}
-                  <td className="px-4 py-3 text-xs text-text-muted max-w-[160px]">
+                  <td className="px-4 py-3 text-xs text-text-muted max-w-40">
                     <span className="line-clamp-2">{getCurrentStageLabel(item)}</span>
                   </td>
 

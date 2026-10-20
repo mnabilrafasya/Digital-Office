@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { MailCheck } from "lucide-react";
 import { LoginForm } from "@/components/auth/login-form";
@@ -19,7 +20,10 @@ export default function LoginPage() {
           Sistem Persuratan Digital Perusahaan Pupuk
         </p>
       </div>
-      <LoginForm />
+      {/* Suspense wajib karena LoginForm memakai useSearchParams() */}
+      <Suspense fallback={<div className="w-full max-w-120 h-64 bg-surface border border-border rounded-xl animate-pulse" />}>
+        <LoginForm />
+      </Suspense>
     </>
   );
 }

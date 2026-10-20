@@ -40,7 +40,7 @@ export const buatSuratSchema = z.object({
     .min(1, { message: "Klasifikasi arsip wajib dipilih." }),
 
   kecepatan: z
-    .enum(["SEGERA", "SANGAT_SEGERA"], {
+    .enum(["BIASA", "SEGERA", "SANGAT_SEGERA"], {
       message: "Kecepatan tanggapan wajib dipilih.",
     }),
 
@@ -88,9 +88,11 @@ export const loginSchema = z.object({
   remember: z.boolean(),
 });
 
-/** Nilai awal form Buat Surat */
+/** Nilai awal form Buat Surat.
+ * letterTypeId dikosongkan: ID dari backend berbeda dengan mock,
+ * akan diisi otomatis saat lookup LETTER_TYPE selesai dimuat. */
 export const BUAT_SURAT_DEFAULTS: Partial<BuatSuratFormValues> = {
-  letterTypeId: "lt-01",
+  letterTypeId: "",
   sifat: "BIASA",
   title: "",
   specialNote: "",
