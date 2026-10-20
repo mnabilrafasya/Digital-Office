@@ -3,6 +3,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -18,4 +19,14 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`, `[`, `\[`
 // Pola ini wajib dipakai bersama `ESCAPE '\'` di query.
 func ContainsPattern(q string) string {
 	return "%" + likeEscaper.Replace(q) + "%"
+}
+
+// jsonIDs mengubah daftar ID menjadi array JSON untuk dibaca query dengan OPENJSON:
+//
+//	WHERE id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))
+//
+// Satu parameter untuk berapa pun jumlah ID, tanpa menyusun teks query secara dinamis.
+func jsonIDs(ids []int64) string {
+	b, _ := json.Marshal(ids) // []int64 selalu berhasil di-marshal
+	return string(b)
 }

@@ -120,13 +120,11 @@ type CandidateFilter struct {
 	Limit          int
 }
 
-// ListCandidates mengambil user aktif di satu perusahaan yang role-nya punya permission tertentu
-func (r *UserRepository) ListCandidates(ctx context.Context, f CandidateFilter) ([]model.Candidate, error) {
-	q := `
-SELECT TOP (@limit)
-       u.id, u.name, u.employee_number,
-       p.name  AS position_name,
-       un.name AS unit_name
+// eligibleUserSQL adalah syarat user yang boleh dipilih sebagai reviewer/approver: user, jabatan,
+// unit (di perusahaan @companyCode), dan role aktif, serta role punya permission @permissionCode.
+// Dipakai pencarian kandidat dan validasi simpan surat, sehingga yang muncul di dropdown pasti
+// lolos validasi dan sebaliknya.
+const eligibleUserSQL = `
 FROM users u
 JOIN positions p ON p.id = u.position_id AND p.is_active = 1 AND p.deleted_at IS NULL
 JOIN units un    ON un.id = p.unit_id   AND un.is_active = 1 AND un.deleted_at IS NULL
@@ -137,6 +135,14 @@ WHERE un.company_code = @companyCode
         SELECT 1 FROM permissions pm
         WHERE pm.role_id = u.role_id AND pm.code = @permissionCode AND pm.deleted_at IS NULL
   )`
+
+// ListCandidates mengambil user aktif di satu perusahaan yang role-nya punya permission tertentu
+func (r *UserRepository) ListCandidates(ctx context.Context, f CandidateFilter) ([]model.Candidate, error) {
+	q := `
+SELECT TOP (@limit)
+       u.id, u.name, u.employee_number,
+       p.name  AS position_name,
+       un.name AS unit_name` + eligibleUserSQL
 	args := []any{
 		sql.Named("limit", f.Limit),
 		sql.Named("companyCode", f.CompanyCode),

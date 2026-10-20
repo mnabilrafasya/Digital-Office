@@ -19,6 +19,7 @@ type RouterDeps struct {
 	Health *handler.HealthHandler
 	Auth   *handler.AuthHandler
 	Form   *handler.FormHandler
+	Letter *handler.LetterHandler
 
 	Tokens middleware.TokenVerifier
 	Users  middleware.UserLoader
@@ -60,6 +61,15 @@ func NewRouter(d RouterDeps) http.Handler {
 			r.Get("/units", d.Form.Units)
 			r.With(middleware.RequirePermission(permission.LetterCreate)).
 				Get("/users/candidates", d.Form.Candidates)
+			r.With(middleware.RequirePermission(permission.LetterCreate)).
+				Get("/recipients/aliases", d.Letter.Aliases)
+
+			r.Route("/letters", func(r chi.Router) {
+				r.With(middleware.RequirePermission(permission.LetterCreate)).Post("/", d.Letter.Create)
+				// Akses per surat (drafter/peserta) diperiksa service, bukan lewat permission
+				r.Get("/{letterId}", d.Letter.Get)
+				r.Put("/{letterId}", d.Letter.Update)
+			})
 		})
 	})
 	return r
