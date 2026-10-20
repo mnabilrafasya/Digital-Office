@@ -110,7 +110,8 @@ const (
 	selectParticipantsSQL = `
 SELECT id, user_id, role, step_order
 FROM letter_participants
-WHERE letter_id = @letterId AND deleted_at IS NULL`
+WHERE letter_id = @letterId AND deleted_at IS NULL
+ORDER BY role DESC, step_order` // REVIEWER dulu, lalu APPROVER
 
 	insertParticipantsSQL = `
 INSERT INTO letter_participants (letter_id, user_id, role, step_order)
@@ -125,7 +126,8 @@ WHERE letter_id = @letterId AND deleted_at IS NULL
 	selectRecipientsSQL = `
 SELECT id, recipient_type, ISNULL(recipient_unit_id, 0), ISNULL(alias_level_id, 0), sort_order
 FROM letter_recipients
-WHERE letter_id = @letterId AND deleted_at IS NULL`
+WHERE letter_id = @letterId AND deleted_at IS NULL
+ORDER BY sort_order, id`
 
 	insertRecipientsSQL = `
 INSERT INTO letter_recipients (letter_id, recipient_type, recipient_unit_id, alias_level_id, sort_order)
@@ -144,25 +146,66 @@ WHERE letter_id = @letterId AND deleted_at IS NULL
   AND id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))`
 )
 
-func (r *LetterRepository) saveParticipants(ctx context.Context, letterID int64, d *model.LetterDraft) error {
+// loadParticipants membaca peserta aktif: reviewer urut step, lalu approver.
+func (r *LetterRepository) loadParticipants(ctx context.Context, letterID int64) ([]participant, error) {
 	rows, err := r.q.QueryContext(ctx, selectParticipantsSQL, sql.Named("letterId", letterID))
 	if err != nil {
-		return fmt.Errorf("mengambil peserta surat: %w", err)
+		return nil, fmt.Errorf("mengambil peserta surat: %w", err)
 	}
-	var current []participant
+	defer rows.Close()
+	var out []participant
 	for rows.Next() {
 		var p participant
 		if err := rows.Scan(&p.ID, &p.UserID, &p.Role, &p.Step); err != nil {
-			rows.Close()
-			return fmt.Errorf("membaca peserta surat: %w", err)
+			return nil, fmt.Errorf("membaca peserta surat: %w", err)
 		}
-		current = append(current, p)
+		out = append(out, p)
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("membaca peserta surat: %w", err)
+		return nil, fmt.Errorf("membaca peserta surat: %w", err)
 	}
+	return out, nil
+}
 
+// loadRecipients membaca penerima aktif sesuai urutan simpan.
+func (r *LetterRepository) loadRecipients(ctx context.Context, letterID int64) ([]recipient, error) {
+	rows, err := r.q.QueryContext(ctx, selectRecipientsSQL, sql.Named("letterId", letterID))
+	if err != nil {
+		return nil, fmt.Errorf("mengambil penerima surat: %w", err)
+	}
+	defer rows.Close()
+	var out []recipient
+	for rows.Next() {
+		var p recipient
+		if err := rows.Scan(&p.ID, &p.Type, &p.UnitID, &p.AliasID, &p.Sort); err != nil {
+			return nil, fmt.Errorf("membaca penerima surat: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("membaca penerima surat: %w", err)
+	}
+	return out, nil
+}
+
+// draftParticipants mengubah baris peserta (urut dari loadParticipants) menjadi reviewer dan approver draf.
+func draftParticipants(ps []participant) model.LetterDraft {
+	var d model.LetterDraft
+	for _, p := range ps {
+		if p.Role == model.RoleApprover {
+			d.ApproverID = &p.UserID
+		} else {
+			d.ReviewerIDs = append(d.ReviewerIDs, p.UserID)
+		}
+	}
+	return d
+}
+
+func (r *LetterRepository) saveParticipants(ctx context.Context, letterID int64, d *model.LetterDraft) error {
+	current, err := r.loadParticipants(ctx, letterID)
+	if err != nil {
+		return err
+	}
 	deleteIDs, insert := planParticipants(current, wantParticipants(d))
 	if len(deleteIDs) > 0 {
 		if err := r.execRows(ctx, deleteParticipantsSQL, letterID, "ids", deleteIDs); err != nil {
@@ -178,22 +221,9 @@ func (r *LetterRepository) saveParticipants(ctx context.Context, letterID int64,
 }
 
 func (r *LetterRepository) saveRecipients(ctx context.Context, letterID int64, refs []model.RecipientRef) error {
-	rows, err := r.q.QueryContext(ctx, selectRecipientsSQL, sql.Named("letterId", letterID))
+	current, err := r.loadRecipients(ctx, letterID)
 	if err != nil {
-		return fmt.Errorf("mengambil penerima surat: %w", err)
-	}
-	var current []recipient
-	for rows.Next() {
-		var p recipient
-		if err := rows.Scan(&p.ID, &p.Type, &p.UnitID, &p.AliasID, &p.Sort); err != nil {
-			rows.Close()
-			return fmt.Errorf("membaca penerima surat: %w", err)
-		}
-		current = append(current, p)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("membaca penerima surat: %w", err)
+		return err
 	}
 
 	want := make([]recipient, len(refs))

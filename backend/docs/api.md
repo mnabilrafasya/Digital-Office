@@ -92,8 +92,13 @@ Login dengan NIK + password bersifat sementara sampai SSO tersedia.
 | GET | `/api/v1/users/candidates` | Ya | `LETTER_CREATE` |
 | GET | `/api/v1/recipients/aliases` | Ya | `LETTER_CREATE` |
 | POST | `/api/v1/letters` | Ya | `LETTER_CREATE` |
+| GET | `/api/v1/letters` | Ya | - |
 | GET | `/api/v1/letters/{letterId}` | Ya | drafter atau peserta surat |
 | PUT | `/api/v1/letters/{letterId}` | Ya | drafter |
+| GET | `/api/v1/letters/{letterId}/history` | Ya | drafter atau peserta surat |
+| POST | `/api/v1/letters/{letterId}/submit` | Ya | drafter |
+| POST | `/api/v1/letters/{letterId}/approve` | Ya | reviewer yang sedang memegang surat (`LETTER_REVIEW`) |
+| POST | `/api/v1/letters/{letterId}/return` | Ya | reviewer (`LETTER_REVIEW`) atau approver (`LETTER_APPROVE`) yang sedang memegang surat |
 
 Angka ID di contoh response hanya ilustrasi.
 
@@ -357,7 +362,11 @@ Detail surat beserta header `ETag`.
 }
 ```
 
-- `allowedActions` adalah tombol yang boleh ditampilkan untuk user yang sedang melihat. Saat ini hanya `EDIT` (drafter, status `DRAFT` atau `RETURNED_TO_DRAFTER`).
+- `allowedActions` adalah tombol yang boleh ditampilkan untuk user yang sedang melihat: `EDIT` dan `SUBMIT` (drafter, status `DRAFT` atau `RETURNED_TO_DRAFTER`), `APPROVE` dan `RETURN` (penerima tugas saat ini). Tombol disembunyikan bila permission perannya sudah dicabut.
+- `steps[].state`: `DONE`, `ACTIVE` (sedang di tahap ini), atau `PENDING`.
+- `currentAssignee`: orang yang sedang memegang surat (`null` saat draf).
+- `lastReturnNote`: catatan pengembalian terakhir, hanya terisi saat status `RETURNED_TO_DRAFTER` atau `RETURNED_TO_REVIEWER`.
+- Kalau yang membuka adalah `currentAssignee`, server mencatat aksi `READ` di riwayat (sekali sejak perpindahan terakhir).
 - `resolvedHead` (pimpinan unit penerima) baru terisi setelah surat ditandatangani.
 - Waktu dikirim dalam zona `APP_TIMEZONE`.
 
@@ -377,6 +386,112 @@ Error:
 | 409 | `INVALID_STATE` | Surat sedang diproses (bukan `DRAFT`/`RETURNED_TO_DRAFTER`) |
 | 412 | `VERSION_CONFLICT` | `If-Match` bukan versi terbaru |
 | 428 | `PRECONDITION_REQUIRED` | `If-Match` tidak dikirim |
+
+### Alur persetujuan
+
+| Aksi | Pelaku | Dari status | Ke status | Surat berpindah ke |
+|---|---|---|---|---|
+| `SUBMIT` | drafter | `DRAFT` | `IN_REVIEW` | reviewer 1 |
+| `SUBMIT` | drafter | `RETURNED_TO_DRAFTER` | `IN_REVIEW` | reviewer 1 (**diulang dari awal**) |
+| `APPROVE` | reviewer, bukan terakhir | `IN_REVIEW` | `IN_REVIEW` | reviewer berikutnya |
+| `APPROVE` | reviewer terakhir | `IN_REVIEW` | `IN_APPROVAL` | approver |
+| `RETURN` | reviewer | `IN_REVIEW` | `RETURNED_TO_DRAFTER` | drafter |
+| `RETURN` | approver | `IN_APPROVAL` | `RETURNED_TO_REVIEWER` | reviewer terakhir yang meneruskan |
+| `APPROVE` | reviewer yang dikembalikan | `RETURNED_TO_REVIEWER` | `IN_APPROVAL` | approver (**langsung**, tidak mengulang reviewer) |
+| `RETURN` | reviewer yang dikembalikan | `RETURNED_TO_REVIEWER` | `RETURNED_TO_DRAFTER` | drafter |
+
+Selain `SUBMIT`, hanya orang yang sedang memegang surat (`currentAssignee`) yang bisa beraksi. Setiap aksi tercatat di riwayat dan di audit (beserta IP), dalam transaksi yang sama.
+
+#### POST `/api/v1/letters/{letterId}/submit` · `/approve` · `/return`
+
+| Endpoint | Body |
+|---|---|
+| `submit` | tidak ada |
+| `approve` | opsional: `{ "note": "..." }` |
+| `return` | wajib: `{ "note": "..." }` (1 sampai 1000 karakter) |
+
+Response **200** berisi detail surat terbaru (format sama dengan `GET /letters/{letterId}`) dan `ETag` baru.
+
+Saat `submit`, server memeriksa:
+- Isi surat lengkap.
+- Semua rujukan masih valid (misalnya reviewer belum dinonaktifkan).
+- Setiap unit penerima punya pimpinan aktif.
+- Setiap alias punya anggota.
+
+Di setiap aksi, server juga memastikan orang berikutnya masih aktif dan berwenang.
+
+| HTTP | `code` | Kapan |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Surat belum lengkap, rujukan tidak valid, catatan `return` kosong atau lebih dari 1000 karakter |
+| 403 | `FORBIDDEN` | Permission peran sudah dicabut (`LETTER_REVIEW` / `LETTER_APPROVE`) |
+| 404 | `NOT_FOUND` | Surat tidak ada atau user bukan drafter/peserta |
+| 409 | `INVALID_STATE` | Bukan giliran user, status sudah berubah (misalnya tombol diklik dua kali), penerima surat tidak bisa dijangkau, atau orang berikutnya sudah nonaktif |
+
+Tombol yang diklik dua kali aman: request kedua menunggu request pertama selesai, lalu ditolak dengan `409` "Surat sudah diproses atau bukan giliran Anda...". Front-end cukup memuat ulang detail.
+
+---
+
+### GET `/api/v1/letters?scope=...&status=...&q=...&page=...&pageSize=...`
+
+| Parameter | Keterangan |
+|---|---|
+| `scope` | `mine` (default): surat yang saya buat. `tasks`: surat yang sedang menunggu tindakan saya (`IN_REVIEW`, `IN_APPROVAL`, `RETURNED_TO_REVIEWER`, `RETURNED_TO_DRAFTER`) |
+| `status` | Opsional, boleh beberapa dipisah koma, contoh `IN_REVIEW,IN_APPROVAL` |
+| `q` | Cari di perihal dan nomor surat (maksimal 100 karakter) |
+| `page`, `pageSize` | Default 1 dan 20, `pageSize` maksimal 100 |
+
+Urut dari yang terakhir diubah.
+
+```json
+{
+  "data": [
+    {
+      "id": "00b5adec-...", "letterNumber": null, "title": "Undangan Rapat Koordinasi", "status": "IN_REVIEW",
+      "letterType": { "id": "7", "code": "NOTA_DINAS", "name": "Nota Dinas" },
+      "confidentiality": { }, "urgency": { },
+      "senderUnit": { "id": "5", "code": "PA", "name": "..." },
+      "currentAssignee": { "id": "7", "name": "Dewi Lestari, S.Kom.", "positionName": "..." },
+      "currentStep": { "role": "REVIEWER", "order": 2 },
+      "createdAt": "...", "updatedAt": "..."
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 20, "total": 1 }
+}
+```
+
+`currentStep` bernilai `null` bila surat tidak sedang di reviewer atau approver.
+
+Error: `400 VALIDATION_ERROR` (`scope`, `status`, `page`, atau `pageSize` tidak valid), `401 UNAUTHORIZED`.
+
+---
+
+### GET `/api/v1/letters/{letterId}/history`
+
+Riwayat aksi surat, urut dari yang paling lama. Bisa dilihat drafter dan peserta.
+
+```json
+{
+  "data": [
+    { "action": "SUBMIT", "actorRole": "DRAFTER",
+      "actor": { "id": "8", "name": "Andi Kurniawan", "positionName": "..." },
+      "target": { "id": "10", "name": "Fajar Nugroho", "positionName": "..." },
+      "fromStatus": "DRAFT", "toStatus": "IN_REVIEW", "note": null, "versionNumber": 0,
+      "createdAt": "..." }
+  ]
+}
+```
+
+`action`: `SUBMIT`, `APPROVE`, `RETURN`, atau `READ` (penerima tugas membuka surat). `target` adalah orang yang menerima surat setelah aksi.
+
+Error: `401 UNAUTHORIZED`, `404 NOT_FOUND`.
+
+---
+
+### Batasan Sprint 2 (sementara)
+
+- Tanda tangan (`SIGN`), nomor surat, dan pengiriman ke inbox penerima belum tersedia. Surat bisa sampai `IN_APPROVAL`, dan approver baru bisa mengembalikannya.
+- Dokumen surat (versi) dan lampiran belum ada, jadi belum diwajibkan saat `submit`.
+- Draf belum bisa dihapus.
 
 ## 5. Akun uji (data dummy development)
 

@@ -26,7 +26,7 @@ func (s *LetterService) checkRefs(ctx context.Context, companyCode string, d *mo
 			unitIDs = append(unitIDs, r.UnitID)
 		}
 	}
-	units, err := s.refs.ActiveUnitIDs(ctx, companyCode, unitIDs)
+	units, err := s.repos.Refs.ActiveUnitIDs(ctx, companyCode, unitIDs)
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (s *LetterService) checkRefs(ctx context.Context, companyCode string, d *mo
 		return invalid("Unit penerima tidak ditemukan atau tidak aktif")
 	}
 
-	reviewers, err := s.refs.EligibleUserIDs(ctx, companyCode, permission.LetterReview, d.ReviewerIDs)
+	reviewers, err := s.repos.Refs.EligibleUserIDs(ctx, companyCode, permission.LetterReview, d.ReviewerIDs)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func (s *LetterService) checkRefs(ctx context.Context, companyCode string, d *mo
 		return invalid("Reviewer tidak ditemukan, tidak aktif, atau tidak berwenang memaraf surat")
 	}
 	if d.ApproverID != nil {
-		approver, err := s.refs.EligibleUserIDs(ctx, companyCode, permission.LetterApprove, []int64{*d.ApproverID})
+		approver, err := s.repos.Refs.EligibleUserIDs(ctx, companyCode, permission.LetterApprove, []int64{*d.ApproverID})
 		if err != nil {
 			return err
 		}
@@ -83,7 +83,7 @@ func (s *LetterService) checkLookups(ctx context.Context, companyCode string, d 
 	for i, w := range wants {
 		ids[i] = w.id
 	}
-	categories, err := s.refs.LookupCategories(ctx, companyCode, ids)
+	categories, err := s.repos.Refs.LookupCategories(ctx, companyCode, ids)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (s *LetterService) checkTemplate(ctx context.Context, companyCode string, d
 	if d.TemplateID == nil {
 		return nil
 	}
-	typeID, err := s.refs.TemplateLetterType(ctx, companyCode, *d.TemplateID)
+	typeID, err := s.repos.Refs.TemplateLetterType(ctx, companyCode, *d.TemplateID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return invalid("Template tidak ditemukan atau tidak aktif")
 	}

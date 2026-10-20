@@ -59,18 +59,21 @@ type RecipientRef struct {
 	AliasLevelID int64
 }
 
-// LetterLock adalah data surat yang dibaca sambil mengunci barisnya untuk diubah.
+// LetterLock adalah data surat yang dibaca sambil mengunci barisnya untuk diubah. ID user 0 = kosong.
 type LetterLock struct {
-	ID         int64
-	DrafterID  int64
-	Status     string
-	RowVersion []byte
+	ID            int64
+	DrafterID     int64
+	AssigneeID    int64
+	ForwardedByID int64
+	Status        string
+	RowVersion    []byte
 }
 
 // LetterDetail adalah detail surat untuk pembuat dan peserta (Lampiran A).
 type LetterDetail struct {
 	ID              string           `json:"id"`
 	InternalID      int64            `json:"-"`
+	ForwardedByID   int64            `json:"-"` // 0 = kosong
 	RowVersion      []byte           `json:"-"`
 	Status          string           `json:"status"`
 	LetterNumber    *string          `json:"letterNumber"`
@@ -199,4 +202,40 @@ type Attachment struct {
 		ID   int64  `json:"id,string"`
 		Name string `json:"name"`
 	} `json:"uploadedBy"`
+}
+
+// LetterListItem adalah satu baris di daftar surat.
+type LetterListItem struct {
+	ID              string     `json:"id"`
+	LetterNumber    *string    `json:"letterNumber"`
+	Title           *string    `json:"title"`
+	Status          string     `json:"status"`
+	LetterType      *LookupRef `json:"letterType"`
+	Confidentiality *LookupRef `json:"confidentiality"`
+	Urgency         *LookupRef `json:"urgency"`
+	SenderUnit      UnitRef    `json:"senderUnit"`
+	CurrentAssignee *PersonRef `json:"currentAssignee"`
+	CurrentStep     *StepRef   `json:"currentStep"`
+	AssigneeStep    int        `json:"-"` // step reviewer milik assignee; 0 bila assignee bukan reviewer
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
+// StepRef menunjuk tahap yang sedang berjalan.
+type StepRef struct {
+	Role  string `json:"role"`
+	Order int    `json:"order"`
+}
+
+// LetterAction adalah satu baris riwayat surat.
+type LetterAction struct {
+	Action        string     `json:"action"`
+	ActorRole     string     `json:"actorRole"`
+	Actor         PersonRef  `json:"actor"`
+	Target        *PersonRef `json:"target"`
+	FromStatus    *string    `json:"fromStatus"`
+	ToStatus      string     `json:"toStatus"`
+	Note          *string    `json:"note"`
+	VersionNumber *int       `json:"versionNumber"`
+	CreatedAt     time.Time  `json:"createdAt"`
 }

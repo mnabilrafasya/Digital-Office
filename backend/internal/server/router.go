@@ -65,10 +65,18 @@ func NewRouter(d RouterDeps) http.Handler {
 				Get("/recipients/aliases", d.Letter.Aliases)
 
 			r.Route("/letters", func(r chi.Router) {
+				r.Get("/", d.Letter.List)
 				r.With(middleware.RequirePermission(permission.LetterCreate)).Post("/", d.Letter.Create)
-				// Akses per surat (drafter/peserta) diperiksa service, bukan lewat permission
-				r.Get("/{letterId}", d.Letter.Get)
-				r.Put("/{letterId}", d.Letter.Update)
+
+				// Akses per surat (drafter/peserta) dan permission peran diperiksa service
+				r.Route("/{letterId}", func(r chi.Router) {
+					r.Get("/", d.Letter.Get)
+					r.Put("/", d.Letter.Update)
+					r.Get("/history", d.Letter.History)
+					r.Post("/submit", d.Letter.Submit)
+					r.Post("/approve", d.Letter.Approve)
+					r.Post("/return", d.Letter.Return)
+				})
 			})
 		})
 	})

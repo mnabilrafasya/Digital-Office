@@ -10,9 +10,10 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/model"
 )
 
-// FindDetail memuat detail surat milik companyCode (pengecekan peserta adalah tugas service). Data dibaca dengan
-// 3 query: surat, peserta, penerima. ETag diambil dari query pertama, jadi kalau ada perubahan di
-// sela-selanya klien hanya akan mendapat 412 saat menyimpan (aman, tidak menimpa).
+// FindDetail memuat detail surat milik companyCode (pengecekan peserta adalah tugas service). Data
+// dibaca dengan 3 query: surat, peserta, penerima. ETag diambil dari query pertama, jadi kalau ada
+// perubahan di sela-selanya klien hanya akan mendapat 412 saat menyimpan (aman, tidak menimpa).
+// LastReturnNote berisi catatan RETURN terakhir apa pun statusnya; service yang menyaringnya.
 func (r *LetterRepository) FindDetail(ctx context.Context, companyCode, uuid string) (*model.LetterDetail, error) {
 	d, err := r.findLetter(ctx, companyCode, uuid)
 	if err != nil {
@@ -52,7 +53,10 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        tp.id, tp.name,
        su.id, su.code, COALESCE(l.sender_unit_name, su.name),
        d.id, d.name, dp.name,
-       a.id, a.name, ap.name,
+       a.id, a.name, ap.name, ISNULL(l.forwarded_by_id, 0),
+       (SELECT TOP 1 ra.note FROM letter_actions ra
+        WHERE ra.letter_id = l.id AND ra.action = 'RETURN' AND ra.deleted_at IS NULL
+        ORDER BY ra.id DESC),
        l.current_version_number, l.created_at, l.updated_at
 FROM letters l
 JOIN units su               ON su.id = l.sender_unit_id
@@ -82,7 +86,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		&templateID, &templateName,
 		&d.SenderUnit.ID, &d.SenderUnit.Code, &d.SenderUnit.Name,
 		&d.Drafter.ID, &d.Drafter.Name, &d.Drafter.PositionName,
-		&assigneeID, &assigneeName, &assigneePos,
+		&assigneeID, &assigneeName, &assigneePos, &d.ForwardedByID, &d.LastReturnNote,
 		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -69,11 +69,11 @@ func run() error {
 	tokens := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
 	authService := service.NewAuthService(users, tokens, passwords, limiter)
 	formService := service.NewFormService(repository.NewLookupRepository(conn), repository.NewUnitRepository(conn), users)
-	letterService := service.NewLetterService(
-		db.NewRunner(conn, deadlockAttempts), conn,
-		func(q db.DBTX) service.LetterStore { return repository.NewLetterRepository(q) },
-		repository.NewLetterRefRepository(conn), cfg.Location,
-	)
+	letterService := service.NewLetterService(db.NewRunner(conn, deadlockAttempts), conn, service.LetterRepos{
+		Letters: func(q db.DBTX) service.LetterStore { return repository.NewLetterRepository(q) },
+		Audit:   func(q db.DBTX) service.AuditStore { return repository.NewAuditRepository(q) },
+		Refs:    repository.NewLetterRefRepository(conn),
+	}, cfg.Location)
 
 	router := server.NewRouter(server.RouterDeps{
 		Health:            handler.NewHealthHandler(conn, files),

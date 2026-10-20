@@ -84,12 +84,59 @@ func (r *LetterRefRepository) EligibleUserIDs(ctx context.Context, companyCode, 
 	if len(ids) == 0 {
 		return map[int64]bool{}, nil
 	}
-	const q = "SELECT u.id" + eligibleUserSQL + "\n  AND u.id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))"
+	const q = "SELECT u.id" + eligibleUserSQL + `
+  AND u.id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))`
 	return r.idSet(ctx, "memeriksa reviewer/approver", q,
 		sql.Named("ids", jsonIDs(ids)),
 		sql.Named("companyCode", companyCode),
 		sql.Named("permissionCode", permissionCode),
 	)
+}
+
+// ActiveUserIDs mengembalikan user aktif (activeUserSQL) di antara ids, tanpa syarat permission.
+func (r *LetterRefRepository) ActiveUserIDs(ctx context.Context, companyCode string, ids []int64) (map[int64]bool, error) {
+	if len(ids) == 0 {
+		return map[int64]bool{}, nil
+	}
+	const q = "SELECT u.id" + activeUserSQL + `
+  AND u.id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))`
+	return r.idSet(ctx, "memeriksa user aktif", q, sql.Named("ids", jsonIDs(ids)), sql.Named("companyCode", companyCode))
+}
+
+// UnreachableRecipients mengembalikan penerima yang saat ini tidak bisa menerima surat: nama unit
+// yang tidak punya pimpinan aktif, dan label alias yang tidak punya anggota.
+func (r *LetterRefRepository) UnreachableRecipients(ctx context.Context, companyCode string, unitIDs, aliasIDs []int64) (units, aliases []string, err error) {
+	if len(unitIDs) > 0 {
+		const q = `
+SELECT un.name
+FROM units un
+WHERE un.id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids)) AND un.company_code = @companyCode
+  AND NOT EXISTS (
+        SELECT 1
+        FROM positions p
+        JOIN users u ON u.position_id = p.id AND u.is_active = 1 AND u.deleted_at IS NULL
+        WHERE p.unit_id = un.id AND p.is_unit_head = 1 AND p.is_active = 1 AND p.deleted_at IS NULL)
+ORDER BY un.name`
+		if units, err = r.names(ctx, q, unitIDs, companyCode); err != nil {
+			return nil, nil, fmt.Errorf("memeriksa pimpinan unit penerima: %w", err)
+		}
+	}
+	if len(aliasIDs) > 0 {
+		const q = `
+SELECT lv.name
+FROM lookups lv
+WHERE lv.id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids)) AND lv.company_code = @companyCode
+  AND ` + aliasMemberCountSQL + ` = 0
+ORDER BY lv.sort_order`
+		names, err := r.names(ctx, q, aliasIDs, companyCode)
+		if err != nil {
+			return nil, nil, fmt.Errorf("memeriksa anggota alias penerima: %w", err)
+		}
+		for _, n := range names {
+			aliases = append(aliases, AliasLabel(n))
+		}
+	}
+	return units, aliases, nil
 }
 
 // TemplateLetterType mengembalikan jenis surat template aktif milik companyCode
@@ -166,4 +213,21 @@ func (r *LetterRefRepository) idSet(ctx context.Context, what, q string, args ..
 		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return out, nil
+}
+
+func (r *LetterRefRepository) names(ctx context.Context, q string, ids []int64, companyCode string) ([]string, error) {
+	rows, err := r.q.QueryContext(ctx, q, sql.Named("ids", jsonIDs(ids)), sql.Named("companyCode", companyCode))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
 }

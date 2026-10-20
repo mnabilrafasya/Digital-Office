@@ -120,17 +120,20 @@ type CandidateFilter struct {
 	Limit          int
 }
 
-// eligibleUserSQL adalah syarat user yang boleh dipilih sebagai reviewer/approver: user, jabatan,
-// unit (di perusahaan @companyCode), dan role aktif, serta role punya permission @permissionCode.
-// Dipakai pencarian kandidat dan validasi simpan surat, sehingga yang muncul di dropdown pasti
-// lolos validasi dan sebaliknya.
-const eligibleUserSQL = `
+// activeUserSQL adalah syarat user aktif di perusahaan @companyCode: user, jabatan, unit, dan role
+// semuanya aktif (user seperti ini bisa login dan menerima tugas surat).
+const activeUserSQL = `
 FROM users u
 JOIN positions p ON p.id = u.position_id AND p.is_active = 1 AND p.deleted_at IS NULL
 JOIN units un    ON un.id = p.unit_id   AND un.is_active = 1 AND un.deleted_at IS NULL
 JOIN roles r     ON r.id = u.role_id    AND r.is_active = 1 AND r.deleted_at IS NULL
 WHERE un.company_code = @companyCode
-  AND u.is_active = 1 AND u.deleted_at IS NULL
+  AND u.is_active = 1 AND u.deleted_at IS NULL`
+
+// eligibleUserSQL adalah syarat user yang boleh dipilih sebagai reviewer/approver: user aktif yang
+// role-nya punya permission @permissionCode. Dipakai pencarian kandidat, validasi simpan surat, dan
+// alur persetujuan, sehingga yang muncul di dropdown pasti lolos validasi dan sebaliknya.
+const eligibleUserSQL = activeUserSQL + `
   AND EXISTS (
         SELECT 1 FROM permissions pm
         WHERE pm.role_id = u.role_id AND pm.code = @permissionCode AND pm.deleted_at IS NULL
