@@ -5,15 +5,18 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/model"
 )
 
+// LookupRepository berisi query tabel lookups.
 type LookupRepository struct {
-	db *sql.DB
+	q db.DBTX
 }
 
-func NewLookupRepository(db *sql.DB) *LookupRepository {
-	return &LookupRepository{db: db}
+// NewLookupRepository membuat LookupRepository di atas koneksi atau transaksi.
+func NewLookupRepository(q db.DBTX) *LookupRepository {
+	return &LookupRepository{q: q}
 }
 
 // List mengambil lookup aktif satu kategori: milik semua perusahaan (company_code NULL)
@@ -27,7 +30,7 @@ WHERE category = @category
   AND (company_code IS NULL OR company_code = @companyCode)
 ORDER BY sort_order, name`
 
-	rows, err := r.db.QueryContext(ctx, q,
+	rows, err := r.q.QueryContext(ctx, q,
 		sql.Named("category", category),
 		sql.Named("companyCode", companyCode),
 	)

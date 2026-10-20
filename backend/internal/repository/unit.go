@@ -5,15 +5,18 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/model"
 )
 
+// UnitRepository berisi query tabel units.
 type UnitRepository struct {
-	db *sql.DB
+	q db.DBTX
 }
 
-func NewUnitRepository(db *sql.DB) *UnitRepository {
-	return &UnitRepository{db: db}
+// NewUnitRepository membuat UnitRepository di atas koneksi atau transaksi.
+func NewUnitRepository(q db.DBTX) *UnitRepository {
+	return &UnitRepository{q: q}
 }
 
 // List mengambil unit aktif milik satu perusahaan beserta nama jabatan pimpinannya.
@@ -38,7 +41,7 @@ WHERE un.company_code = @companyCode
 	}
 	q += "\nORDER BY un.name"
 
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	rows, err := r.q.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("mengambil unit: %w", err)
 	}

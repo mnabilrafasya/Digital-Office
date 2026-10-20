@@ -21,11 +21,13 @@ type TokenIssuer interface {
 	Issue(userID int64) (string, error)
 }
 
+// AuthService menangani login NIK + password.
 type AuthService struct {
 	users  AuthUserRepository
 	tokens TokenIssuer
 }
 
+// NewAuthService membuat AuthService.
 func NewAuthService(users AuthUserRepository, tokens TokenIssuer) *AuthService {
 	// Siapkan hash palsu sekarang, supaya login pertama dengan NIK tak terdaftar tidak lebih lambat
 	auth.CheckDummyPassword("")

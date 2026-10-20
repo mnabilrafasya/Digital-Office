@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/database"
+	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 )
 
 const (
@@ -47,18 +47,18 @@ func main() {
 		log.Fatalf("Gagal membaca %s (jalankan dari folder backend): %v", seedFile, err)
 	}
 
-	db, err := database.NewSQLServer(cfg)
+	conn, err := db.Open(context.Background(), cfg)
 	if err != nil {
 		log.Fatalf("Gagal terhubung ke database: %v", err)
 	}
-	defer db.Close()
+	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Seed hanya untuk database kosong, supaya tidak ada data ganda
 	var existing int
-	if err := db.QueryRowContext(ctx,
+	if err := conn.QueryRowContext(ctx,
 		"SELECT (SELECT COUNT(*) FROM companies) + (SELECT COUNT(*) FROM roles) + (SELECT COUNT(*) FROM lookups)",
 	).Scan(&existing); err != nil {
 		log.Fatalf("Gagal memeriksa data (sudah menjalankan go run ./cmd/migrate up?): %v", err)
@@ -77,7 +77,7 @@ func main() {
 		log.Fatalf("Gagal membuat hash password: %v", err)
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		log.Fatalf("Gagal memulai transaksi: %v", err)
 	}

@@ -1,3 +1,5 @@
+// Package handler membaca request, memanggil service, dan menulis response. Handler tidak berisi
+// SQL maupun aturan bisnis.
 package handler
 
 import (
@@ -8,7 +10,7 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
 )
 
-// writeServiceError menerjemahkan error dari service menjadi response HTTP
+// writeServiceError menerjemahkan error dari service menjadi response HTTP.
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *service.ValidationError
 	switch {

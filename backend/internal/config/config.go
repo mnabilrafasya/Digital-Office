@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,16 +17,20 @@ const minJWTSecretLength = 32
 // placeholderPrefix adalah awalan nilai contoh di .env.example yang wajib diganti
 const placeholderPrefix = "ganti_dengan"
 
-// menampung semua pengaturan aplikasi dari .env
+// EnvDevelopment adalah nilai APP_ENV untuk komputer developer.
+const EnvDevelopment = "development"
+
+// Config menampung semua pengaturan aplikasi dari .env.
 type Config struct {
 	AppEnv  string
 	AppPort string
 
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
+	DBHost            string
+	DBPort            string
+	DBUser            string
+	DBPassword        string
+	DBName            string
+	DBTrustServerCert bool // false = sertifikat TLS SQL Server diverifikasi
 
 	MinioEndpoint  string
 	MinioAccessKey string
@@ -38,7 +43,8 @@ type Config struct {
 	CORSAllowedOrigins []string
 }
 
-// membaca file .env
+// Load membaca file .env (bila ada) lalu environment. Hanya pengaturan yang dibutuhkan semua
+// alat (database dan storage) yang diwajibkan di sini.
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
@@ -62,6 +68,9 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins: splitList(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
 	}
 
+	// Sertifikat SQL Server hanya boleh tidak diperiksa di komputer developer
+	cfg.DBTrustServerCert = getEnv("DB_TRUST_SERVER_CERTIFICATE", strconv.FormatBool(cfg.IsDevelopment())) == "true"
+
 	if cfg.DBPassword == "" || cfg.MinioAccessKey == "" || cfg.MinioSecretKey == "" {
 		return nil, errors.New("DB_PASSWORD, MINIO_ROOT_USER, dan MINIO_ROOT_PASSWORD wajib diisi di .env")
 	}
@@ -73,6 +82,9 @@ func Load() (*Config, error) {
 
 	return cfg, nil
 }
+
+// IsDevelopment mengembalikan true bila APP_ENV=development.
+func (c *Config) IsDevelopment() bool { return c.AppEnv == EnvDevelopment }
 
 // ValidateJWT memeriksa konfigurasi token. Hanya dipanggil oleh server API.
 func (c *Config) ValidateJWT() error {
