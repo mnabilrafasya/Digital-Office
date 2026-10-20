@@ -23,16 +23,17 @@ type RouterDeps struct {
 	Tokens middleware.TokenVerifier
 	Users  middleware.UserLoader
 
-	CORSOrigins []string
+	CORSOrigins       []string
+	TrustProxyHeaders bool
 }
 
 // NewRouter menyusun semua route aplikasi.
 func NewRouter(d RouterDeps) http.Handler {
 	r := chi.NewRouter()
-	r.Use(chimw.RequestID) // ID unik per request, memudahkan melacak log
-	r.Use(chimw.RealIP)    // IP asli klien bila berada di belakang proxy
-	r.Use(chimw.Logger)    // mencatat setiap request di terminal
-	r.Use(chimw.Recoverer) // mencegah server mati kalau ada error tak terduga
+	r.Use(chimw.RequestID)                          // ID unik per request, memudahkan melacak log
+	r.Use(middleware.ClientIP(d.TrustProxyHeaders)) // IP klien (header proxy hanya bila dipercaya)
+	r.Use(chimw.Logger)                             // mencatat setiap request di terminal
+	r.Use(chimw.Recoverer)                          // mencegah server mati kalau ada error tak terduga
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   d.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -53,6 +54,7 @@ func NewRouter(d RouterDeps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Authenticate(d.Tokens, d.Users))
 
+			r.Post("/auth/logout", d.Auth.Logout)
 			r.Get("/auth/me", d.Auth.Me)
 			r.Get("/lookups", d.Form.Lookups)
 			r.Get("/units", d.Form.Units)

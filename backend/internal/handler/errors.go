@@ -12,10 +12,15 @@ import (
 
 // writeServiceError menerjemahkan error dari service menjadi response HTTP.
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
-	var ve *service.ValidationError
+	var (
+		ve *service.ValidationError
+		tm *service.TooManyAttemptsError
+	)
 	switch {
 	case errors.As(err, &ve):
 		httpx.Validation(w, ve.Message)
+	case errors.As(err, &tm):
+		httpx.TooManyRequests(w, tm.RetryAfter, tm.Error())
 	case errors.Is(err, service.ErrInvalidCredentials):
 		httpx.Error(w, http.StatusUnauthorized, httpx.CodeInvalidCredentials, service.ErrInvalidCredentials.Error())
 	default:

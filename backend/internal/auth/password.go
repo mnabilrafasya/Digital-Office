@@ -1,32 +1,38 @@
 package auth
 
 import (
-	"sync"
+	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-// dummyCost sama dengan cost hash user (cmd/seed) supaya waktu perbandingannya setara
-const dummyCost = 12
+// BcryptCost adalah cost hash password user (sama dengan cmd/seed).
+const BcryptCost = 12
 
-var (
-	dummyHashOnce sync.Once
-	dummyHash     []byte
-)
+// PasswordChecker memeriksa password bcrypt. Ia menyimpan hash palsu supaya kegagalan login
+// (NIK tidak ada, user nonaktif, belum punya password) memakan waktu yang sama dengan
+// pengecekan password sungguhan, sehingga waktu respons tidak membocorkan NIK yang terdaftar.
+type PasswordChecker struct {
+	dummyHash []byte
+}
 
-// CheckPassword mengembalikan true bila password cocok dengan hash bcrypt
-func CheckPassword(hash, password string) bool {
+// NewPasswordChecker membuat PasswordChecker dan menyiapkan hash palsu (butuh beberapa ratus ms).
+func NewPasswordChecker() (*PasswordChecker, error) {
+	// Isi hash palsu tidak penting karena hasil perbandingannya selalu diabaikan
+	h, err := bcrypt.GenerateFromPassword([]byte("digioffice-dummy-password"), BcryptCost)
+	if err != nil {
+		return nil, fmt.Errorf("menyiapkan hash palsu: %w", err)
+	}
+	return &PasswordChecker{dummyHash: h}, nil
+}
+
+// Check mengembalikan true bila password cocok dengan hash bcrypt.
+func (p *PasswordChecker) Check(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-// CheckDummyPassword menjalankan perbandingan bcrypt terhadap hash palsu dan selalu
-// mengembalikan false. Dipakai saat user tidak ditemukan/tidak boleh login, supaya waktu
-// respons tidak membocorkan NIK mana yang terdaftar.
-func CheckDummyPassword(password string) bool {
-	dummyHashOnce.Do(func() {
-		// Hash dari string tetap; isinya tidak penting karena hasilnya selalu diabaikan
-		dummyHash, _ = bcrypt.GenerateFromPassword([]byte("digioffice-dummy-password"), dummyCost)
-	})
-	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+// CheckDummy menjalankan perbandingan bcrypt terhadap hash palsu dan selalu mengembalikan false.
+func (p *PasswordChecker) CheckDummy(password string) bool {
+	_ = bcrypt.CompareHashAndPassword(p.dummyHash, []byte(password))
 	return false
 }

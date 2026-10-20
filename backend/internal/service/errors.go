@@ -4,7 +4,9 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -19,6 +21,14 @@ type ValidationError struct {
 func (e *ValidationError) Error() string { return e.Message }
 
 func invalid(message string) error { return &ValidationError{Message: message} }
+
+// TooManyAttemptsError menandakan percobaan login dibatasi sementara (429).
+type TooManyAttemptsError struct{ RetryAfter time.Duration }
+
+func (e *TooManyAttemptsError) Error() string {
+	minutes := int((e.RetryAfter + time.Minute - 1) / time.Minute)
+	return fmt.Sprintf("Terlalu banyak percobaan login. Coba lagi dalam %d menit.", max(minutes, 1))
+}
 
 // maxSearchLength adalah panjang maksimal teks pencarian q (karakter).
 const maxSearchLength = 100

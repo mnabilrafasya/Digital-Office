@@ -20,6 +20,10 @@ Konfigurasi yang dipakai API (di `.env`):
 | `JWT_SECRET` | Wajib untuk server API (tidak dibutuhkan `migrate` dan `seed`), minimal 32 karakter, dan tidak boleh berisi nilai contoh dari `.env.example`. Kunci tanda tangan token, jangan dibagikan. |
 | `JWT_TTL` | Masa berlaku token, default `8h`. |
 | `CORS_ALLOWED_ORIGINS` | Origin front-end yang diizinkan, dipisah koma. Default `http://localhost:3000`. |
+| `APP_TIMEZONE` | Zona waktu bisnis, default `Asia/Jakarta`. Divalidasi saat start. |
+| `APP_MEMORY_LIMIT_MB` | Batas memori Go (`debug.SetMemoryLimit`), default `0` = tanpa batas. |
+| `TRUST_PROXY_HEADERS` | Default `false`. Isi `true` **hanya** bila API berada di belakang reverse proxy yang menimpa `X-Forwarded-For`/`X-Real-IP`. |
+| `DB_TRUST_SERVER_CERTIFICATE` | Default `true` hanya saat `APP_ENV=development`; selain itu `false` (sertifikat TLS SQL Server diverifikasi). |
 
 ## 2. Format response
 
@@ -39,10 +43,11 @@ Error:
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Input tidak valid atau kurang (termasuk body JSON rusak atau lebih dari 1 MB) |
 | 401 | `INVALID_CREDENTIALS` | Login gagal (NIK atau password salah, user nonaktif, belum punya password) |
-| 401 | `UNAUTHORIZED` | Token tidak ada, rusak, kedaluwarsa, atau user sudah dinonaktifkan |
+| 401 | `UNAUTHORIZED` | Token tidak ada, rusak, kedaluwarsa, sudah logout, atau user sudah dinonaktifkan |
 | 403 | `FORBIDDEN` | Login valid tetapi tidak punya permission |
 | 404 | `NOT_FOUND` | Route atau data tidak ditemukan |
 | 405 | `METHOD_NOT_ALLOWED` | Method HTTP salah |
+| 429 | `TOO_MANY_REQUESTS` | Terlalu banyak percobaan login gagal; header `Retry-After` berisi detik tunggu |
 | 500 | `INTERNAL_ERROR` | Error tak terduga. Detail hanya ada di log server. |
 
 Aturan JSON:
@@ -62,6 +67,10 @@ Aturan JSON:
 
 3. Token berlaku **8 jam** (`expiresIn` dalam detik). Setelah kedaluwarsa, API menjawab `401 UNAUTHORIZED` dan pengguna harus login ulang.
 4. Data user dimuat ulang dari database di setiap request. Kalau user dinonaktifkan atau role-nya dinonaktifkan, token lamanya langsung ditolak (`401`).
+5. `POST /api/v1/auth/logout` mengakhiri **semua sesi user di semua perangkat**: semua token yang dibuat sebelumnya langsung ditolak (`401`).
+6. **Pembatasan login gagal:** 5 kali per 15 menit untuk kombinasi IP + NIK, dan 30 kali per 15 menit per IP. Jendela 15 menit dihitung sejak kegagalan pertama. Login sukses mereset hitungan IP + NIK. Saat terkena batas: `429` dengan header `Retry-After` (detik) dan pesan "Terlalu banyak percobaan login. Coba lagi dalam N menit."
+   Catatan: hitungan disimpan di memori server. Bila API dijalankan lebih dari satu instance, hitungan perlu dipindah ke penyimpanan bersama.
+7. IP klien diambil dari koneksi TCP. Header `X-Forwarded-For`/`X-Real-IP` hanya dipercaya bila `TRUST_PROXY_HEADERS=true`, supaya pembatasan login tidak bisa dilewati dengan memalsukan header.
 
 Login dengan NIK + password bersifat sementara sampai SSO tersedia.
 
@@ -73,6 +82,7 @@ Login dengan NIK + password bersifat sementara sampai SSO tersedia.
 |---|---|---|---|
 | GET | `/health` | Tidak | - |
 | POST | `/api/v1/auth/login` | Tidak | - |
+| POST | `/api/v1/auth/logout` | Ya | - |
 | GET | `/api/v1/auth/me` | Ya | - |
 | GET | `/api/v1/lookups` | Ya | - |
 | GET | `/api/v1/units` | Ya | - |
@@ -127,6 +137,15 @@ Error:
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Body kosong, JSON rusak, atau `employeeNumber`/`password` kosong |
 | 401 | `INVALID_CREDENTIALS` | Selalu dengan pesan "NIK atau password salah", apa pun penyebabnya (NIK tidak ada, password salah, user nonaktif, belum punya password, role nonaktif) |
+| 429 | `TOO_MANY_REQUESTS` | Terlalu banyak percobaan gagal (lihat bagian 3); tunggu sesuai `Retry-After` |
+
+---
+
+### POST `/api/v1/auth/logout`
+
+Wajib login, tanpa body. Response **204** tanpa isi. Semua token user sebelumnya (di semua perangkat) menjadi tidak berlaku.
+
+Error: `401 UNAUTHORIZED`.
 
 ---
 
@@ -143,7 +162,8 @@ Response 200:
     "employeeNumber": "2015047",
     "name": "Andi Kurniawan",
     "email": "andi.kurniawan@pusri.test",
-    "position": { "id": "13", "name": "Staf Pengembangan Aplikasi", "isUnitHead": false },
+    "position": { "id": "13", "name": "Staf Pengembangan Aplikasi", "isUnitHead": false,
+                  "level": { "code": "STAF", "name": "Staf" } },
     "unit": { "id": "9", "code": "PA", "name": "Bagian Pengembangan Aplikasi" },
     "company": { "code": "PSP", "name": "PT Pupuk Sriwidjaja Palembang" },
     "role": { "code": "PEGAWAI", "name": "Pegawai" },
@@ -151,6 +171,8 @@ Response 200:
   }
 }
 ```
+
+`position.level` adalah level jabatan (`DIREKTUR`, `SVP`, `VP`, `AVP`, `STAF`), atau `null` bila jabatan belum punya level.
 
 Front-end memakai `permissions` untuk menampilkan atau menyembunyikan menu. Kode permission: `LETTER_CREATE`, `LETTER_REVIEW`, `LETTER_APPROVE`, `INBOX_DISPOSE`, `TEMPLATE_CREATE`, `AUDIT_VIEW`.
 
