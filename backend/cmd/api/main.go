@@ -19,6 +19,9 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/storage"
 )
 
+// deadlockAttempts adalah jumlah percobaan maksimal transaksi yang terkena deadlock SQL Server.
+const deadlockAttempts = 3
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -66,11 +69,17 @@ func run() error {
 	tokens := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
 	authService := service.NewAuthService(users, tokens, passwords, limiter)
 	formService := service.NewFormService(repository.NewLookupRepository(conn), repository.NewUnitRepository(conn), users)
+	letterService := service.NewLetterService(
+		db.NewRunner(conn, deadlockAttempts), conn,
+		func(q db.DBTX) service.LetterStore { return repository.NewLetterRepository(q) },
+		repository.NewLetterRefRepository(conn), cfg.Location,
+	)
 
 	router := server.NewRouter(server.RouterDeps{
 		Health:            handler.NewHealthHandler(conn, files),
 		Auth:              handler.NewAuthHandler(authService, cfg.JWTTTL),
 		Form:              handler.NewFormHandler(formService),
+		Letter:            handler.NewLetterHandler(letterService),
 		Tokens:            tokens,
 		Users:             users,
 		CORSOrigins:       cfg.CORSAllowedOrigins,

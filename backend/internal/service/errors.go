@@ -22,6 +22,30 @@ func (e *ValidationError) Error() string { return e.Message }
 
 func invalid(message string) error { return &ValidationError{Message: message} }
 
+// ErrLetterNotFound: surat tidak ada, sudah dihapus, atau user tidak berhak melihatnya (404,
+// supaya keberadaan surat tidak bocor).
+var ErrLetterNotFound = errors.New("Surat tidak ditemukan")
+
+// ErrForbidden: user boleh melihat surat, tetapi tidak boleh melakukan tindakan ini (403).
+var ErrForbidden = errors.New("Anda tidak memiliki akses untuk tindakan ini")
+
+// InvalidStateError menandakan tindakan tidak bisa dilakukan pada status surat saat ini (409).
+type InvalidStateError struct {
+	Message string
+}
+
+func (e *InvalidStateError) Error() string { return e.Message }
+
+// VersionConflictError menandakan If-Match tidak sama dengan versi terbaru (412).
+// RowVersion adalah versi terbaru, dikirim ke klien sebagai ETag.
+type VersionConflictError struct {
+	RowVersion []byte
+}
+
+func (e *VersionConflictError) Error() string {
+	return "Surat sudah diubah di tempat lain. Muat ulang untuk melihat versi terbaru."
+}
+
 // TooManyAttemptsError menandakan percobaan login dibatasi sementara (429).
 type TooManyAttemptsError struct{ RetryAfter time.Duration }
 

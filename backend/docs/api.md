@@ -45,8 +45,11 @@ Error:
 | 401 | `INVALID_CREDENTIALS` | Login gagal (NIK atau password salah, user nonaktif, belum punya password) |
 | 401 | `UNAUTHORIZED` | Token tidak ada, rusak, kedaluwarsa, sudah logout, atau user sudah dinonaktifkan |
 | 403 | `FORBIDDEN` | Login valid tetapi tidak punya permission |
-| 404 | `NOT_FOUND` | Route atau data tidak ditemukan |
+| 404 | `NOT_FOUND` | Route atau data tidak ditemukan, termasuk surat yang tidak boleh diakses user (supaya keberadaannya tidak bocor) |
 | 405 | `METHOD_NOT_ALLOWED` | Method HTTP salah |
+| 409 | `INVALID_STATE` | Tindakan tidak sesuai status surat saat ini |
+| 412 | `VERSION_CONFLICT` | `If-Match` tidak sama dengan versi terbaru; header `ETag` berisi versi terbaru |
+| 428 | `PRECONDITION_REQUIRED` | Header `If-Match` wajib tetapi tidak dikirim |
 | 429 | `TOO_MANY_REQUESTS` | Terlalu banyak percobaan login gagal; header `Retry-After` berisi detik tunggu |
 | 500 | `INTERNAL_ERROR` | Error tak terduga. Detail hanya ada di log server. |
 
@@ -87,6 +90,10 @@ Login dengan NIK + password bersifat sementara sampai SSO tersedia.
 | GET | `/api/v1/lookups` | Ya | - |
 | GET | `/api/v1/units` | Ya | - |
 | GET | `/api/v1/users/candidates` | Ya | `LETTER_CREATE` |
+| GET | `/api/v1/recipients/aliases` | Ya | `LETTER_CREATE` |
+| POST | `/api/v1/letters` | Ya | `LETTER_CREATE` |
+| GET | `/api/v1/letters/{letterId}` | Ya | drafter atau peserta surat |
+| PUT | `/api/v1/letters/{letterId}` | Ya | drafter |
 
 Angka ID di contoh response hanya ilustrasi.
 
@@ -257,6 +264,119 @@ Contoh: `GET /api/v1/users/candidates?type=APPROVER&q=agus`
 ```
 
 Error: `400 VALIDATION_ERROR` (`type` tidak valid, `limit` di luar 1 sampai 50, `q` lebih dari 100 karakter), `401 UNAUTHORIZED`, `403 FORBIDDEN` (tidak punya `LETTER_CREATE`).
+
+---
+
+### GET `/api/v1/recipients/aliases`
+
+Alias penerima untuk form Buat Surat. Alias = level jabatan perusahaan user (contoh `VP` = "Seluruh VP"), beranggotakan pimpinan unit aktif dengan level tersebut. Hanya alias dengan minimal 1 anggota yang ditampilkan, urut sesuai level.
+
+```json
+{ "data": [ { "levelId": "3", "code": "VP", "label": "Seluruh VP", "memberCount": 2 } ] }
+```
+
+Error: `401 UNAUTHORIZED`, `403 FORBIDDEN` (tidak punya `LETTER_CREATE`).
+
+---
+
+### Draf surat
+
+Surat diidentifikasi dengan **uuid** (`letterId`), bukan ID angka. Surat hanya bisa dilihat drafter dan pesertanya (reviewer/approver) di perusahaan yang sama; selain itu dijawab `404`.
+
+#### Body `POST /api/v1/letters` dan `PUT /api/v1/letters/{letterId}`
+
+Semua field opsional selama masih draf. `PUT` **mengganti seluruh isi**: field yang tidak dikirim berarti dikosongkan (cocok untuk autosave yang mengirim seluruh form).
+
+```json
+{
+  "letterTypeId": "7", "templateId": null, "classificationId": "36",
+  "confidentialityId": "1", "urgencyId": "4",
+  "title": "Undangan Rapat Koordinasi", "summary": "...", "specialNote": "...",
+  "reviewerIds": ["10", "7"],
+  "approverId": "6",
+  "recipients": {
+    "to": [ { "unitId": "7" }, { "aliasLevelId": "3" } ],
+    "cc": [ { "unitId": "8" } ]
+  }
+}
+```
+
+| Field | Aturan |
+|---|---|
+| `letterTypeId`, `classificationId`, `confidentialityId`, `urgencyId` | Lookup aktif dengan kategori yang sesuai (global atau milik perusahaan user) |
+| `templateId` | Template aktif milik perusahaan; kalau template dibuat untuk jenis surat tertentu, jenisnya harus sama dengan `letterTypeId` |
+| `title` / `specialNote` / `summary` | Maksimal 250 / 500 / 1000 karakter (emoji dihitung 2). Spasi di awal/akhir dibuang; teks kosong = `null` |
+| `reviewerIds` | Maksimal 10, tanpa duplikat, **urutan = urutan paraf**. Syaratnya sama dengan kandidat `REVIEWER`. Drafter boleh menjadi reviewer |
+| `approverId` | Tepat satu orang. Syaratnya sama dengan kandidat `APPROVER`, bukan drafter, dan bukan reviewer surat yang sama |
+| `recipients` | Setiap elemen berisi **tepat satu** dari `unitId` (unit aktif perusahaan) atau `aliasLevelId` (dari `/recipients/aliases`). Unit/alias yang sama tidak boleh muncul dua kali, termasuk di `to` dan `cc` sekaligus. Maksimal 50 |
+
+Kelengkapan (jenis surat, klasifikasi, sifat, kecepatan, perihal, minimal 1 reviewer, approver, minimal 1 penerima `to`) belum diwajibkan saat draf. Kelengkapan diwajibkan saat surat dikirim, dan saat menyimpan surat berstatus `RETURNED_TO_DRAFTER`.
+
+#### POST `/api/v1/letters`
+
+Membuat draf (body boleh kosong). Unit pengirim dan perusahaan diambil dari user yang login. Response **201** berisi detail surat, dengan header `Location: /api/v1/letters/{uuid}` dan `ETag`.
+
+#### GET `/api/v1/letters/{letterId}`
+
+Detail surat beserta header `ETag`.
+
+```json
+{
+  "data": {
+    "id": "00b5adec-8228-4f74-8b1e-28b065a29f2f",
+    "status": "DRAFT",
+    "letterNumber": null, "letterDate": null,
+    "title": "Undangan Rapat Koordinasi", "summary": "...", "specialNote": null,
+    "letterType": { "id": "7", "code": "NOTA_DINAS", "name": "Nota Dinas" },
+    "classification": { "id": "36", "code": "...", "name": "..." },
+    "confidentiality": { "id": "1", "code": "BIASA", "name": "Biasa" },
+    "urgency": { "id": "4", "code": "...", "name": "..." },
+    "template": null,
+    "senderUnit": { "id": "5", "code": "PA", "name": "..." },
+    "drafter": { "id": "8", "name": "Andi Kurniawan", "positionName": "Staf Pengembangan Aplikasi" },
+    "steps": [
+      { "role": "REVIEWER", "order": 1, "state": "PENDING", "user": { "id": "10", "name": "...", "positionName": "...", "unitName": "..." } },
+      { "role": "REVIEWER", "order": 2, "state": "PENDING", "user": { } },
+      { "role": "APPROVER", "order": 1, "state": "PENDING", "user": { } }
+    ],
+    "recipients": {
+      "to": [
+        { "type": "UNIT", "unit": { "id": "7", "code": "SDM", "name": "..." }, "resolvedHead": null },
+        { "type": "ALIAS", "alias": { "levelId": "3", "code": "VP", "label": "Seluruh VP", "memberCount": 2 } }
+      ],
+      "cc": [ { "type": "UNIT", "unit": { "id": "8", "code": "AK", "name": "..." }, "resolvedHead": null } ]
+    },
+    "attachments": [],
+    "currentVersion": 0,
+    "currentAssignee": null,
+    "lastReturnNote": null,
+    "allowedActions": ["EDIT"],
+    "createdAt": "2026-10-20T09:15:00+07:00",
+    "updatedAt": "2026-10-20T10:02:11+07:00"
+  }
+}
+```
+
+- `allowedActions` adalah tombol yang boleh ditampilkan untuk user yang sedang melihat. Saat ini hanya `EDIT` (drafter, status `DRAFT` atau `RETURNED_TO_DRAFTER`).
+- `resolvedHead` (pimpinan unit penerima) baru terisi setelah surat ditandatangani.
+- Waktu dikirim dalam zona `APP_TIMEZONE`.
+
+#### PUT `/api/v1/letters/{letterId}`
+
+Menyimpan draf. **Wajib** header `If-Match` berisi `ETag` terakhir yang diterima klien. Response 200 berisi detail terbaru dan `ETag` baru (selalu berubah setiap simpan). Reviewer, approver, dan penerima yang tidak berubah tidak ditulis ulang.
+
+Alur untuk front-end: simpan `ETag` dari response terakhir, lalu kirim kembali di `If-Match`. Kalau mendapat `412`, ambil ulang detail dan beri tahu pengguna bahwa surat sudah diubah di tempat lain (misalnya di tab lain).
+
+Error:
+
+| HTTP | `code` | Kapan |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Isi tidak valid (lihat tabel aturan), `If-Match` berformat salah, atau surat `RETURNED_TO_DRAFTER` belum lengkap |
+| 403 | `FORBIDDEN` | Peserta (reviewer/approver) mencoba mengubah surat |
+| 404 | `NOT_FOUND` | Surat tidak ada atau user bukan drafter/peserta |
+| 409 | `INVALID_STATE` | Surat sedang diproses (bukan `DRAFT`/`RETURNED_TO_DRAFTER`) |
+| 412 | `VERSION_CONFLICT` | `If-Match` bukan versi terbaru |
+| 428 | `PRECONDITION_REQUIRED` | `If-Match` tidak dikirim |
 
 ## 5. Akun uji (data dummy development)
 
