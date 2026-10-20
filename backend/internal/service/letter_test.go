@@ -5,119 +5,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/model"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/permission"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/repository"
 )
 
 const testLetterID = "6f1c2a9e-0000-4000-8000-000000000001"
 
 var testRowVersion = []byte{0, 0, 0, 0, 0, 0, 0x07, 0xD3}
-
-type fakeTx struct{}
-
-func (fakeTx) InTx(_ context.Context, fn func(q db.DBTX) error) error { return fn(nil) }
-
-type fakeLetterStore struct {
-	lock         *model.LetterLock
-	participants map[int64]bool
-	detail       *model.LetterDetail
-	updated      *model.LetterDraft
-	created      *repository.NewLetter
-}
-
-func (f *fakeLetterStore) Create(_ context.Context, n repository.NewLetter) (string, error) {
-	f.created = &n
-	return testLetterID, nil
-}
-
-func (f *fakeLetterStore) LockByUUID(_ context.Context, _, _ string) (*model.LetterLock, error) {
-	if f.lock == nil {
-		return nil, repository.ErrNotFound
-	}
-	return f.lock, nil
-}
-
-func (f *fakeLetterStore) IsParticipant(_ context.Context, _, userID int64) (bool, error) {
-	return f.participants[userID], nil
-}
-
-func (f *fakeLetterStore) UpdateDraft(_ context.Context, _ int64, d *model.LetterDraft) error {
-	f.updated = d
-	return nil
-}
-
-func (f *fakeLetterStore) FindDetail(_ context.Context, _, _ string) (*model.LetterDetail, error) {
-	if f.detail == nil {
-		return nil, repository.ErrNotFound
-	}
-	d := *f.detail
-	return &d, nil
-}
-
-// fakeRefs menganggap semua data valid kecuali yang diatur sebaliknya.
-type fakeRefs struct {
-	lookups      map[int64]string // id -> kategori
-	badUnits     map[int64]bool
-	reviewers    map[int64]bool // user yang punya LETTER_REVIEW
-	approvers    map[int64]bool // user yang punya LETTER_APPROVE
-	templateType *int64
-	noTemplate   bool
-}
-
-func (f *fakeRefs) LookupCategories(_ context.Context, _ string, ids []int64) (map[int64]string, error) {
-	out := map[int64]string{}
-	for _, id := range ids {
-		if c, ok := f.lookups[id]; ok {
-			out[id] = c
-		}
-	}
-	return out, nil
-}
-
-func (f *fakeRefs) ActiveUnitIDs(_ context.Context, _ string, ids []int64) (map[int64]bool, error) {
-	out := map[int64]bool{}
-	for _, id := range ids {
-		out[id] = !f.badUnits[id]
-	}
-	return out, nil
-}
-
-func (f *fakeRefs) EligibleUserIDs(_ context.Context, _, perm string, ids []int64) (map[int64]bool, error) {
-	pool := f.reviewers
-	if perm == permission.LetterApprove {
-		pool = f.approvers
-	}
-	out := map[int64]bool{}
-	for _, id := range ids {
-		out[id] = pool[id]
-	}
-	return out, nil
-}
-
-func (f *fakeRefs) TemplateLetterType(_ context.Context, _ string, _ int64) (*int64, error) {
-	if f.noTemplate {
-		return nil, repository.ErrNotFound
-	}
-	return f.templateType, nil
-}
-
-func (f *fakeRefs) ListAliases(_ context.Context, _ string) ([]model.Alias, error) { return nil, nil }
-
-func newFakeRefs() *fakeRefs {
-	return &fakeRefs{
-		lookups:   map[int64]string{12: "LETTER_TYPE", 40: "CLASSIFICATION", 1: "CONFIDENTIALITY", 5: "URGENCY", 60: "POSITION_LEVEL"},
-		reviewers: map[int64]bool{9: true, 4: true, 15: true},
-		approvers: map[int64]bool{3: true, 15: true},
-	}
-}
-
-func newTestLetterService(store *fakeLetterStore, refs *fakeRefs) *LetterService {
-	return NewLetterService(fakeTx{}, nil, func(db.DBTX) LetterStore { return store }, refs, time.UTC)
-}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -222,7 +116,10 @@ func TestLetterCheckRefs(t *testing.T) {
 		tt.refs(refs)
 		in := completeInput()
 		in.TemplateID = ptr("2")
-		_, err := newTestLetterService(&fakeLetterStore{}, refs).prepareDraft(context.Background(), drafter, in)
+		d, err := parseDraft(in, drafter.ID)
+		if err == nil {
+			err = newTestLetterService(&fakeLetterStore{}, refs).checkRefs(context.Background(), drafter.Company.Code, d)
+		}
 		if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
 			t.Errorf("%s: error = %v, want %q", tt.name, err, tt.wantErr)
 		}
@@ -287,8 +184,8 @@ func TestLetterGetAccess(t *testing.T) {
 	ctx := context.Background()
 
 	d, err := svc.Get(ctx, drafter, strings.ToUpper(testLetterID))
-	if err != nil || len(d.AllowedActions) != 1 || d.AllowedActions[0] != ActionEdit {
-		t.Errorf("drafter: err=%v allowedActions=%v, want [EDIT]", err, d.AllowedActions)
+	if err != nil || strings.Join(d.AllowedActions, ",") != "EDIT,SUBMIT" {
+		t.Errorf("drafter: err=%v allowedActions=%v, want [EDIT SUBMIT]", err, d.AllowedActions)
 	}
 	d, err = svc.Get(ctx, &model.CurrentUser{ID: 9}, testLetterID)
 	if err != nil || len(d.AllowedActions) != 0 {

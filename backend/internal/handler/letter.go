@@ -10,7 +10,7 @@ import (
 	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
 )
 
-// LetterHandler menangani draf surat dan alias penerima.
+// LetterHandler menangani surat: alias penerima, draf, daftar, riwayat, dan alur persetujuan.
 type LetterHandler struct {
 	letters *service.LetterService
 }
@@ -79,4 +79,36 @@ func (h *LetterHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.SetETag(w, d.RowVersion)
 	httpx.JSON(w, http.StatusOK, d)
+}
+
+// List menangani GET /api/v1/letters?scope=mine|tasks&status=...&q=...&page=...&pageSize=...
+func (h *LetterHandler) List(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	page, err := httpx.ParsePage(query)
+	if err != nil {
+		httpx.Validation(w, err.Error())
+		return
+	}
+	items, total, err := h.letters.List(r.Context(), middleware.CurrentUser(r.Context()), service.LetterListQuery{
+		Scope:    query.Get("scope"),
+		Status:   query.Get("status"),
+		Search:   query.Get("q"),
+		Page:     page.Page,
+		PageSize: page.PageSize,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.JSONPage(w, items, httpx.PageMeta{Page: page.Page, PageSize: page.PageSize, Total: total})
+}
+
+// History menangani GET /api/v1/letters/{letterId}/history
+func (h *LetterHandler) History(w http.ResponseWriter, r *http.Request) {
+	items, err := h.letters.History(r.Context(), middleware.CurrentUser(r.Context()), chi.URLParam(r, "letterId"))
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, items)
 }

@@ -30,3 +30,11 @@ func jsonIDs(ids []int64) string {
 	b, _ := json.Marshal(ids) // []int64 selalu berhasil di-marshal
 	return string(b)
 }
+
+// nullID mengubah ID 0 menjadi NULL untuk parameter SQL.
+func nullID(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
+}
