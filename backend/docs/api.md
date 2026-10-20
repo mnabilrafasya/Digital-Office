@@ -8,8 +8,8 @@ Dari folder `backend`, dengan Docker Desktop berjalan dan `.env` sudah diisi (sa
 
 ```powershell
 docker compose up -d          # SQL Server dan MinIO
-go run ./cmd/migrate up       # buat database + jalankan migration
-go run ./cmd/seed             # isi data dummy (hanya development, database kosong)
+go run ./cmd/migrate up       # development: buat database bila belum ada + jalankan migration
+go run ./cmd/seed all         # data acuan + data dummy (dummy hanya development)
 go run ./cmd/api              # server di http://localhost:8080
 ```
 
