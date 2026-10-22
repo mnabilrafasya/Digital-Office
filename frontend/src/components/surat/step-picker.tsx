@@ -9,7 +9,17 @@
 // ─────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from "react";
-import { Search, X, Plus, User, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  Search,
+  X,
+  Plus,
+  User,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+  SlidersHorizontal,
+  ChevronDown,
+} from "lucide-react";
 import { fetchCandidates, type CandidateItem } from "@/lib/api/form";
 import type { StepEntry } from "@/lib/types";
 import { cn, generateId } from "@/lib/utils";
@@ -43,6 +53,8 @@ export function StepPicker({
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedUnit, setSelectedUnit] = useState<string>("");
+  const [selectedPosition, setSelectedPosition] = useState<string>("");
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -57,7 +69,7 @@ export function StepPicker({
     debounceRef.current = setTimeout(() => {
       setLoading(true);
       setFetchError(null);
-      fetchCandidates({ type: roleType, q: query || undefined, limit: 30 })
+      fetchCandidates({ type: roleType, q: query || undefined, limit: 50 })
         .then((data) => setCandidates(data))
         .catch((e: unknown) => {
           setFetchError(e instanceof Error ? e.message : "Gagal memuat kandidat.");
@@ -70,8 +82,22 @@ export function StepPicker({
     };
   }, [open, query, roleType]);
 
+  // Ekstrak daftar unit & posisi unik untuk filter opsi navigasi
+  const availableUnits = Array.from(
+    new Set(candidates.map((c) => c.unitName).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const availablePositions = Array.from(
+    new Set(candidates.map((c) => c.positionName).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
   const selectedIds = new Set(value.map((e) => e.employeeId));
-  const filtered = candidates.filter((c) => !selectedIds.has(c.id));
+  const filtered = candidates.filter((c) => {
+    if (selectedIds.has(c.id)) return false;
+    if (selectedUnit && c.unitName !== selectedUnit) return false;
+    if (selectedPosition && c.positionName !== selectedPosition) return false;
+    return true;
+  });
 
   function addCandidate(candidate: CandidateItem) {
     if (value.length >= MAX_STEP_LIMIT) return;
@@ -86,6 +112,8 @@ export function StepPicker({
     };
     onChange([...value, entry]);
     setQuery("");
+    setSelectedUnit("");
+    setSelectedPosition("");
     setOpen(false);
   }
 
@@ -183,12 +211,13 @@ export function StepPicker({
       {/* 3. Panel pencarian kandidat */}
       {open && !isLimitReached && (
         <div className="border border-border rounded-lg shadow-md bg-surface overflow-hidden">
+          {/* Input pencarian teks */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
             <Search size={14} className="text-text-muted shrink-0" />
             <input
               autoFocus
               type="text"
-              placeholder={`Cari nama atau jabatan ${roleLabel.toLowerCase()}...`}
+              placeholder={`Cari nama, posisi, atau unit ${roleLabel.toLowerCase()}...`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="flex-1 text-sm outline-none bg-transparent text-text placeholder-text-muted"
@@ -200,6 +229,77 @@ export function StepPicker({
             )}
           </div>
 
+          {/* Sub-navigasi filter opsi Posisi & Unit */}
+          <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 bg-panel/60 border-b border-border text-xs">
+            <div className="flex items-center gap-1 text-text-muted font-medium mr-0.5 shrink-0">
+              <SlidersHorizontal size={12} className="text-primary/70" />
+              <span className="text-[11px]">Filter:</span>
+            </div>
+
+            {/* Filter Unit */}
+            <div className="relative">
+              <select
+                aria-label="Filter berdasarkan Unit"
+                value={selectedUnit}
+                onChange={(e) => setSelectedUnit(e.target.value)}
+                className={cn(
+                  "text-xs rounded-md pl-2 pr-6 py-1 border transition-colors cursor-pointer appearance-none outline-none font-medium max-w-40 truncate",
+                  selectedUnit
+                    ? "bg-primary/10 border-primary/40 text-primary"
+                    : "bg-surface border-border text-text hover:border-text-muted/50"
+                )}
+              >
+                <option value="">🏢 Semua Unit {availableUnits.length > 0 ? `(${availableUnits.length})` : ""}</option>
+                {availableUnits.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            </div>
+
+            {/* Filter Posisi/Jabatan */}
+            <div className="relative">
+              <select
+                aria-label="Filter berdasarkan Posisi atau Jabatan"
+                value={selectedPosition}
+                onChange={(e) => setSelectedPosition(e.target.value)}
+                className={cn(
+                  "text-xs rounded-md pl-2 pr-6 py-1 border transition-colors cursor-pointer appearance-none outline-none font-medium max-w-44 truncate",
+                  selectedPosition
+                    ? "bg-primary/10 border-primary/40 text-primary"
+                    : "bg-surface border-border text-text hover:border-text-muted/50"
+                )}
+              >
+                <option value="">👔 Semua Posisi {availablePositions.length > 0 ? `(${availablePositions.length})` : ""}</option>
+                {availablePositions.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+            </div>
+
+            {/* Reset Filter Button jika sedang aktif */}
+            {(selectedUnit || selectedPosition) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedUnit("");
+                  setSelectedPosition("");
+                }}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline ml-auto"
+                title="Reset filter posisi dan unit"
+              >
+                <X size={11} />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+
+          {/* List kandidat */}
           <ul className="max-h-52 overflow-y-auto divide-y divide-border">
             {loading ? (
               <li className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-text-muted">
@@ -210,7 +310,9 @@ export function StepPicker({
               <li className="px-4 py-6 text-center text-status-danger-text text-sm">{fetchError}</li>
             ) : filtered.length === 0 ? (
               <li className="px-4 py-6 text-center text-text-muted text-sm">
-                {query ? "Tidak ditemukan." : `Tidak ada kandidat ${roleLabel} tersedia.`}
+                {query || selectedUnit || selectedPosition
+                  ? "Tidak ditemukan kandidat yang cocok dengan kriteria filter."
+                  : `Tidak ada kandidat ${roleLabel} tersedia.`}
               </li>
             ) : (
               filtered.map((c) => (
@@ -238,10 +340,17 @@ export function StepPicker({
           </ul>
 
           <div className="px-3 py-2 border-t border-border flex justify-between items-center bg-panel/20">
-            <span className="text-[11px] text-text-muted">Maks. {MAX_STEP_LIMIT} orang</span>
+            <span className="text-[11px] text-text-muted">
+              {filtered.length} kandidat &bull; Maks. {MAX_STEP_LIMIT} orang
+            </span>
             <button
               type="button"
-              onClick={() => { setOpen(false); setQuery(""); }}
+              onClick={() => {
+                setOpen(false);
+                setQuery("");
+                setSelectedUnit("");
+                setSelectedPosition("");
+              }}
               className="text-xs text-text-muted hover:text-text"
             >
               Tutup

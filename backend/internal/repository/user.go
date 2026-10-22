@@ -156,7 +156,7 @@ SELECT TOP (@limit)
 		args = append(args, sql.Named("currentUserId", f.ExcludeUserID))
 	}
 	if f.Search != "" {
-		q += "\n  AND (u.name LIKE @pattern ESCAPE '\\' OR p.name LIKE @pattern ESCAPE '\\')"
+		q += "\n  AND (u.name LIKE @pattern ESCAPE '\\' OR p.name LIKE @pattern ESCAPE '\\' OR un.name LIKE @pattern ESCAPE '\\')"
 		args = append(args, sql.Named("pattern", ContainsPattern(f.Search)))
 	}
 	q += "\nORDER BY u.name"
