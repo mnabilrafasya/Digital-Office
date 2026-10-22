@@ -78,6 +78,7 @@ export interface LetterDetail {
   summary: string | null;
   specialNote: string | null;
   letterType: LookupRef | null;
+  template?: LookupRef | null;
   classification: LookupRef | null;
   confidentiality: LookupRef | null;
   urgency: LookupRef | null;

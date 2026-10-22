@@ -309,7 +309,7 @@ export default function SuratDetailPage() {
 
             {/* Placeholder kertas surat */}
             <div className="bg-neutral-50 dark:bg-neutral-900 p-6 min-h-80 flex items-center justify-center">
-              <div className="bg-white shadow-sm border border-neutral-200 rounded w-full max-w-[560px] min-h-64 p-8 space-y-4">
+              <div className="bg-white shadow-sm border border-neutral-200 rounded w-full max-w-140 min-h-64 p-8 space-y-4">
                 {/* Kop */}
                 <div className="flex items-start gap-4 pb-4 border-b border-neutral-200">
                   <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">

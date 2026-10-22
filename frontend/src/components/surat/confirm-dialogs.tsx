@@ -28,6 +28,7 @@ interface Props {
   // Submit
   isSubmitting: boolean;
   submitFailed: boolean;
+  submitError?: string | null;
   onSubmit: () => void;
   // Batal
   onLeave: () => void;
@@ -49,7 +50,7 @@ export function ConfirmDialogs(p: Props) {
           <DialogHeader>
             <DialogTitle>Simpan Draft Surat?</DialogTitle>
             <DialogDescription>
-              Draft akan disimpan sebagai versi baru. Versi sebelumnya tidak akan ditimpa.
+              Draft akan disimpan ke sistem. Anda dapat melanjutkan pengisian surat kapan saja dari Daftar Surat.
             </DialogDescription>
           </DialogHeader>
           {p.saveFailed && (
@@ -75,7 +76,9 @@ export function ConfirmDialogs(p: Props) {
             </DialogDescription>
           </DialogHeader>
           {p.submitFailed && (
-            <p role="alert" className="text-status-danger-text text-sm">Gagal mengirim surat. Coba lagi.</p>
+            <p role="alert" className="text-status-danger-text text-sm font-medium">
+              {p.submitError || "Gagal mengirim surat. Pastikan data surat sudah lengkap dan coba lagi."}
+            </p>
           )}
           <DialogFooter>
             <Button variant="outline" size="lg" onClick={p.onClose}>Batal</Button>
