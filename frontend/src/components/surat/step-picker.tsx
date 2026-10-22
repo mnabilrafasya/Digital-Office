@@ -100,7 +100,6 @@ export function StepPicker({
   });
 
   function addCandidate(candidate: CandidateItem) {
-    if (value.length >= MAX_STEP_LIMIT) return;
     if (otherRoleIds.includes(candidate.id)) {
       alert(
         `Pegawai ini sudah dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}. Seseorang tidak boleh menjadi Reviewer sekaligus Approver.`
@@ -116,7 +115,10 @@ export function StepPicker({
       unitName: candidate.unitName,
       kodeAlias: isApprover ? "A" : "R",
     };
+
+    if (value.length >= MAX_STEP_LIMIT) return;
     onChange([...value, entry]);
+
     setQuery("");
     setSelectedUnit("");
     setSelectedPosition("");

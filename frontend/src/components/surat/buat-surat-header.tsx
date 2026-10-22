@@ -2,10 +2,10 @@
 
 // ─────────────────────────────────────────────
 // components/surat/buat-surat-header.tsx
-// Breadcrumb, judul, indikator simpan otomatis, tombol Muat Draf Terakhir
+// Breadcrumb, judul
 // ─────────────────────────────────────────────
 
-import { ChevronRight, Clock, RotateCcw } from "lucide-react";
+import { ChevronRight, Clock } from "lucide-react";
 import { formatTimeWIB } from "@/lib/utils";
 
 interface Props {
@@ -13,11 +13,16 @@ interface Props {
   isDirty: boolean;
   saveFailed: boolean;
   lastSaved: Date | null;
-  loadingDraft: boolean;
-  onLoadDraft: () => void;
+  loadingDraft?: boolean;
+  onLoadDraft?: () => void;
 }
 
-function SaveIndicator({ isSaving, isDirty, saveFailed, lastSaved }: Omit<Props, "loadingDraft" | "onLoadDraft">) {
+function SaveIndicator({
+  isSaving,
+  isDirty,
+  saveFailed,
+  lastSaved,
+}: Omit<Props, "loadingDraft" | "onLoadDraft">) {
   if (isSaving) {
     return (
       <span className="flex items-center gap-1.5 text-status-warn-text">
@@ -25,25 +30,34 @@ function SaveIndicator({ isSaving, isDirty, saveFailed, lastSaved }: Omit<Props,
       </span>
     );
   }
-  if (saveFailed) return <span className="text-status-danger-text">Gagal menyimpan otomatis</span>;
+  if (saveFailed)
+    return (
+      <span className="text-status-danger-text">Gagal menyimpan draf</span>
+    );
   if (isDirty) {
     return (
       <span className="flex items-center gap-1.5 text-status-warn-text">
-        <span className="w-2 h-2 rounded-full bg-status-warn-text animate-pulse" /> Belum tersimpan
+        <span className="w-2 h-2 rounded-full bg-status-warn-text animate-pulse" />{" "}
+        Belum tersimpan
       </span>
     );
   }
   if (lastSaved) {
     return (
       <span className="flex items-center gap-1.5">
-        <span className="w-2 h-2 rounded-full bg-green-500" /> Tersimpan Otomatis {formatTimeWIB(lastSaved)}
+        <span className="w-2 h-2 rounded-full bg-green-500" /> Draf tersimpan{" "}
+        {formatTimeWIB(lastSaved)}
       </span>
     );
   }
   return null;
 }
 
-export function BuatSuratHeader({ loadingDraft, onLoadDraft, ...save }: Props) {
+export function BuatSuratHeader({
+  loadingDraft: _loadingDraft,
+  onLoadDraft: _onLoadDraft,
+  ...save
+}: Props) {
   return (
     <div className="mb-6">
       <nav className="flex items-center gap-1 text-xs text-text-muted mb-2">
@@ -58,7 +72,8 @@ export function BuatSuratHeader({ loadingDraft, onLoadDraft, ...save }: Props) {
         <div>
           <h1 className="text-2xl font-bold text-text">Buat Surat Baru</h1>
           <p className="text-text-muted text-sm mt-0.5">
-            Isi detail surat, pilih reviewer &amp; approver, lalu lampirkan berkas pendukung.
+            Isi detail surat, pilih reviewer &amp; approver, lalu lampirkan
+            berkas pendukung.
           </p>
         </div>
 
@@ -66,15 +81,6 @@ export function BuatSuratHeader({ loadingDraft, onLoadDraft, ...save }: Props) {
           <div className="text-xs text-text-muted" aria-live="polite">
             <SaveIndicator {...save} />
           </div>
-          <button
-            type="button"
-            onClick={onLoadDraft}
-            disabled={loadingDraft}
-            className="flex items-center gap-1.5 text-xs text-text-muted border border-border px-3 py-1.5 rounded-lg hover:bg-panel hover:text-text transition-colors disabled:opacity-60"
-          >
-            <RotateCcw size={12} />
-            {loadingDraft ? "Memuat..." : "Muat Draf Terakhir"}
-          </button>
         </div>
       </div>
     </div>

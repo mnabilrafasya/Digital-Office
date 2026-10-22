@@ -55,10 +55,25 @@ function ActionButton({ item }: ActionButtonProps) {
       <Link
         href={`/surat/${item.id}`}
         title={item.lastReturnNote ?? undefined}
-        className="inline-flex items-center gap-1 text-xs font-medium text-status-danger-text hover:underline"
+        className="inline-flex items-center gap-1 text-xs font-semibold text-status-danger-text hover:underline"
       >
         <FilePen size={13} />
         Revisi
+      </Link>
+    );
+  }
+
+  const isReview = item.status === "IN_REVIEW";
+  const isApproval = item.status === "IN_APPROVAL";
+
+  if (isReview || isApproval) {
+    return (
+      <Link
+        href={`/surat/${item.id}`}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors"
+      >
+        <Eye size={13} />
+        {isReview ? "Tinjau" : "Setujui"}
       </Link>
     );
   }

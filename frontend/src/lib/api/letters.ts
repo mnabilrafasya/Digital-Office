@@ -40,6 +40,13 @@ interface BackendListResponse {
 function mapBackendLetter(b: BackendLetterItem): LetterListItem {
   const isDrafterEditable =
     b.status === "DRAFT" || b.status === "RETURNED_TO_DRAFTER";
+  const isReviewable = b.status === "IN_REVIEW";
+  const isApprovable = b.status === "IN_APPROVAL";
+
+  const actions: string[] = [];
+  if (isDrafterEditable) actions.push("EDIT");
+  if (isReviewable) actions.push("REVIEW");
+  if (isApprovable) actions.push("APPROVE");
 
   return {
     id: b.id,
@@ -67,7 +74,7 @@ function mapBackendLetter(b: BackendLetterItem): LetterListItem {
         }
       : null,
     lastReturnNote: null,
-    allowedActions: isDrafterEditable ? ["EDIT"] : [],
+    allowedActions: actions,
   };
 }
 
@@ -86,16 +93,19 @@ export async function listLetters(
     pageSize = 10,
   } = params;
 
+  const isTaskScope = scope === "approval" || scope === "review" || scope === "tasks";
+  const backendScope = isTaskScope ? "tasks" : "mine";
+
   // 1. Fetch ringkasan count dari semua surat user (pageSize=100)
   const countParams = new URLSearchParams({
-    scope: scope === "approval" || scope === "review" ? "tasks" : "mine",
+    scope: backendScope,
     page: "1",
     pageSize: "100",
   });
 
   // 2. Fetch data halaman yang sedang aktif
   const queryParams = new URLSearchParams({
-    scope: scope === "approval" || scope === "review" ? "tasks" : "mine",
+    scope: backendScope,
     page: String(page),
     pageSize: String(pageSize),
   });
@@ -107,6 +117,10 @@ export async function listLetters(
     } else {
       queryParams.set("status", status);
     }
+  } else if (scope === "review") {
+    queryParams.set("status", "IN_REVIEW");
+  } else if (scope === "approval") {
+    queryParams.set("status", "IN_APPROVAL");
   }
 
   if (q && q.trim()) {

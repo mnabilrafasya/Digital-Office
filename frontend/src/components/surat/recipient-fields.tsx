@@ -12,18 +12,23 @@ import { StepPicker } from "./step-picker";
 import { UnitPicker } from "./unit-picker";
 
 export function RecipientFields() {
-  const { control, formState: { errors } } = useFormContext<BuatSuratFormValues>();
-  const [reviewers = [], approvers = [], toUnits = [], ccUnits = []] = useWatch({
+  const {
     control,
-    name: ["reviewers", "approvers", "toUnits", "ccUnits"],
-  });
+    formState: { errors },
+  } = useFormContext<BuatSuratFormValues>();
+  const [reviewers = [], approvers = [], toUnits = [], ccUnits = []] = useWatch(
+    {
+      control,
+      name: ["reviewers", "approvers", "toUnits", "ccUnits"],
+    },
+  );
 
   return (
     <>
       {/* Reviewer */}
       <div className="md:col-span-2">
         <div className="flex items-center justify-between mb-1">
-          <FieldLabel label="Reviewer" required />
+          <FieldLabel label="Reviewer (Pemeriksa / Pemaraf)" required />
           <span className="text-xs text-text-muted">Maks. 10 orang</span>
         </div>
         <Controller
@@ -36,7 +41,7 @@ export function RecipientFields() {
               value={field.value}
               onChange={field.onChange}
               error={errors.reviewers?.message}
-              otherRoleIds={approvers.map((a) => a.employeeId)}
+              otherRoleIds={(approvers ?? []).map((a) => a.employeeId)}
             />
           )}
         />
@@ -45,7 +50,7 @@ export function RecipientFields() {
       {/* Approver */}
       <div className="md:col-span-2">
         <div className="flex items-center justify-between mb-1">
-          <FieldLabel label="Approver" required />
+          <FieldLabel label="Approver (Pejabat Penandatangan)" required />
           <span className="text-xs text-text-muted">Maks. 10 orang</span>
         </div>
         <Controller
@@ -58,7 +63,7 @@ export function RecipientFields() {
               value={field.value}
               onChange={field.onChange}
               error={errors.approvers?.message}
-              otherRoleIds={reviewers.map((r) => r.employeeId)}
+              otherRoleIds={(reviewers ?? []).map((r) => r.employeeId)}
             />
           )}
         />
@@ -79,7 +84,7 @@ export function RecipientFields() {
               value={field.value}
               onChange={field.onChange}
               error={errors.toUnits?.message}
-              excludeIds={ccUnits.map((u) => u.id)}
+              excludeIds={(ccUnits ?? []).map((u) => u.id)}
             />
           )}
         />
@@ -99,7 +104,7 @@ export function RecipientFields() {
               label="Pilih Tembusan"
               value={field.value ?? []}
               onChange={field.onChange}
-              excludeIds={toUnits.map((u) => u.id)}
+              excludeIds={(toUnits ?? []).map((u) => u.id)}
             />
           )}
         />

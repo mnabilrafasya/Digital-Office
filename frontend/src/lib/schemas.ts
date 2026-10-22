@@ -63,7 +63,7 @@ export const buatSuratSchema = z.object({
 
   approvers: z
     .array(stepEntrySchema)
-    .min(1, { message: "Minimal 1 approver wajib ditambahkan." })
+    .min(1, { message: "Minimal 1 approver (pejabat penandatangan) wajib dipilih." })
     .max(10, { message: "Maksimal 10 approver diperbolehkan." }),
 
   toUnits: z

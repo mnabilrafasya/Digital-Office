@@ -116,8 +116,8 @@ export interface StepEntry {
   employeeName: string;
   jabatan: string;
   unitName: string;
-  kodeAlias?: "R" | "A" | string;
-  kode_alias?: "R" | "A" | string;
+  kodeAlias?: "R" | "A" | string | null;
+  kode_alias?: "R" | "A" | string | null;
 }
 
 // ─── API Lookup ──────────────────────────────
@@ -174,7 +174,7 @@ export interface ListLettersResponse {
 }
 
 export interface ListLettersParams {
-  scope?: "mine" | "review" | "approval";
+  scope?: "mine" | "review" | "approval" | "tasks";
   status?: LetterStatus | "";
   q?: string;
   letterTypeId?: string;
