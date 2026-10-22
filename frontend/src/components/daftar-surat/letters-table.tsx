@@ -253,17 +253,17 @@ export function LettersTable({ items, loading, error, isFiltered, onRetry }: Pro
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <span className="text-xs text-text font-medium leading-tight">
-                        {item.letterType.name}
+                        {item.letterType?.name ?? "—"}
                       </span>
                       <span className={cn(
                         "inline-self text-[10px] font-semibold px-1.5 py-0.5 rounded w-fit",
-                        item.confidentiality.code === "RAHASIA"
+                        item.confidentiality?.code === "RAHASIA"
                           ? "bg-status-danger-bg text-status-danger-text"
-                          : item.confidentiality.code === "TERBATAS"
+                          : item.confidentiality?.code === "TERBATAS"
                             ? "bg-status-warn-bg text-status-warn-text"
                             : "bg-status-neutral-bg text-status-neutral-text"
                       )}>
-                        {item.confidentiality.name}
+                        {item.confidentiality?.name ?? "Biasa"}
                       </span>
                     </div>
                   </td>

@@ -5,7 +5,7 @@
 // Action bar sticky: Batal, Simpan Draft, Pratinjau PDF (nonaktif), Submit
 // ─────────────────────────────────────────────
 
-import { FileDown, Info, Save, Send, X } from "lucide-react";
+import { FileDown, Info, Save, Send, X, Loader2 } from "lucide-react";
 import { useFormContext, useFormState } from "react-hook-form";
 import type { BuatSuratFormValues } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 interface Props {
   onBatal: () => void;
   onSimpan: () => void;
+  isSaving?: boolean;
 }
 
-export function ActionBar({ onBatal, onSimpan }: Props) {
+export function ActionBar({ onBatal, onSimpan, isSaving = false }: Props) {
   const { control } = useFormContext<BuatSuratFormValues>();
   const { isValid } = useFormState({ control });
 
@@ -34,8 +35,23 @@ export function ActionBar({ onBatal, onSimpan }: Props) {
               <X size={14} /> Batal
             </Button>
 
-            <Button type="button" variant="outline" size="lg" onClick={onSimpan} className="h-10 px-4 text-primary border-primary/30">
-              <Save size={14} /> Simpan Draft
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={onSimpan}
+              disabled={isSaving}
+              className="h-10 px-4 text-primary border-primary/30"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Menyimpan...
+                </>
+              ) : (
+                <>
+                  <Save size={14} /> Simpan Draft
+                </>
+              )}
             </Button>
 
             <Tooltip>
@@ -49,7 +65,12 @@ export function ActionBar({ onBatal, onSimpan }: Props) {
               </TooltipContent>
             </Tooltip>
 
-            <Button type="submit" form="buat-surat-form" size="lg" disabled={!isValid} className="h-10 px-5 font-semibold">
+            <Button
+              type="submit"
+              form="buat-surat-form"
+              size="lg"
+              className="h-10 px-5 font-semibold cursor-pointer"
+            >
               <Send size={14} /> Submit
             </Button>
           </div>

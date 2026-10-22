@@ -88,6 +88,17 @@ async function handler(
     if (v) nextResponse.headers.set(h, v);
   }
 
+  // Khusus ETag: pastikan 'etag' dan 'x-etag' tersedia dan dapat dibaca oleh client fetch
+  const etagVal = response.headers.get("etag");
+  if (etagVal) {
+    nextResponse.headers.set("etag", etagVal);
+    nextResponse.headers.set("x-etag", etagVal);
+  }
+  nextResponse.headers.set(
+    "Access-Control-Expose-Headers",
+    "ETag, etag, x-etag, Location, location, Retry-After, retry-after"
+  );
+
   return nextResponse;
 }
 

@@ -31,6 +31,12 @@ export function useAutosave({ signature, save, enabled = true, delay = 1500 }: O
 
   const isDirty = signature !== savedSignature;
 
+  const markSaved = useCallback((sig?: string) => {
+    setSavedSignature(sig ?? signatureRef.current);
+    setLastSaved(new Date());
+    setSaveFailed(false);
+  }, []);
+
   const saveNow = useCallback(async () => {
     const sig = signatureRef.current;
     setIsSaving(true);
@@ -55,5 +61,5 @@ export function useAutosave({ signature, save, enabled = true, delay = 1500 }: O
     return () => clearTimeout(timer);
   }, [signature, isDirty, enabled, delay, saveNow]);
 
-  return { isDirty, isSaving, lastSaved, saveFailed, saveNow };
+  return { isDirty, isSaving, lastSaved, saveFailed, saveNow, markSaved };
 }

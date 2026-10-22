@@ -62,8 +62,10 @@ function SelectError({ message, onRetry }: { message: string; onRetry: () => voi
 // ─── Component utama ─────────────────────────
 
 export function BasicFields() {
-  const { register, control, formState: { errors }, setValue } = useFormContext<BuatSuratFormValues>();
-  const [letterTypeId, title = "", sifat] = useWatch({ control, name: ["letterTypeId", "title", "sifat"] });
+  const { control, formState: { errors }, setValue } = useFormContext<BuatSuratFormValues>();
+  const letterTypeId = useWatch({ control, name: "letterTypeId" });
+  const sifat = useWatch({ control, name: "sifat" });
+  const kecepatan = useWatch({ control, name: "kecepatan" });
 
   // Lookup dari backend
   const letterTypes = useLookups("LETTER_TYPE");
@@ -71,12 +73,12 @@ export function BasicFields() {
   const [retryLT, setRetryLT] = useState(0);
   const [retryUG, setRetryUG] = useState(0);
 
-  // Saat letter types pertama kali muat, set default ke item pertama
+  // Saat urgencies selesai muat, set default ke BIASA jika belum dipilih
   useEffect(() => {
-    if (letterTypes.items.length > 0 && !letterTypeId) {
-      setValue("letterTypeId", letterTypes.items[0]!.id);
+    if (urgencies.items.length > 0 && !kecepatan) {
+      setValue("kecepatan", "BIASA", { shouldValidate: true });
     }
-  }, [letterTypes.items, letterTypeId, setValue]);
+  }, [urgencies.items, kecepatan, setValue]);
 
   // Template masih mock — belum ada endpoint backend
   const templates = LETTER_TEMPLATES.filter((t) => t.letterTypeId === letterTypeId);
@@ -99,16 +101,27 @@ export function BasicFields() {
         ) : letterTypes.error ? (
           <SelectError message={letterTypes.error} onRetry={() => setRetryLT((n) => n + 1)} />
         ) : (
-          <select
-            id="letterTypeId"
-            {...register("letterTypeId")}
-            className={inputClass(!!errors.letterTypeId)}
-            key={retryLT}
-          >
-            {letterTypes.items.map((lt) => (
-              <option key={lt.id} value={lt.id}>{lt.name}</option>
-            ))}
-          </select>
+          <Controller
+            name="letterTypeId"
+            control={control}
+            render={({ field }) => (
+              <select
+                id="letterTypeId"
+                value={field.value ?? ""}
+                onChange={(e) => {
+                  field.onChange(e.target.value);
+                  setValue("templateId", undefined);
+                }}
+                className={inputClass(!!errors.letterTypeId)}
+                key={retryLT}
+              >
+                <option value="">— Pilih jenis surat —</option>
+                {letterTypes.items.map((lt) => (
+                  <option key={lt.id} value={lt.id}>{lt.name}</option>
+                ))}
+              </select>
+            )}
+          />
         )}
         <FieldError message={errors.letterTypeId?.message} />
       </div>
@@ -116,12 +129,23 @@ export function BasicFields() {
       {/* Template Surat — tetap mock sampai backend punya endpoint */}
       <div>
         <FieldLabel label="Template Surat" htmlFor="templateId" />
-        <select id="templateId" {...register("templateId")} className={inputClass()}>
-          <option value="">— Pilih template (opsional) —</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
+        <Controller
+          name="templateId"
+          control={control}
+          render={({ field }) => (
+            <select
+              id="templateId"
+              value={field.value ?? ""}
+              onChange={(e) => field.onChange(e.target.value || undefined)}
+              className={inputClass()}
+            >
+              <option value="">— Pilih template (opsional) —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          )}
+        />
       </div>
 
       {/* Klasifikasi Arsip */}
@@ -156,17 +180,18 @@ export function BasicFields() {
               <div className="space-y-1">
                 <select
                   id="kecepatan"
-                  value={field.value ?? ""}
-                  onChange={(e) => {
-                    const item = urgencies.items.find((u) => u.id === e.target.value);
-                    if (item) field.onChange(item.code as BuatSuratFormValues["kecepatan"]);
-                  }}
+                  value={field.value ?? "BIASA"}
+                  onChange={(e) =>
+                    field.onChange(e.target.value as BuatSuratFormValues["kecepatan"])
+                  }
                   className={inputClass(!!errors.kecepatan)}
                   key={retryUG}
                 >
                   <option value="">— Pilih kecepatan —</option>
                   {urgencies.items.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name}</option>
+                    <option key={u.id} value={u.code}>
+                      {u.name}
+                    </option>
                   ))}
                 </select>
                 {/* Teks bantu dari backend (field `note`) */}
@@ -231,24 +256,40 @@ export function BasicFields() {
       {/* Perihal / Judul */}
       <div className="md:col-span-2">
         <FieldLabel label="Perihal / Judul Surat" required htmlFor="title" />
-        <div className="relative">
-          <input
-            id="title"
-            type="text"
-            maxLength={250}
-            placeholder="Tuliskan perihal surat secara singkat dan jelas..."
-            {...register("title")}
-            className={cn(inputClass(!!errors.title), "pr-24")}
-          />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-            <span className={cn("text-xs", title.length > 230 ? "text-status-danger-text" : "text-text-muted")}>
-              {title.length} / 250
-            </span>
-            {title.trim().length > 0 && !errors.title && (
-              <CheckCircle2 size={14} className="text-green-500" />
-            )}
-          </div>
-        </div>
+        <Controller
+          name="title"
+          control={control}
+          render={({ field }) => {
+            const val = field.value ?? "";
+            return (
+              <div className="relative">
+                <input
+                  id="title"
+                  type="text"
+                  maxLength={250}
+                  placeholder="Tuliskan perihal surat secara singkat dan jelas..."
+                  value={val}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  className={cn(inputClass(!!errors.title), "pr-24")}
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none select-none">
+                  <span
+                    className={cn(
+                      "text-xs font-mono",
+                      val.length > 230 ? "text-status-danger-text" : "text-text-muted"
+                    )}
+                  >
+                    {val.length} / 250
+                  </span>
+                  {val.trim().length > 0 && !errors.title && (
+                    <CheckCircle2 size={14} className="text-green-500" />
+                  )}
+                </div>
+              </div>
+            );
+          }}
+        />
         <FieldError message={errors.title?.message} />
       </div>
     </>

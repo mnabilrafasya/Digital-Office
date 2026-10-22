@@ -10,19 +10,19 @@ import { z } from "zod";
 
 const stepEntrySchema = z.object({
   id: z.string(),
-  employeeId: z.string().min(1),
-  employeeName: z.string().min(1),
+  employeeId: z.string().min(1, { message: "ID pegawai wajib ada." }),
+  employeeName: z.string(),
   jabatan: z.string(),
   unitName: z.string(),
-  kodeAlias: z.string().optional(),
-  kode_alias: z.string().optional(),
+  kodeAlias: z.string().optional().nullable(),
+  kode_alias: z.string().optional().nullable(),
 });
 
 // ─── UnitEntry schema ────────────────────────
 
 const unitEntrySchema = z.object({
-  id: z.string(),
-  name: z.string().min(1),
+  id: z.string().min(1, { message: "ID unit wajib ada." }),
+  name: z.string(),
 });
 
 // ─── Form schema utama ───────────────────────
@@ -35,7 +35,8 @@ export const buatSuratSchema = z.object({
 
   templateId: z
     .string()
-    .optional(),
+    .optional()
+    .nullable(),
 
   classificationId: z
     .string()
@@ -69,17 +70,19 @@ export const buatSuratSchema = z.object({
     .array(unitEntrySchema)
     .min(1, { message: "Minimal 1 tujuan surat wajib dipilih." }),
 
-  ccUnits: z.array(unitEntrySchema).optional(),
+  ccUnits: z.array(unitEntrySchema).optional().nullable(),
 
   specialNote: z
     .string()
     .max(500, { message: "Keterangan khusus maksimal 500 karakter." })
-    .optional(),
+    .optional()
+    .nullable(),
 
   summary: z
     .string()
     .max(1000, { message: "Isi ringkas arsip maksimal 1000 karakter." })
-    .optional(),
+    .optional()
+    .nullable(),
 });
 
 export type BuatSuratFormValues = z.infer<typeof buatSuratSchema>;
@@ -97,6 +100,7 @@ export const loginSchema = z.object({
  * akan diisi otomatis saat lookup LETTER_TYPE selesai dimuat. */
 export const BUAT_SURAT_DEFAULTS: Partial<BuatSuratFormValues> = {
   letterTypeId: "",
+  kecepatan: "BIASA",
   sifat: "BIASA",
   title: "",
   specialNote: "",

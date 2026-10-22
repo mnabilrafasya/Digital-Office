@@ -26,7 +26,13 @@ let lookupCache: {
 } | null = null;
 
 async function getLookupIdMap() {
-  if (lookupCache) return lookupCache;
+  if (
+    lookupCache &&
+    Object.keys(lookupCache.confidentiality).length > 0 &&
+    Object.keys(lookupCache.urgency).length > 0
+  ) {
+    return lookupCache;
+  }
 
   const [confList, urgList] = await Promise.all([
     fetchLookups("CONFIDENTIALITY").catch(() => []),
@@ -43,8 +49,10 @@ async function getLookupIdMap() {
     urgMap[u.code.toUpperCase()] = String(u.id);
   }
 
-  lookupCache = { confidentiality: confMap, urgency: urgMap };
-  return lookupCache;
+  if (Object.keys(confMap).length > 0 || Object.keys(urgMap).length > 0) {
+    lookupCache = { confidentiality: confMap, urgency: urgMap };
+  }
+  return { confidentiality: confMap, urgency: urgMap };
 }
 
 export interface FormInputValues {
@@ -66,28 +74,51 @@ export interface FormInputValues {
 export async function formValuesToLetterInput(values: FormInputValues) {
   const { confidentiality: confMap, urgency: urgMap } = await getLookupIdMap();
 
-  const confidentialityId = values.sifat ? confMap[values.sifat.toUpperCase()] : undefined;
-  const urgencyId = values.kecepatan ? urgMap[values.kecepatan.toUpperCase()] : undefined;
+  const confidentialityId = values.sifat
+    ? /^\d+$/.test(String(values.sifat).trim())
+      ? String(values.sifat).trim()
+      : confMap[values.sifat.toUpperCase()]
+    : undefined;
+
+  const urgencyId = values.kecepatan
+    ? /^\d+$/.test(String(values.kecepatan).trim())
+      ? String(values.kecepatan).trim()
+      : urgMap[values.kecepatan.toUpperCase()]
+    : undefined;
 
   const reviewerIds = (values.reviewers ?? [])
-    .map((r) => String(r.employeeId))
-    .filter((id) => id && id !== "undefined");
+    .map((r) => String(r.employeeId).trim())
+    .filter((id) => id && /^\d+$/.test(id));
+
   const approverId =
-    values.approvers && values.approvers.length > 0 && values.approvers[0].employeeId
-      ? String(values.approvers[0].employeeId)
+    values.approvers &&
+    values.approvers.length > 0 &&
+    values.approvers[0].employeeId &&
+    /^\d+$/.test(String(values.approvers[0].employeeId).trim())
+      ? String(values.approvers[0].employeeId).trim()
       : undefined;
 
   const toRecipients = (values.toUnits ?? [])
-    .filter((u) => u && u.id)
-    .map((u) => ({ unitId: String(u.id) }));
+    .filter((u) => u && u.id && /^\d+$/.test(String(u.id).trim()))
+    .map((u) => ({ unitId: String(u.id).trim() }));
+
   const ccRecipients = (values.ccUnits ?? [])
-    .filter((u) => u && u.id)
-    .map((u) => ({ unitId: String(u.id) }));
+    .filter((u) => u && u.id && /^\d+$/.test(String(u.id).trim()))
+    .map((u) => ({ unitId: String(u.id).trim() }));
 
   return {
-    letterTypeId: values.letterTypeId ? String(values.letterTypeId) : null,
-    templateId: values.templateId ? String(values.templateId) : null,
-    classificationId: values.classificationId ? String(values.classificationId) : null,
+    letterTypeId:
+      values.letterTypeId && /^\d+$/.test(String(values.letterTypeId).trim())
+        ? String(values.letterTypeId).trim()
+        : null,
+    templateId:
+      values.templateId && /^\d+$/.test(String(values.templateId).trim())
+        ? String(values.templateId).trim()
+        : null,
+    classificationId:
+      values.classificationId && /^\d+$/.test(String(values.classificationId).trim())
+        ? String(values.classificationId).trim()
+        : null,
     confidentialityId: confidentialityId ?? null,
     urgencyId: urgencyId ?? null,
     title: values.title?.trim() || null,
@@ -123,30 +154,60 @@ export async function saveDraft(
       throw new Error(err.error?.message ?? `Gagal membuat draf (HTTP ${res.status})`);
     }
 
-    const etag = res.headers.get("etag");
+    const etag = res.headers.get("etag") || res.headers.get("x-etag");
     const json = (await res.json()) as { data: LetterDetail };
     return { id: json.data.id, etag, detail: json.data };
   } else {
     // PUT /api/v1/letters/{draftId}
+    let etagToUse = currentEtag;
+
+    // Jika ETag belum tersedia, fetch data terbaru dari server untuk memperoleh ETag
+    if (!etagToUse) {
+      try {
+        const current = await getDraftLetter(draftId);
+        etagToUse = current.etag;
+      } catch (err) {
+        console.warn("Gagal mengambil ETag sebelum update draf:", err);
+      }
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (currentEtag) {
-      headers["If-Match"] = currentEtag;
+    if (etagToUse) {
+      headers["If-Match"] = etagToUse;
     }
 
-    const res = await fetch(`${API}/letters/${draftId}`, {
+    let res = await fetch(`${API}/letters/${draftId}`, {
       method: "PUT",
       headers,
       body: JSON.stringify(payload),
     });
+
+    // Jika server merespons 428 (Precondition Required) atau 409 (Conflict),
+    // otomatis ambil ETag mutakhir lalu coba kirim kembali
+    if (res.status === 428 || res.status === 409) {
+      try {
+        const fresh = await getDraftLetter(draftId);
+        if (fresh.etag) {
+          headers["If-Match"] = fresh.etag;
+          res = await fetch(`${API}/letters/${draftId}`, {
+            method: "PUT",
+            headers,
+            body: JSON.stringify(payload),
+          });
+        }
+      } catch {
+        // Abaikan kegagalan refresh, lanjutkan ke penanganan error standar
+      }
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message ?? `Gagal memperbarui draf (HTTP ${res.status})`);
     }
 
-    const etag = res.headers.get("etag");
+    const etag = res.headers.get("etag") || res.headers.get("x-etag");
     const json = (await res.json()) as { data: LetterDetail };
     return { id: draftId, etag, detail: json.data };
   }
@@ -180,7 +241,7 @@ export async function getDraftLetter(letterId: string): Promise<{ detail: Letter
     throw new Error(err.error?.message ?? `Gagal memuat surat (HTTP ${res.status})`);
   }
 
-  const etag = res.headers.get("etag");
+  const etag = res.headers.get("etag") || res.headers.get("x-etag");
   const json = (await res.json()) as { data: LetterDetail };
   return { detail: json.data, etag };
 }

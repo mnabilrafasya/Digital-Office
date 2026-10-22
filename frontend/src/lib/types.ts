@@ -148,9 +148,9 @@ export interface LetterListItem {
   status: LetterStatus;
   letterNumber: string | null;
   title: string | null;
-  letterType: { id: string; code: string; name: string };
-  confidentiality: { id: string; code: string; name: string };
-  urgency: { id: string; code: string; name: string };
+  letterType: { id: string; code: string; name: string } | null;
+  confidentiality: { id: string; code: string; name: string } | null;
+  urgency: { id: string; code: string; name: string } | null;
   senderUnit: { id: string; name: string };
   recipientsSummary: RecipientsSummary;
   createdAt: string;

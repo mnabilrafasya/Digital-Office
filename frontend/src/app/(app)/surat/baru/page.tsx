@@ -45,7 +45,15 @@ export default function BuatSuratPage() {
         </div>
       }
     >
-      <BuatSuratFormInner key={formKey} onNew={() => setFormKey((k) => k + 1)} />
+      <BuatSuratFormInner
+        key={formKey}
+        onNew={() => {
+          if (typeof window !== "undefined") {
+            window.history.replaceState(null, "", "/surat/baru");
+          }
+          setFormKey((k) => k + 1);
+        }}
+      />
     </Suspense>
   );
 }
@@ -67,7 +75,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
   const [attachments, setAttachments] = useState<LetterAttachment[]>([]);
   const [dialog, setDialog] = useState<DialogType>(null);
-  const [loadingDraft, setLoadingDraft] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(Boolean(draftQueryId));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
@@ -79,13 +87,48 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
   draftIdRef.current = draftId;
   const draftEtagRef = useRef<string | null>(draftEtag);
   draftEtagRef.current = draftEtag;
+  const loadedDraftIdRef = useRef<string | null>(null);
+
+  // ─── Autosave riil ke backend ──────────────────
+  const { isDirty, isSaving, lastSaved, saveFailed, saveNow, markSaved } = useAutosave({
+    signature: JSON.stringify([values, attachments]),
+    enabled: dialog !== "sukses" && !loadingDraft,
+    save: async () => {
+      // Autosave hanya berjalan jika ada minimal 1 data bermakna
+      const hasMeaningfulContent = Boolean(
+        values.title?.trim() ||
+        values.classificationId ||
+        (values.reviewers && values.reviewers.length > 0) ||
+        (values.toUnits && values.toUnits.length > 0) ||
+        values.summary?.trim() ||
+        values.specialNote?.trim()
+      );
+
+      // Jangan buat draft baru di database jika pengguna belum mengisi konten surat
+      if (!draftIdRef.current && !hasMeaningfulContent) return;
+
+      const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
+      setDraftId(res.id);
+      setDraftEtag(res.etag);
+      draftIdRef.current = res.id;
+      draftEtagRef.current = res.etag;
+      loadedDraftIdRef.current = res.id;
+      if (!draftQueryId && res.id) {
+        window.history.replaceState(null, "", `/surat/baru?draft=${res.id}`);
+      }
+    },
+  });
+
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   // ─── Memuat draf jika ada parameter ?draft=UUID ───
   useEffect(() => {
     if (!draftQueryId) return;
+    if (loadedDraftIdRef.current === draftQueryId) return;
 
     let isMounted = true;
     setLoadingDraft(true);
+    loadedDraftIdRef.current = draftQueryId;
 
     getDraftLetter(draftQueryId)
       .then(({ detail, etag }) => {
@@ -93,6 +136,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
         setDraftId(detail.id);
         setDraftEtag(etag);
+        draftIdRef.current = detail.id;
+        draftEtagRef.current = etag;
+        loadedDraftIdRef.current = detail.id;
 
         // Ekstrak reviewers & approvers
         const reviewers: StepEntry[] = (detail.steps ?? [])
@@ -125,7 +171,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           .filter((r): r is RecipientUnit => r.type === "UNIT")
           .map((r) => ({ id: String(r.unit.id), name: r.unit.name }));
 
-        reset({
+        const newValues: BuatSuratFormValues = {
           letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
           templateId: detail.template?.id ? String(detail.template.id) : undefined,
           classificationId: detail.classification?.id ? String(detail.classification.id) : "",
@@ -138,7 +184,10 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           approvers,
           toUnits,
           ccUnits,
-        });
+        };
+
+        reset(newValues);
+        markSaved(JSON.stringify([newValues, attachments]));
       })
       .catch((e: unknown) => {
         console.error("Gagal memuat draf dari URL:", e);
@@ -150,28 +199,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     return () => {
       isMounted = false;
     };
-  }, [draftQueryId, reset]);
-
-  // ─── Autosave riil ke backend ──────────────────
-  const { isDirty, isSaving, lastSaved, saveFailed, saveNow } = useAutosave({
-    signature: JSON.stringify([values, attachments]),
-    enabled: dialog !== "sukses" && !loadingDraft,
-    save: async () => {
-      // Autosave hanya berjalan jika ada minimal 1 field terisi
-      const hasAnyField = Boolean(
-        values.title ||
-        values.letterTypeId ||
-        values.classificationId ||
-        (values.reviewers && values.reviewers.length > 0) ||
-        (values.toUnits && values.toUnits.length > 0)
-      );
-      if (!hasAnyField) return;
-
-      const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
-      setDraftId(res.id);
-      setDraftEtag(res.etag);
-    },
-  });
+  }, [draftQueryId, reset, markSaved, attachments]);
 
   // ─── Handlers ────────────────────────────────
 
@@ -190,6 +218,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
       setDraftId(detail.id);
       setDraftEtag(etag);
+      draftIdRef.current = detail.id;
+      draftEtagRef.current = etag;
 
       const reviewers: StepEntry[] = (detail.steps ?? [])
         .filter((s) => s.role === "REVIEWER")
@@ -221,7 +251,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         .filter((r): r is RecipientUnit => r.type === "UNIT")
         .map((r) => ({ id: String(r.unit.id), name: r.unit.name }));
 
-      reset({
+      const newValues: BuatSuratFormValues = {
         letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
         templateId: detail.template?.id ? String(detail.template.id) : undefined,
         classificationId: detail.classification?.id ? String(detail.classification.id) : "",
@@ -234,8 +264,12 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         approvers,
         toUnits,
         ccUnits,
-      });
+      };
 
+      reset(newValues);
+      markSaved(JSON.stringify([newValues, attachments]));
+      loadedDraftIdRef.current = detail.id;
+      window.history.replaceState(null, "", `/surat/baru?draft=${detail.id}`);
       await trigger();
     } catch (err: unknown) {
       console.error("Gagal memuat draf terakhir:", err);
@@ -245,15 +279,47 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     }
   }
 
-  async function handleSimpan() {
+  async function handleDirectSaveDraft() {
+    setIsSavingDraft(true);
     try {
       const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
       setDraftId(res.id);
       setDraftEtag(res.etag);
-      setDialog(null);
+      draftIdRef.current = res.id;
+      draftEtagRef.current = res.etag;
+      loadedDraftIdRef.current = res.id;
+      markSaved(JSON.stringify([values, attachments]));
+      if (!draftQueryId && res.id) {
+        window.history.replaceState(null, "", `/surat/baru?draft=${res.id}`);
+      }
+      setDialog("draf_sukses");
+    } catch (err: unknown) {
+      console.error("Gagal simpan draf:", err);
+      alert(err instanceof Error ? err.message : "Gagal menyimpan draf.");
+    } finally {
+      setIsSavingDraft(false);
+    }
+  }
+
+  async function handleSimpan() {
+    setIsSavingDraft(true);
+    try {
+      const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
+      setDraftId(res.id);
+      setDraftEtag(res.etag);
+      draftIdRef.current = res.id;
+      draftEtagRef.current = res.etag;
+      loadedDraftIdRef.current = res.id;
+      markSaved(JSON.stringify([values, attachments]));
+      if (!draftQueryId && res.id) {
+        window.history.replaceState(null, "", `/surat/baru?draft=${res.id}`);
+      }
+      setDialog("draf_sukses");
     } catch (e: unknown) {
       console.error("Gagal simpan draf:", e);
-      // saveFailed akan ditampilkan di dalam dialog
+      alert(e instanceof Error ? e.message : "Gagal menyimpan draf.");
+    } finally {
+      setIsSavingDraft(false);
     }
   }
 
@@ -267,6 +333,10 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       const saved = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
       setDraftId(saved.id);
       setDraftEtag(saved.etag);
+      draftIdRef.current = saved.id;
+      draftEtagRef.current = saved.etag;
+      loadedDraftIdRef.current = saved.id;
+      markSaved();
 
       // 2. Eksekusi pengiriman surat ke reviewer pertama (POST /api/v1/letters/{id}/submit)
       await submitLetter(saved.id);
@@ -297,7 +367,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     <FormProvider {...methods}>
       <div className="min-h-screen pb-28">
         <BuatSuratHeader
-          isSaving={isSaving}
+          isSaving={isSaving || isSavingDraft}
           isDirty={isDirty}
           saveFailed={saveFailed}
           lastSaved={lastSaved}
@@ -319,12 +389,16 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           </SectionCard>
         </div>
 
-        <ActionBar onBatal={handleBatal} onSimpan={() => setDialog("simpan")} />
+        <ActionBar
+          onBatal={handleBatal}
+          onSimpan={handleDirectSaveDraft}
+          isSaving={isSavingDraft || isSaving}
+        />
 
         <ConfirmDialogs
           dialog={dialog}
           onClose={() => setDialog(null)}
-          isSaving={isSaving}
+          isSaving={isSavingDraft || isSaving}
           saveFailed={saveFailed}
           onSimpan={handleSimpan}
           isSubmitting={isSubmitting}

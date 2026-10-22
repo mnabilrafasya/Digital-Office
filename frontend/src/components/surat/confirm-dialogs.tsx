@@ -15,8 +15,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { CheckCircle2 } from "lucide-react";
 
-export type DialogType = "simpan" | "submit" | "batal" | "sukses" | null;
+export type DialogType = "simpan" | "submit" | "batal" | "sukses" | "draf_sukses" | null;
 
 interface Props {
   dialog: DialogType;
@@ -39,7 +40,7 @@ interface Props {
 
 export function ConfirmDialogs(p: Props) {
   const close = (open: boolean) => {
-    if (!open && p.dialog !== "sukses") p.onClose();
+    if (!open && p.dialog !== "sukses" && p.dialog !== "draf_sukses") p.onClose();
   };
 
   return (
@@ -65,6 +66,45 @@ export function ConfirmDialogs(p: Props) {
         </DialogContent>
       </Dialog>
 
+      {/* Dialog Draft Berhasil Disimpan */}
+      <Dialog open={p.dialog === "draf_sukses"} onOpenChange={close}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+              <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
+              Draft Berhasil Disimpan
+            </DialogTitle>
+            <DialogDescription>
+              Draft surat Anda telah berhasil disimpan ke database. Anda dapat melihatnya di Daftar Surat atau melanjutkan pengisian.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button variant="outline" size="lg" onClick={p.onClose}>
+              Lanjut Mengedit
+            </Button>
+            <Button size="lg" onClick={p.onGoToList}>
+              Ke Daftar Surat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Tinggalkan Halaman / Batal */}
+      <Dialog open={p.dialog === "batal"} onOpenChange={close}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Batalkan Pembuatan Surat?</DialogTitle>
+            <DialogDescription>
+              Ada data yang telah diisi. Jika Anda keluar sekarang, perubahan yang belum disimpan akan hilang.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="lg" onClick={p.onClose}>Tetap di Form</Button>
+            <Button variant="destructive" size="lg" onClick={p.onLeave}>Keluar ke Daftar Surat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog Submit */}
       <Dialog open={p.dialog === "submit"} onOpenChange={close}>
         <DialogContent className="max-w-md">
@@ -85,22 +125,6 @@ export function ConfirmDialogs(p: Props) {
             <Button size="lg" onClick={p.onSubmit} disabled={p.isSubmitting}>
               {p.isSubmitting ? "Mengirim..." : "Kirim ke Reviewer"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog Tinggalkan Halaman */}
-      <Dialog open={p.dialog === "batal"} onOpenChange={close}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Tinggalkan Halaman?</DialogTitle>
-            <DialogDescription>
-              Ada perubahan yang belum tersimpan. Jika Anda pergi sekarang, perubahan ini akan hilang.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="lg" onClick={p.onClose}>Tetap di Halaman</Button>
-            <Button variant="destructive" size="lg" onClick={p.onLeave}>Tinggalkan</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
