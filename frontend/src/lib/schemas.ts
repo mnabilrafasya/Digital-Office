@@ -83,7 +83,27 @@ export const buatSuratSchema = z.object({
     .max(1000, { message: "Isi ringkas arsip maksimal 1000 karakter." })
     .optional()
     .nullable(),
-});
+})
+  .refine(
+    (data) => {
+      const reviewerEmpIds = new Set(data.reviewers?.map((r) => r.employeeId) ?? []);
+      return !(data.approvers ?? []).some((a) => reviewerEmpIds.has(a.employeeId));
+    },
+    {
+      message: "Approver tidak boleh sekaligus menjadi reviewer. Silakan hapus atau ganti salah satunya.",
+      path: ["approvers"],
+    }
+  )
+  .refine(
+    (data) => {
+      const ids = (data.reviewers ?? []).map((r) => r.employeeId);
+      return new Set(ids).size === ids.length;
+    },
+    {
+      message: "Reviewer yang sama tidak boleh dipilih lebih dari sekali.",
+      path: ["reviewers"],
+    }
+  );
 
 export type BuatSuratFormValues = z.infer<typeof buatSuratSchema>;
 

@@ -107,6 +107,11 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       // Jangan buat draft baru di database jika pengguna belum mengisi konten surat
       if (!draftIdRef.current && !hasMeaningfulContent) return;
 
+      // Jangan autosave jika approver sekaligus menjadi reviewer (konflik peran yang ditolak backend)
+      const reviewerEmpIds = new Set(values.reviewers?.map((r) => r.employeeId) ?? []);
+      const hasConflict = (values.approvers ?? []).some((a) => reviewerEmpIds.has(a.employeeId));
+      if (hasConflict) return;
+
       const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
       setDraftId(res.id);
       setDraftEtag(res.etag);

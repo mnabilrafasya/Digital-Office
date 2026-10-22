@@ -101,6 +101,12 @@ export function StepPicker({
 
   function addCandidate(candidate: CandidateItem) {
     if (value.length >= MAX_STEP_LIMIT) return;
+    if (otherRoleIds.includes(candidate.id)) {
+      alert(
+        `Pegawai ini sudah dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}. Seseorang tidak boleh menjadi Reviewer sekaligus Approver.`
+      );
+      return;
+    }
 
     const entry: StepEntry = {
       id: generateId(),
@@ -138,24 +144,32 @@ export function StepPicker({
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors",
                   isDuplicate
-                    ? "bg-status-warn-bg text-status-warn-text border border-status-warn-text/40"
+                    ? "bg-status-danger-bg text-status-danger-text border border-status-danger-text/60 font-semibold"
                     : isApprover
                       ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                       : "bg-primary/10 text-primary border border-primary/20"
                 )}
-                title={`${entry.employeeName} • ${entry.jabatan} • ${entry.unitName}`}
+                title={
+                  isDuplicate
+                    ? `Perhatian: ${entry.employeeName} juga dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}`
+                    : `${entry.employeeName} • ${entry.jabatan} • ${entry.unitName}`
+                }
               >
                 {/* User / Approver Icon & Kode Tag */}
                 {isApprover ? (
-                  <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                  <CheckCircle2 size={12} className={cn("shrink-0", isDuplicate ? "text-status-danger-text" : "text-emerald-600")} />
                 ) : (
-                  <User size={12} className="text-primary shrink-0" />
+                  <User size={12} className={cn("shrink-0", isDuplicate ? "text-status-danger-text" : "text-primary")} />
                 )}
 
                 <span
                   className={cn(
                     "px-1.5 py-0.2 rounded-full text-[10px] font-bold leading-none shrink-0",
-                    isApprover ? "bg-emerald-200 text-emerald-900" : "bg-primary/20 text-primary"
+                    isDuplicate
+                      ? "bg-status-danger-text text-white"
+                      : isApprover
+                        ? "bg-emerald-200 text-emerald-900"
+                        : "bg-primary/20 text-primary"
                   )}
                 >
                   {isApprover ? `A${idx + 1}` : `R${idx + 1}`}
@@ -166,8 +180,8 @@ export function StepPicker({
                 </span>
 
                 {isDuplicate && (
-                  <span title={`Juga dipilih di role lain`} className="text-status-warn-text shrink-0">
-                    <AlertTriangle size={11} />
+                  <span title={`Konflik: Juga dipilih di role lain`} className="text-status-danger-text shrink-0">
+                    <AlertTriangle size={12} />
                   </span>
                 )}
 
@@ -182,6 +196,17 @@ export function StepPicker({
               </span>
             );
           })}
+        </div>
+      )}
+
+      {/* Banner peringatan jika terdapat duplikat antar role */}
+      {duplicateIds.length > 0 && (
+        <div className="p-2.5 rounded-lg bg-status-danger-bg border border-status-danger-text/30 flex items-start gap-2 text-xs text-status-danger-text">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span>
+            <strong>Konflik Peran:</strong> Pegawai yang ditandai merah di atas sudah dipilih sebagai {isApprover ? "Reviewer" : "Approver"}.
+            Satu orang tidak boleh menjadi Reviewer sekaligus Approver. Silakan hapus salah satunya.
+          </span>
         </div>
       )}
 
@@ -315,27 +340,48 @@ export function StepPicker({
                   : `Tidak ada kandidat ${roleLabel} tersedia.`}
               </li>
             ) : (
-              filtered.map((c) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => addCandidate(c)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-center gap-2"
-                  >
-                    {isApprover ? (
-                      <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
-                    ) : (
-                      <User size={13} className="text-primary shrink-0" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-text truncate">{c.name}</div>
-                      <div className="text-xs text-text-muted truncate">
-                        {c.positionName} &bull; {c.unitName}
+              filtered.map((c) => {
+                const isAlreadyInOtherRole = otherRoleIds.includes(c.id);
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      disabled={isAlreadyInOtherRole}
+                      onClick={() => addCandidate(c)}
+                      className={cn(
+                        "w-full text-left px-4 py-2.5 transition-colors flex items-center gap-2",
+                        isAlreadyInOtherRole
+                          ? "opacity-50 cursor-not-allowed bg-panel/30"
+                          : "hover:bg-panel cursor-pointer"
+                      )}
+                      title={
+                        isAlreadyInOtherRole
+                          ? `Pegawai ini sudah dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}`
+                          : undefined
+                      }
+                    >
+                      {isApprover ? (
+                        <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                      ) : (
+                        <User size={13} className="text-primary shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text truncate">{c.name}</span>
+                          {isAlreadyInOtherRole && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-status-danger-bg text-status-danger-text border border-status-danger-text/20">
+                              Sudah jadi {isApprover ? "Reviewer" : "Approver"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-text-muted truncate">
+                          {c.positionName} &bull; {c.unitName}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                </li>
-              ))
+                    </button>
+                  </li>
+                );
+              })
             )}
           </ul>
 
