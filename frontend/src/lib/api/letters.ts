@@ -143,10 +143,10 @@ export async function listLetters(
   // Filter client-side tambahan untuk filter yang belum ada parameternya di backend
   let filteredItems = items;
   if (letterTypeId) {
-    filteredItems = filteredItems.filter((it) => it.letterType.id === letterTypeId);
+    filteredItems = filteredItems.filter((it) => it.letterType?.id === letterTypeId);
   }
   if (confidentialityId) {
-    filteredItems = filteredItems.filter((it) => it.confidentiality.id === confidentialityId);
+    filteredItems = filteredItems.filter((it) => it.confidentiality?.id === confidentialityId);
   }
   if (from) {
     filteredItems = filteredItems.filter((it) => it.createdAt >= from);
