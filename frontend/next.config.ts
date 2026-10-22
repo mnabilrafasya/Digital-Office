@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   async redirects() {
     return [
       {
@@ -12,11 +11,11 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // cacheComponents dan partialPrefetching dimatikan:
-  // semua halaman bersifat per-user, caching tidak berguna dan
-  // bisa menampilkan data stale setelah integrasi auth.
-  // cacheComponents: false,   // default false
-  // partialPrefetching: false, // default false
+
+  // ── Catatan: proxy /api/v1/* ditangani oleh route handler ──
+  // app/api/v1/[...path]/route.ts membaca cookie "token" dan meneruskan
+  // request ke backend Go dengan header Authorization yang benar.
+
   reactCompiler: true,
   turbopack: {
     rules: {
@@ -30,3 +29,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
