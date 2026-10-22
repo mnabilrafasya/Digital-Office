@@ -22,12 +22,16 @@ export function RecipientFields() {
     <>
       {/* Reviewer */}
       <div className="md:col-span-2">
-        <FieldLabel label="Reviewer" required />
+        <div className="flex items-center justify-between mb-1">
+          <FieldLabel label="Reviewer" required />
+          <span className="text-xs text-text-muted">Maks. 10 orang</span>
+        </div>
         <Controller
           name="reviewers"
           control={control}
           render={({ field }) => (
             <StepPicker
+              kodeAlias="R"
               role="REVIEWER"
               value={field.value}
               onChange={field.onChange}
@@ -40,12 +44,16 @@ export function RecipientFields() {
 
       {/* Approver */}
       <div className="md:col-span-2">
-        <FieldLabel label="Approver" required />
+        <div className="flex items-center justify-between mb-1">
+          <FieldLabel label="Approver" required />
+          <span className="text-xs text-text-muted">Maks. 10 orang</span>
+        </div>
         <Controller
           name="approvers"
           control={control}
           render={({ field }) => (
             <StepPicker
+              kodeAlias="A"
               role="APPROVER"
               value={field.value}
               onChange={field.onChange}

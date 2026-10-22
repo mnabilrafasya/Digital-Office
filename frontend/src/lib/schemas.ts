@@ -14,6 +14,8 @@ const stepEntrySchema = z.object({
   employeeName: z.string().min(1),
   jabatan: z.string(),
   unitName: z.string(),
+  kodeAlias: z.string().optional(),
+  kode_alias: z.string().optional(),
 });
 
 // ─── UnitEntry schema ────────────────────────
@@ -55,11 +57,13 @@ export const buatSuratSchema = z.object({
 
   reviewers: z
     .array(stepEntrySchema)
-    .min(1, { message: "Minimal 1 reviewer wajib ditambahkan." }),
+    .min(1, { message: "Minimal 1 reviewer wajib ditambahkan." })
+    .max(10, { message: "Maksimal 10 reviewer diperbolehkan." }),
 
   approvers: z
     .array(stepEntrySchema)
-    .min(1, { message: "Minimal 1 approver wajib ditambahkan." }),
+    .min(1, { message: "Minimal 1 approver wajib ditambahkan." })
+    .max(10, { message: "Maksimal 10 approver diperbolehkan." }),
 
   toUnits: z
     .array(unitEntrySchema)

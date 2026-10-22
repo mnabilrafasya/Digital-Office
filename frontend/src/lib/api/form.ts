@@ -31,6 +31,8 @@ export interface CandidateItem {
   employeeNumber: string;
   positionName: string;
   unitName: string;
+  kodeAlias?: "R" | "A" | string;
+  kode_alias?: "R" | "A" | string;
 }
 
 // ─── Helper fetch ────────────────────────────
@@ -77,7 +79,9 @@ export async function fetchUnits(q?: string): Promise<UnitItem[]> {
 // ─── Candidates (Reviewer / Approver) ────────
 
 export interface CandidateQuery {
-  type: "REVIEWER" | "APPROVER";
+  type: "REVIEWER" | "APPROVER" | "R" | "A" | string;
+  kodeAlias?: "R" | "A" | string;
+  kode_alias?: "R" | "A" | string;
   q?: string;
   limit?: number;
 }
@@ -85,7 +89,12 @@ export interface CandidateQuery {
 export async function fetchCandidates(
   query: CandidateQuery
 ): Promise<CandidateItem[]> {
-  const params = new URLSearchParams({ type: query.type });
+  // Normalisasi Kode Alias / type: 'R' -> 'REVIEWER', 'A' -> 'APPROVER'
+  const rawType = (query.kodeAlias || query.kode_alias || query.type || "REVIEWER").toUpperCase();
+  const normalizedType =
+    rawType === "A" || rawType === "APPROVER" ? "APPROVER" : "REVIEWER";
+
+  const params = new URLSearchParams({ type: normalizedType });
   if (query.q) params.set("q", query.q);
   if (query.limit) params.set("limit", String(query.limit));
   return get<CandidateItem[]>(`/users/candidates?${params.toString()}`);

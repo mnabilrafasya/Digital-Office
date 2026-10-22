@@ -107,6 +107,8 @@ export interface Classification {
 
 // ─── Form types ─────────────────────────────
 
+export type KodeAlias = "R" | "A" | "REVIEWER" | "APPROVER";
+
 /** Satu entri reviewer atau approver di form */
 export interface StepEntry {
   id: string;          // uuid sementara di frontend
@@ -114,6 +116,8 @@ export interface StepEntry {
   employeeName: string;
   jabatan: string;
   unitName: string;
+  kodeAlias?: "R" | "A" | string;
+  kode_alias?: "R" | "A" | string;
 }
 
 // ─── API Lookup ──────────────────────────────
