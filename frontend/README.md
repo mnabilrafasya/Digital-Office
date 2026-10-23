@@ -41,7 +41,7 @@ Pada halaman login (`/login`), terdapat fitur **"Akses Cepat Developer"** untuk 
 | **Approver** | Agus Setiawan | `1995021` | Menyetujui dan menandatangani surat |
 | **Admin** | Rudi Hartono | `2014090` | Manajemen master data & sistem |
 
-> **Password default**: Mengikuti nilai `SEED_PASSWORD` pada file `.env` di direktori backend (`Apalahkauni03!`).
+> **Password dev / seed**: Mengikuti nilai `SEED_PASSWORD` di `.env.local` frontend (disamakan dengan `SEED_PASSWORD` pada `.env` backend).
 
 ---
 

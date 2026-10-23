@@ -25,7 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { loginAction } from "@/app/actions/auth";
+import { loginAction, devLoginAction } from "@/app/actions/auth";
 
 // ─── Akun dev siap pakai (sesuai backend seeds) ────────────────
 const DEV_ACCOUNTS = [
@@ -59,7 +59,6 @@ const DEV_ACCOUNTS = [
   },
 ] as const;
 
-const SEED_PASSWORD = "Apalahkauni03!";
 
 const labelClass =
   "block text-xs font-semibold tracking-wide uppercase text-text-muted mb-1.5";
@@ -111,7 +110,7 @@ export function LoginForm() {
   async function handleDevLogin(nik: string, label: string) {
     setDevLoading(label);
     setErrorMsg(null);
-    const result = await loginAction(nik, SEED_PASSWORD);
+    const result = await devLoginAction(nik);
     setDevLoading(null);
     if (result.success) {
       router.push(nextPath);
@@ -297,7 +296,7 @@ export function LoginForm() {
               </button>
             ))}
             <p className="text-[11px] text-text-muted/70 pt-1 text-center">
-              NIK: 2015047 / 2012060 / 1995021 / 2014090 — password di <code>backend/.env</code>
+              NIK: 2015047 / 2012060 / 1995021 / 2014090 — password diatur via <code>SEED_PASSWORD</code> di <code>.env.local</code>
             </p>
           </div>
         )}

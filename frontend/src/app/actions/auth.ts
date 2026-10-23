@@ -63,6 +63,28 @@ export async function loginAction(
   return { success: true };
 }
 
+/**
+ * Login dev (Akses Cepat Developer):
+ * Menggunakan SEED_PASSWORD dari environment (.env.local),
+ * sehingga tiap anggota tim dapat login otomatis sesuai konfigurasi env masing-masing.
+ */
+export async function devLoginAction(
+  employeeNumber: string
+): Promise<LoginResult> {
+  const seedPassword =
+    process.env.SEED_PASSWORD || process.env.NEXT_PUBLIC_SEED_PASSWORD;
+
+  if (!seedPassword) {
+    return {
+      success: false,
+      error:
+        "SEED_PASSWORD belum diatur di .env.local frontend. Silakan tambahkan SEED_PASSWORD sesuai backend Anda.",
+    };
+  }
+
+  return loginAction(employeeNumber, seedPassword);
+}
+
 /** Logout: hapus cookie token lalu redirect ke halaman login. */
 export async function logoutAction() {
   const store = await cookies();
