@@ -96,7 +96,7 @@ Sumber kebenaran: `backend/docs/api.md` (baca bagian endpoint yang dikerjakan sa
 `POST /auth/login` (`employeeNumber`, `password` -> `accessToken` Bearer 8 jam + `user`), `POST /auth/logout` (204, mengakhiri semua sesi user), `GET /auth/me` (user + `permissions`), `GET /lookups?category=LETTER_TYPE|CONFIDENTIALITY|URGENCY|CLASSIFICATION|LETTER_STATUS|INBOX_STATUS`, `GET /units?q=`, `GET /users/candidates?type=REVIEWER|APPROVER&q=&limit=` (perlu `LETTER_CREATE`), `GET /recipients/aliases`, `POST /letters` (buat draf), `GET /letters/{uuid}`, `PUT /letters/{uuid}` (simpan draf).
 
 **Belum ada di backend (pakai mock, bentuk data sama dengan backend):**
-daftar surat (list), daftar template, upload lampiran, **kirim/submit** ke reviewer, aksi review (setuju/kembalikan/batalkan), inbox dan disposisi, dashboard, "Muat Draf Terakhir" (butuh list). `allowedActions` saat ini hanya berisi `EDIT`.
+daftar surat (list), daftar template, upload lampiran, **kirim/submit** ke reviewer, aksi review (setuju/kembalikan/batalkan), inbox dan disposisi. `allowedActions` saat ini hanya berisi `EDIT`.
 
 **Aturan format:** sukses `{ "data": ... }`, error `{ "error": { "code", "message" } }` (kode: `VALIDATION_ERROR` 400, `INVALID_CREDENTIALS`/`UNAUTHORIZED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404, `INVALID_STATE` 409, `VERSION_CONFLICT` 412, `PRECONDITION_REQUIRED` 428, `TOO_MANY_REQUESTS` 429 + `Retry-After`). Field camelCase. Semua ID **string**, surat = **uuid**.
 
@@ -132,7 +132,7 @@ Tampilan sudah selesai sesuai gambar (Section 1 Detail, Section 2 Lampiran, Sect
 2. Reviewer/Approver: kandidat dari `/users/candidates` (pencarian di server, `limit` ≤ 50). **Approver hanya satu** (sesuai `approverId`); ubah picker approver jadi pilihan tunggal, atau konfirmasi ke backend bila approver bertahap harus didukung. Drafter boleh jadi reviewer tetapi tidak boleh jadi approver (kandidat `APPROVER` otomatis tanpa drafter).
 3. Tujuan/Tembusan: unit dari `/units?q=`, ditambah opsi **alias** dari `/recipients/aliases` ("Seluruh VP (2)"). Tolak duplikat lintas Tujuan dan Tembusan.
 4. Autosave sungguhan sesuai bagian 7 (POST pertama, PUT + `If-Match`, antrian, 412/409).
-5. Lampiran, Template, Submit, dan Muat Draf Terakhir **tetap mock** sampai backend punya endpoint-nya.
+5. Lampiran, Template, Submit, **tetap mock** sampai backend punya endpoint-nya.
 
 ## 9. Daftar Surat [GAMBAR + USULAN]
 

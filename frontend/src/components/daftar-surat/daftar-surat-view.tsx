@@ -23,6 +23,7 @@ import { FilterBar }     from "@/components/daftar-surat/filter-bar";
 import type { FilterValues } from "@/components/daftar-surat/filter-bar";
 import { LettersTable }  from "@/components/daftar-surat/letters-table";
 import { Pagination }    from "@/components/daftar-surat/pagination";
+import { cn }            from "@/lib/utils";
 
 // ─── Default state ────────────────────────────
 
@@ -66,11 +67,30 @@ export function DaftarSuratSkeleton() {
 
 // ─── Main View ───────────────────────────────
 
-export function DaftarSuratView() {
+interface DaftarSuratViewProps {
+  initialScope?: "mine" | "review" | "approval" | "tasks";
+  title?: string;
+  subtitle?: string;
+  breadcrumbLabel?: string;
+  showCreateButton?: boolean;
+}
+
+export function DaftarSuratView({
+  initialScope = "mine",
+  title = "Daftar Surat",
+  subtitle = "Kelola, pantau proses review & persetujuan, serta tindak lanjut surat yang Anda susun.",
+  breadcrumbLabel = "Daftar Surat",
+  showCreateButton = true,
+}: DaftarSuratViewProps = {}) {
   const router       = useRouter();
   const pathname     = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+
+  const isSpecialScope = initialScope === "review" || initialScope === "approval";
+  const effectiveScope = isSpecialScope
+    ? initialScope
+    : (searchParams.get("scope") === "tasks" ? "tasks" : "mine");
 
   // Baca state dari URL
   const activeTab  = searchParams.get("status") ?? "";
@@ -100,6 +120,7 @@ export function DaftarSuratView() {
     setError(false);
     try {
       const resp = await listLetters({
+        scope: effectiveScope,
         status: (activeTab as ListLettersResponse["data"][0]["status"]) || undefined,
         q:                searchParams.get("q")                ?? "",
         letterTypeId:     searchParams.get("letterTypeId")     ?? "",
@@ -117,7 +138,7 @@ export function DaftarSuratView() {
     } finally {
       setLoading(false);
     }
-  }, [searchParams, activeTab, page, pageSize]);
+  }, [searchParams, effectiveScope, activeTab, page, pageSize]);
 
   useEffect(() => {
     fetchData();
@@ -132,6 +153,10 @@ export function DaftarSuratView() {
     startTransition(() => {
       router.push(`${pathname}${buildSearch(merged)}`);
     });
+  }
+
+  function handleScopeChange(newScope: "mine" | "tasks") {
+    pushUrl({ scope: newScope, status: "", page: 1 });
   }
 
   // ── Handler tab ───────────────────────────
@@ -191,27 +216,59 @@ export function DaftarSuratView() {
           <ChevronRight size={12} />
           <span>Penciptaan Surat</span>
           <ChevronRight size={12} />
-          <span className="text-text font-medium">Daftar Surat</span>
+          <span className="text-text font-medium">{breadcrumbLabel}</span>
         </nav>
 
         {/* Judul + CTA */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text">Daftar Surat</h1>
+            <h1 className="text-2xl font-bold text-text">{title}</h1>
             <p className="text-text-muted text-sm mt-0.5">
-              Kelola, pantau proses review &amp; persetujuan, serta tindak lanjut surat yang Anda susun.
+              {subtitle}
             </p>
           </div>
 
-          <Link
-            href="/surat/baru"
-            id="btn-buat-surat-baru"
-            className="shrink-0 inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-sm font-semibold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Plus size={15} />
-            Buat Surat Baru
-          </Link>
+          {showCreateButton && (
+            <Link
+              href="/surat/baru"
+              id="btn-buat-surat-baru"
+              className="shrink-0 inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-sm font-semibold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
+            >
+              <Plus size={15} />
+              Buat Surat Baru
+            </Link>
+          )}
         </div>
+
+        {/* Segmented control untuk berpindah antara Surat Saya dan Tugas Saya (hanya di Daftar Surat umum) */}
+        {!isSpecialScope && (
+          <div className="mt-4 inline-flex items-center p-1 rounded-xl bg-panel border border-border">
+            <button
+              type="button"
+              onClick={() => handleScopeChange("mine")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                effectiveScope === "mine"
+                  ? "bg-surface text-primary shadow-xs"
+                  : "text-text-muted hover:text-text"
+              )}
+            >
+              Naskah Saya (Drafter)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleScopeChange("tasks")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5",
+                effectiveScope === "tasks"
+                  ? "bg-surface text-primary shadow-xs"
+                  : "text-text-muted hover:text-text"
+              )}
+            >
+              Tugas Saya (Review &amp; Approval)
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Kartu ringkasan ── */}

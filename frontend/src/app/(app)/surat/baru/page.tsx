@@ -13,7 +13,6 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { BUAT_SURAT_DEFAULTS, buatSuratSchema, type BuatSuratFormValues } from "@/lib/schemas";
 import type { LetterAttachment, StepEntry } from "@/lib/types";
-import { useAutosave } from "@/hooks/use-autosave";
 import { generateId } from "@/lib/utils";
 
 import {
@@ -74,70 +73,42 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
   const [draftEtag, setDraftEtag] = useState<string | null>(null);
 
   const [attachments, setAttachments] = useState<LetterAttachment[]>([]);
+  const [savedAttachmentsSignature, setSavedAttachmentsSignature] = useState<string>("[]");
   const [dialog, setDialog] = useState<DialogType>(null);
   const [loadingDraft, setLoadingDraft] = useState(Boolean(draftQueryId));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
 
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
   const values = useWatch({ control });
 
-  // Refs untuk mencegah race condition pada autosave & simpan berurutan
+  // Refs untuk mencegah race condition pada penyimpanan
   const draftIdRef = useRef<string | null>(draftId);
   draftIdRef.current = draftId;
   const draftEtagRef = useRef<string | null>(draftEtag);
   draftEtagRef.current = draftEtag;
   const loadedDraftIdRef = useRef<string | null>(null);
 
-  // ─── Autosave riil ke backend ──────────────────
-  const { isDirty, isSaving, lastSaved, saveFailed, saveNow, markSaved } = useAutosave({
-    signature: JSON.stringify([values, attachments]),
-    enabled: dialog !== "sukses" && !loadingDraft,
-    save: async () => {
-      // Autosave hanya berjalan jika ada minimal 1 data bermakna
-      const hasMeaningfulContent = Boolean(
-        values.title?.trim() ||
-        values.classificationId ||
-        (values.reviewers && values.reviewers.length > 0) ||
-        (values.toUnits && values.toUnits.length > 0) ||
-        values.summary?.trim() ||
-        values.specialNote?.trim()
-      );
-
-      // Jangan buat draft baru di database jika pengguna belum mengisi konten surat
-      if (!draftIdRef.current && !hasMeaningfulContent) return;
-
-      // Jangan autosave jika approver sekaligus menjadi reviewer (konflik peran yang ditolak backend)
-      const reviewerEmpIds = new Set(values.reviewers?.map((r) => r.employeeId) ?? []);
-      const hasConflict = (values.approvers ?? []).some((a) => reviewerEmpIds.has(a.employeeId));
-      if (hasConflict) return;
-
-      const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
-      setDraftId(res.id);
-      setDraftEtag(res.etag);
-      draftIdRef.current = res.id;
-      draftEtagRef.current = res.etag;
-      loadedDraftIdRef.current = res.id;
-      if (!draftQueryId && res.id) {
-        window.history.replaceState(null, "", `/surat/baru?draft=${res.id}`);
-      }
-    },
-  });
-
-  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  // Status perubahan yang belum disimpan (dirty state)
+  const isDirty =
+    methods.formState.isDirty ||
+    JSON.stringify(attachments) !== savedAttachmentsSignature;
 
   // ─── Memuat draf jika ada parameter ?draft=UUID ───
   useEffect(() => {
     if (!draftQueryId) return;
     if (loadedDraftIdRef.current === draftQueryId) return;
 
-    let isMounted = true;
+    let cancelled = false;
     setLoadingDraft(true);
-    loadedDraftIdRef.current = draftQueryId;
 
     getDraftLetter(draftQueryId)
       .then(({ detail, etag }) => {
-        if (!isMounted) return;
+        if (cancelled) return;
 
         setDraftId(detail.id);
         setDraftEtag(etag);
@@ -145,11 +116,11 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         draftEtagRef.current = etag;
         loadedDraftIdRef.current = detail.id;
 
-        // Ekstrak reviewers & approvers
+        // Ekstrak reviewers & approvers dengan ID deterministik
         const reviewers: StepEntry[] = (detail.steps ?? [])
           .filter((s) => s.role === "REVIEWER")
-          .map((s) => ({
-            id: generateId(),
+          .map((s, idx) => ({
+            id: `rev-${s.user.id || idx}`,
             employeeId: String(s.user.id),
             employeeName: s.user.name,
             jabatan: s.user.positionName,
@@ -159,8 +130,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
         const approvers: StepEntry[] = (detail.steps ?? [])
           .filter((s) => s.role === "APPROVER")
-          .map((s) => ({
-            id: generateId(),
+          .map((s, idx) => ({
+            id: `app-${s.user.id || idx}`,
             employeeId: String(s.user.id),
             employeeName: s.user.name,
             jabatan: s.user.positionName,
@@ -169,12 +140,28 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           }));
 
         const toUnits = (detail.recipients?.to ?? [])
-          .filter((r): r is RecipientUnit => r.type === "UNIT")
-          .map((r) => ({ id: String(r.unit.id), name: r.unit.name }));
+          .map((r) => {
+            if (r.type === "UNIT" && r.unit) {
+              return { id: String(r.unit.id), name: r.unit.name };
+            }
+            if (r.type === "ALIAS" && (r as any).alias) {
+              return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+            }
+            return null;
+          })
+          .filter((u): u is { id: string; name: string } => u !== null);
 
         const ccUnits = (detail.recipients?.cc ?? [])
-          .filter((r): r is RecipientUnit => r.type === "UNIT")
-          .map((r) => ({ id: String(r.unit.id), name: r.unit.name }));
+          .map((r) => {
+            if (r.type === "UNIT" && r.unit) {
+              return { id: String(r.unit.id), name: r.unit.name };
+            }
+            if (r.type === "ALIAS" && (r as any).alias) {
+              return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+            }
+            return null;
+          })
+          .filter((u): u is { id: string; name: string } => u !== null);
 
         const newValues: BuatSuratFormValues = {
           letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
@@ -191,20 +178,35 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           ccUnits,
         };
 
+        const loadedAttachments: LetterAttachment[] = (detail.attachments ?? []).map((a) => ({
+          id: a.id,
+          fileName: a.fileName,
+          sizeBytes: a.size,
+          mimeType: a.contentType,
+          uploadedAt: a.uploadedAt,
+        }));
+        setAttachments(loadedAttachments);
+        setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
+
         reset(newValues);
-        markSaved(JSON.stringify([newValues, attachments]));
+        setLastSaved(new Date());
+        setSaveFailed(false);
       })
       .catch((e: unknown) => {
-        console.error("Gagal memuat draf dari URL:", e);
+        if (!cancelled) {
+          console.error("Gagal memuat draf dari URL:", e);
+        }
       })
       .finally(() => {
-        if (isMounted) setLoadingDraft(false);
+        if (!cancelled) {
+          setLoadingDraft(false);
+        }
       });
 
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
-  }, [draftQueryId, reset, markSaved, attachments]);
+  }, [draftQueryId, reset]);
 
   // ─── Handlers ────────────────────────────────
 
@@ -225,11 +227,12 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       setDraftEtag(etag);
       draftIdRef.current = detail.id;
       draftEtagRef.current = etag;
+      loadedDraftIdRef.current = detail.id;
 
       const reviewers: StepEntry[] = (detail.steps ?? [])
         .filter((s) => s.role === "REVIEWER")
-        .map((s) => ({
-          id: generateId(),
+        .map((s, idx) => ({
+          id: `rev-${s.user.id || idx}`,
           employeeId: String(s.user.id),
           employeeName: s.user.name,
           jabatan: s.user.positionName,
@@ -239,8 +242,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
       const approvers: StepEntry[] = (detail.steps ?? [])
         .filter((s) => s.role === "APPROVER")
-        .map((s) => ({
-          id: generateId(),
+        .map((s, idx) => ({
+          id: `app-${s.user.id || idx}`,
           employeeId: String(s.user.id),
           employeeName: s.user.name,
           jabatan: s.user.positionName,
@@ -249,12 +252,28 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         }));
 
       const toUnits = (detail.recipients?.to ?? [])
-        .filter((r): r is RecipientUnit => r.type === "UNIT")
-        .map((r) => ({ id: String(r.unit.id), name: r.unit.name }));
+        .map((r) => {
+          if (r.type === "UNIT" && r.unit) {
+            return { id: String(r.unit.id), name: r.unit.name };
+          }
+          if (r.type === "ALIAS" && (r as any).alias) {
+            return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+          }
+          return null;
+        })
+        .filter((u): u is { id: string; name: string } => u !== null);
 
       const ccUnits = (detail.recipients?.cc ?? [])
-        .filter((r): r is RecipientUnit => r.type === "UNIT")
-        .map((r) => ({ id: String(r.unit.id), name: r.unit.name }));
+        .map((r) => {
+          if (r.type === "UNIT" && r.unit) {
+            return { id: String(r.unit.id), name: r.unit.name };
+          }
+          if (r.type === "ALIAS" && (r as any).alias) {
+            return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+          }
+          return null;
+        })
+        .filter((u): u is { id: string; name: string } => u !== null);
 
       const newValues: BuatSuratFormValues = {
         letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
@@ -271,9 +290,19 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         ccUnits,
       };
 
+      const loadedAttachments: LetterAttachment[] = (detail.attachments ?? []).map((a) => ({
+        id: a.id,
+        fileName: a.fileName,
+        sizeBytes: a.size,
+        mimeType: a.contentType,
+        uploadedAt: a.uploadedAt,
+      }));
+      setAttachments(loadedAttachments);
+      setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
+
       reset(newValues);
-      markSaved(JSON.stringify([newValues, attachments]));
-      loadedDraftIdRef.current = detail.id;
+      setLastSaved(new Date());
+      setSaveFailed(false);
       window.history.replaceState(null, "", `/surat/baru?draft=${detail.id}`);
       await trigger();
     } catch (err: unknown) {
@@ -284,8 +313,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     }
   }
 
-  async function handleDirectSaveDraft() {
+  async function handleSimpan() {
     setIsSavingDraft(true);
+    setSaveFailed(false);
     try {
       const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
       setDraftId(res.id);
@@ -293,40 +323,23 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       draftIdRef.current = res.id;
       draftEtagRef.current = res.etag;
       loadedDraftIdRef.current = res.id;
-      markSaved(JSON.stringify([values, attachments]));
+      setLastSaved(new Date());
+      setSavedAttachmentsSignature(JSON.stringify(attachments));
+      reset(values as BuatSuratFormValues);
       if (!draftQueryId && res.id) {
         window.history.replaceState(null, "", `/surat/baru?draft=${res.id}`);
       }
       setDialog("draf_sukses");
     } catch (err: unknown) {
       console.error("Gagal simpan draf:", err);
+      setSaveFailed(true);
       alert(err instanceof Error ? err.message : "Gagal menyimpan draf.");
     } finally {
       setIsSavingDraft(false);
     }
   }
 
-  async function handleSimpan() {
-    setIsSavingDraft(true);
-    try {
-      const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
-      setDraftId(res.id);
-      setDraftEtag(res.etag);
-      draftIdRef.current = res.id;
-      draftEtagRef.current = res.etag;
-      loadedDraftIdRef.current = res.id;
-      markSaved(JSON.stringify([values, attachments]));
-      if (!draftQueryId && res.id) {
-        window.history.replaceState(null, "", `/surat/baru?draft=${res.id}`);
-      }
-      setDialog("draf_sukses");
-    } catch (e: unknown) {
-      console.error("Gagal simpan draf:", e);
-      alert(e instanceof Error ? e.message : "Gagal menyimpan draf.");
-    } finally {
-      setIsSavingDraft(false);
-    }
-  }
+  const handleDirectSaveDraft = handleSimpan;
 
   async function handleSubmit() {
     setSubmitFailed(false);
@@ -341,7 +354,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       draftIdRef.current = saved.id;
       draftEtagRef.current = saved.etag;
       loadedDraftIdRef.current = saved.id;
-      markSaved();
+      setLastSaved(new Date());
+      setSavedAttachmentsSignature(JSON.stringify(attachments));
+      reset(values as BuatSuratFormValues);
 
       // 2. Eksekusi pengiriman surat ke reviewer pertama (POST /api/v1/letters/{id}/submit)
       await submitLetter(saved.id);
@@ -372,7 +387,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     <FormProvider {...methods}>
       <div className="min-h-screen pb-28">
         <BuatSuratHeader
-          isSaving={isSaving || isSavingDraft}
+          isSaving={isSavingDraft}
           isDirty={isDirty}
           saveFailed={saveFailed}
           lastSaved={lastSaved}
@@ -397,13 +412,13 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         <ActionBar
           onBatal={handleBatal}
           onSimpan={handleDirectSaveDraft}
-          isSaving={isSavingDraft || isSaving}
+          isSaving={isSavingDraft}
         />
 
         <ConfirmDialogs
           dialog={dialog}
           onClose={() => setDialog(null)}
-          isSaving={isSavingDraft || isSaving}
+          isSaving={isSavingDraft}
           saveFailed={saveFailed}
           onSimpan={handleSimpan}
           isSubmitting={isSubmitting}
