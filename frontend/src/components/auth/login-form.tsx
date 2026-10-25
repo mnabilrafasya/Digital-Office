@@ -59,7 +59,8 @@ const DEV_ACCOUNTS = [
   },
 ] as const;
 
-
+// Panel dev hanya untuk pengembangan; dihapus total sebelum production.
+const SHOW_DEV_PANEL = process.env.NODE_ENV !== "production";
 const labelClass =
   "block text-xs font-semibold tracking-wide uppercase text-text-muted mb-1.5";
 
@@ -238,6 +239,7 @@ export function LoginForm() {
       </form>
 
       {/* ── Panel Akses Cepat Developer ─────────── */}
+      {SHOW_DEV_PANEL && (
       <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
         <button
           type="button"
@@ -301,6 +303,7 @@ export function LoginForm() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

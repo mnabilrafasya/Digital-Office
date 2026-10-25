@@ -72,15 +72,18 @@ async function handler(
     );
   }
 
-  // Jika backend mengembalikan 401, berarti token tidak valid / kadaluarsa.
-  // Nanti setelah login terintegrasi, tambahkan redirect ke /login di sini.
-  // if (response.status === 401) { ... hapus cookie, redirect }
-
-  const responseBody = await response.arrayBuffer();
+  // Status tanpa isi (204, 205, 304) wajib body null.
+  const noBody = [204, 205, 304].includes(response.status);
+  const responseBody = noBody ? null : await response.arrayBuffer();
 
   const nextResponse = new NextResponse(responseBody, {
     status: response.status,
   });
+
+  // Token ditolak backend: hapus cookie agar navigasi berikutnya ke /login.
+  if (response.status === 401 && token) {
+    nextResponse.cookies.delete("token");
+  }
 
   // Teruskan header backend yang relevan ke browser
   for (const h of FORWARDED_RESPONSE_HEADERS) {

@@ -54,7 +54,11 @@ function mapBackendLetter(b: BackendLetterItem): LetterListItem {
     letterNumber: b.letterNumber ?? null,
     title: b.title ?? null,
     letterType: b.letterType ?? { id: "", code: "", name: "-" },
-    confidentiality: b.confidentiality ?? { id: "", code: "BIASA", name: "Biasa" },
+    confidentiality: b.confidentiality ?? {
+      id: "",
+      code: "BIASA",
+      name: "Biasa",
+    },
     urgency: b.urgency ?? { id: "", code: "BIASA", name: "Biasa" },
     senderUnit: {
       id: b.senderUnit?.id ?? "",
@@ -78,45 +82,49 @@ function mapBackendLetter(b: BackendLetterItem): LetterListItem {
   };
 }
 
-export async function listLetters(
-  params: ListLettersParams = {}
-): Promise<ListLettersResponse> {
-  const {
-    scope = "mine",
-    status,
-    q,
-    letterTypeId,
-    confidentialityId,
-    from,
-    to,
-    page = 1,
-    pageSize = 10,
-  } = params;
+const COUNT_GROUPS = {
+  DRAFT: "DRAFT",
+  IN_REVIEW: "IN_REVIEW",
+  RETURNED: "RETURNED_TO_DRAFTER,RETURNED_TO_REVIEWER",
+  IN_APPROVAL: "IN_APPROVAL",
+  SENT: "SENT",
+  CANCELLED: "CANCELLED",
+} as const;
 
-  const isTaskScope = scope === "approval" || scope === "review" || scope === "tasks";
+/** Jumlah per status = meta.total dari request pageSize=1 (akurat untuk berapa pun surat). */
+async function fetchTotal(scope: string, status: string): Promise<number> {
+  const sp = new URLSearchParams({ scope, status, page: "1", pageSize: "1" });
+  const res = await fetch(`${API}/letters?${sp.toString()}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return 0;
+  const json = (await res.json().catch(() => null)) as {
+    meta?: { total?: number };
+  } | null;
+  return json?.meta?.total ?? 0;
+}
+
+export async function listLetters(
+  params: ListLettersParams = {},
+): Promise<ListLettersResponse> {
+  // Filter jenis/sifat/tanggal belum didukung backend: sengaja diabaikan.
+  const { scope = "mine", status, q, page = 1, pageSize = 10 } = params;
+
+  const isTaskScope =
+    scope === "approval" || scope === "review" || scope === "tasks";
   const backendScope = isTaskScope ? "tasks" : "mine";
 
-  // 1. Fetch ringkasan count dari semua surat user (pageSize=100)
-  const countParams = new URLSearchParams({
-    scope: backendScope,
-    page: "1",
-    pageSize: "100",
-  });
-
-  // 2. Fetch data halaman yang sedang aktif
   const queryParams = new URLSearchParams({
     scope: backendScope,
     page: String(page),
     pageSize: String(pageSize),
   });
 
-  // Normalisasi status untuk tab 'RETURNED' -> 'RETURNED_TO_DRAFTER,RETURNED_TO_REVIEWER'
   if (status) {
-    if (status === "RETURNED_TO_DRAFTER") {
-      queryParams.set("status", "RETURNED_TO_DRAFTER,RETURNED_TO_REVIEWER");
-    } else {
-      queryParams.set("status", status);
-    }
+    queryParams.set(
+      "status",
+      status === "RETURNED_TO_DRAFTER" ? COUNT_GROUPS.RETURNED : status,
+    );
   } else if (scope === "review") {
     queryParams.set("status", "IN_REVIEW");
   } else if (scope === "approval") {
@@ -127,64 +135,37 @@ export async function listLetters(
     queryParams.set("q", q.trim());
   }
 
-  const [resCurrent, resAll] = await Promise.all([
+  const [resCurrent, ...totals] = await Promise.all([
     fetch(`${API}/letters?${queryParams.toString()}`, { cache: "no-store" }),
-    fetch(`${API}/letters?${countParams.toString()}`, { cache: "no-store" }).catch(() => null),
+    ...Object.values(COUNT_GROUPS).map((g) => fetchTotal(backendScope, g)),
   ]);
 
   if (!resCurrent.ok) {
     const err = await resCurrent.json().catch(() => ({}));
-    throw new Error(err.error?.message ?? `Gagal memuat daftar surat (HTTP ${resCurrent.status})`);
+    throw new Error(
+      err.error?.message ??
+        `Gagal memuat daftar surat (HTTP ${resCurrent.status})`,
+    );
   }
 
   const jsonCurrent = (await resCurrent.json()) as BackendListResponse;
-  const items = jsonCurrent.data.map(mapBackendLetter);
-
-  // Filter client-side tambahan untuk filter yang belum ada parameternya di backend
-  let filteredItems = items;
-  if (letterTypeId) {
-    filteredItems = filteredItems.filter((it) => it.letterType?.id === letterTypeId);
-  }
-  if (confidentialityId) {
-    filteredItems = filteredItems.filter((it) => it.confidentiality?.id === confidentialityId);
-  }
-  if (from) {
-    filteredItems = filteredItems.filter((it) => it.createdAt >= from);
-  }
-  if (to) {
-    filteredItems = filteredItems.filter((it) => it.createdAt <= to + "T23:59:59+07:00");
-  }
-
-  // Agregasi counts
-  let allItems: BackendLetterItem[] = [];
-  if (resAll && resAll.ok) {
-    const jsonAll = (await resAll.json().catch(() => null)) as BackendListResponse | null;
-    if (jsonAll?.data) {
-      allItems = jsonAll.data;
-    }
-  } else {
-    allItems = jsonCurrent.data;
-  }
-
-  const counts = {
-    ALL: allItems.length,
-    DRAFT: allItems.filter((l) => l.status === "DRAFT").length,
-    IN_REVIEW: allItems.filter((l) => l.status === "IN_REVIEW").length,
-    RETURNED: allItems.filter(
-      (l) => l.status === "RETURNED_TO_DRAFTER" || l.status === "RETURNED_TO_REVIEWER"
-    ).length,
-    IN_APPROVAL: allItems.filter((l) => l.status === "IN_APPROVAL").length,
-    SENT: allItems.filter((l) => l.status === "SENT").length,
-    CANCELLED: allItems.filter((l) => l.status === "CANCELLED").length,
-  };
+  const [DRAFT, IN_REVIEW, RETURNED, IN_APPROVAL, SENT, CANCELLED] = totals;
 
   return {
-    data: filteredItems,
+    data: jsonCurrent.data.map(mapBackendLetter),
     meta: {
       page: jsonCurrent.meta.page,
       pageSize: jsonCurrent.meta.pageSize,
       total: jsonCurrent.meta.total,
     },
-    counts,
+    counts: {
+      ALL: DRAFT + IN_REVIEW + RETURNED + IN_APPROVAL + SENT + CANCELLED,
+      DRAFT,
+      IN_REVIEW,
+      RETURNED,
+      IN_APPROVAL,
+      SENT,
+      CANCELLED,
+    },
   };
 }

@@ -21,7 +21,7 @@ export interface LoginResult {
 /** Login: kirim NIK + password ke backend, simpan token di cookie httpOnly. */
 export async function loginAction(
   employeeNumber: string,
-  password: string
+  password: string,
 ): Promise<LoginResult> {
   let res: Response;
   try {
@@ -32,17 +32,36 @@ export async function loginAction(
       cache: "no-store",
     });
   } catch {
-    return { success: false, error: "Backend tidak dapat dihubungi. Pastikan server berjalan." };
+    return {
+      success: false,
+      error: "Backend tidak dapat dihubungi. Pastikan server berjalan.",
+    };
   }
 
   if (!res.ok) {
     if (res.status === 401) {
-      return { success: false, error: "NIK atau password salah." };
+      return {
+        success: false,
+        error: "NIP / NIK atau kata sandi tidak sesuai.",
+      };
+    }
+    if (res.status === 429) {
+      const wait = Number(res.headers.get("retry-after"));
+      return {
+        success: false,
+        error:
+          wait > 0
+            ? `Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil(wait / 60)} menit.`
+            : "Terlalu banyak percobaan. Coba lagi beberapa saat lagi.",
+      };
     }
     if (res.status === 400) {
       return { success: false, error: "NIK dan password tidak boleh kosong." };
     }
-    return { success: false, error: `Server error (${res.status}). Coba beberapa saat lagi.` };
+    return {
+      success: false,
+      error: `Server error (${res.status}). Coba beberapa saat lagi.`,
+    };
   }
 
   const json = await res.json();
@@ -69,10 +88,14 @@ export async function loginAction(
  * sehingga tiap anggota tim dapat login otomatis sesuai konfigurasi env masing-masing.
  */
 export async function devLoginAction(
-  employeeNumber: string
+  employeeNumber: string,
 ): Promise<LoginResult> {
-  const seedPassword =
-    process.env.SEED_PASSWORD || process.env.NEXT_PUBLIC_SEED_PASSWORD;
+  // Server action bisa dipanggil siapa pun: tolak mentah-mentah di production.
+  if (process.env.NODE_ENV === "production") {
+    return { success: false, error: "Tidak tersedia." };
+  }
+
+  const seedPassword = process.env.SEED_PASSWORD;
 
   if (!seedPassword) {
     return {
@@ -88,6 +111,21 @@ export async function devLoginAction(
 /** Logout: hapus cookie token lalu redirect ke halaman login. */
 export async function logoutAction() {
   const store = await cookies();
+  const token = store.get("token")?.value;
+
+  // Cabut token di backend (semua perangkat keluar). Gagal pun cookie tetap dihapus.
+  if (token) {
+    try {
+      await fetch(`${BACKEND_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+    } catch {
+      // backend tidak terjangkau: lanjut hapus cookie lokal
+    }
+  }
+
   store.delete("token");
   redirect("/login");
 }

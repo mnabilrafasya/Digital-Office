@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
 // ─────────────────────────────────────────────
 
 export default function MenungguReviewPage() {
-  redirect("/surat/daftar?scope=tasks&status=IN_REVIEW");
+  redirect("/surat/daftar?scope=tasks&status=IN_REVIEW,RETURNED_TO_REVIEWER");
 }
