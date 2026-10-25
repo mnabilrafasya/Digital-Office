@@ -16,6 +16,8 @@
     "clsx": "^2.1.1",
     "cn": "^0.4.0",
     "date-fns": "^4.4.0",
+    "devexpress-richedit": "^26.1.6",
+    "devextreme": "^26.1.6",
     "lucide-react": "^1.56.0",
     "msw": "^3.0.3",
     "next": "^16.4.3",
