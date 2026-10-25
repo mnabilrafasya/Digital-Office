@@ -9,28 +9,23 @@
 //   1. Daftar/masuk ke https://www.devexpress.com/
 //   2. Pergi ke DevExpress Download Manager
 //   3. Salin License Key
-//   4. Buat file frontend/.env.local dan tambahkan:
+//   4. Buat/edit frontend/.env.local dan tambahkan:
 //        NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY=<kunci_anda>
 //   File .env.local sudah di-.gitignore — jangan commit kunci lisensi.
 //   Tanpa kunci: editor tetap berjalan, muncul watermark "Unlicensed".
 // ─────────────────────────────────────────────
 
 import { useRef, useEffect, useCallback, useState } from "react";
-// Impor tipe dari devexpress-richedit (akan diisi setelah install)
-import type {
-  RichEdit,
-  Options,
-} from "devexpress-richedit";
 import { Upload, Save, FileText, Info } from "lucide-react";
 
 // CSS DevExpress — wajib dimuat agar editor tampil benar
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
 
-// ─── Tipe minimal yang kita butuhkan ───────────────────────────────
-// devexpress-richedit diekspor sebagai ESM; TypeScript butuh cast
+// Tipe dari paket resmi
+import type { RichEdit, Options, DocumentFormat } from "devexpress-richedit";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RichEditModule = typeof import("devexpress-richedit") & Record<string, any>;
+type RichEditModule = typeof import("devexpress-richedit") & { license?: (key: string) => void };
 
 // ─── Konstanta ──────────────────────────────────────────────────────
 const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
@@ -38,46 +33,36 @@ const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
 // ─── Komponen ───────────────────────────────────────────────────────
 export default function RichEditWrapper() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const instanceRef = useRef<RichEdit | null>(null);
-  const moduleRef = useRef<RichEditModule | null>(null);
+  const instanceRef  = useRef<RichEdit | null>(null);
+  const moduleRef    = useRef<RichEditModule | null>(null);
+  const docFmtRef    = useRef<typeof DocumentFormat | null>(null);
 
-  const [isReady, setIsReady]     = useState(false);
-  const [fileName, setFileName]   = useState<string | null>(null);
-  const [isSaving, setIsSaving]   = useState(false);
-  const [errorMsg, setErrorMsg]   = useState<string | null>(null);
+  const [isReady,  setIsReady]  = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // ── Inisialisasi editor ──────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
-
     let disposed = false;
 
     (async () => {
       try {
-        // Impor modul secara dinamis (sudah dalam konteks browser)
-        const mod = await import(
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore — devexpress-richedit mungkin belum punya tipe lengkap di Next 16
-          "devexpress-richedit"
-        ) as RichEditModule;
-
+        const mod = await import("devexpress-richedit") as RichEditModule;
         moduleRef.current = mod;
+        docFmtRef.current = mod.DocumentFormat;
 
         // Daftarkan lisensi bila ada
         if (LICENSE_KEY && mod.license) {
           mod.license(LICENSE_KEY);
         }
 
-        // Buat opsi default
+        // Opsi default — `createOptions()` mengisi semua nilai wajib termasuk `ribbon` dan `events`
         const options: Options = mod.createOptions();
         options.width  = "100%";
         options.height = "100%";
-
-        // Aktifkan toolbar lengkap
         options.ribbon.visible = true;
-
-        // Aktifkan save via API: format DOCX
-        options.exportUrl = ""; // kosong = simpan via JS, bukan HTTP POST
 
         if (disposed) return;
 
@@ -107,70 +92,58 @@ export default function RichEditWrapper() {
     const input = document.createElement("input");
     input.type   = "file";
     input.accept = ".docx,.rtf,.txt";
+
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file || !instanceRef.current) return;
+      if (!file || !instanceRef.current || !docFmtRef.current) return;
 
       try {
+        // openDocument menerima File | Blob | ArrayBuffer | string
+        // Gunakan ArrayBuffer agar format bisa ditentukan manual
         const buffer = await file.arrayBuffer();
-        const uint8  = new Uint8Array(buffer);
 
-        // Tentukan format berdasarkan ekstensi
-        const mod = moduleRef.current!;
         const ext = file.name.split(".").pop()?.toLowerCase();
-        const DocumentFormat = mod.DocumentFormat;
-        const fmt =
-          ext === "rtf" ? DocumentFormat.Rtf :
-          ext === "txt" ? DocumentFormat.PlainText :
-          DocumentFormat.OpenXml; // DOCX default
+        const fmt: DocumentFormat =
+          ext === "rtf" ? docFmtRef.current.Rtf :
+          ext === "txt" ? docFmtRef.current.PlainText :
+          docFmtRef.current.OpenXml; // DOCX default
 
-        instanceRef.current.openDocument(uint8, file.name, fmt);
+        instanceRef.current.openDocument(buffer, file.name, fmt);
         setFileName(file.name);
       } catch (err) {
         console.error("[DevEditor] Gagal membuka file:", err);
         alert("Gagal membuka file: " + (err instanceof Error ? err.message : String(err)));
       }
     };
+
     input.click();
   }, []);
 
   // ── Simpan / unduh sebagai DOCX ─────────────────────────────────
-  const handleSave = useCallback(async () => {
-    if (!instanceRef.current || !moduleRef.current) return;
+  // API: exportToFile(callback: (file: File) => void, format?: DocumentFormat)
+  const handleSave = useCallback(() => {
+    if (!instanceRef.current || !docFmtRef.current) return;
     setIsSaving(true);
+
     try {
-      const mod = moduleRef.current;
-      const DocumentFormat = mod.DocumentFormat;
-
-      // Ekspor sebagai DOCX (ArrayBuffer)
-      const buffer: ArrayBuffer = await new Promise((resolve, reject) => {
-        instanceRef.current!.exportToFile(
-          DocumentFormat.OpenXml,
-          (blob: Blob) => {
-            blob.arrayBuffer().then(resolve).catch(reject);
-          }
-        );
-      });
-
-      // Trigger unduhan
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
-      a.download = fileName ?? "dokumen.docx";
-      a.click();
-      URL.revokeObjectURL(url);
+      instanceRef.current.exportToFile((file: File) => {
+        // Buat link unduhan dari File object
+        const url = URL.createObjectURL(file);
+        const a   = document.createElement("a");
+        a.href     = url;
+        a.download = fileName ?? "dokumen.docx";
+        a.click();
+        URL.revokeObjectURL(url);
+        setIsSaving(false);
+      }, docFmtRef.current.OpenXml);
     } catch (err) {
       console.error("[DevEditor] Gagal menyimpan:", err);
       alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
       setIsSaving(false);
     }
   }, [fileName]);
 
-  // ── Render ──────────────────────────────────────────────────────
+  // ── Render: error state ─────────────────────────────────────────
   if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
@@ -189,6 +162,7 @@ export default function RichEditWrapper() {
     );
   }
 
+  // ── Render: normal ──────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar aksi file */}
@@ -228,11 +202,11 @@ export default function RichEditWrapper() {
         )}
       </div>
 
-      {/* Container editor */}
+      {/* Container editor — flex-1 + minHeight:0 agar tidak overflow */}
       <div
         ref={containerRef}
         className="flex-1"
-        style={{ minHeight: 0 }} // penting agar flex-1 tidak overflow
+        style={{ minHeight: 0 }}
       />
     </div>
   );

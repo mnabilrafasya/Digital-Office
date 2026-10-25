@@ -8,7 +8,7 @@
 import dynamic from "next/dynamic";
 
 // DevExpress RichEdit adalah library murni browser — WAJIB ssr:false
-const RichEditWrapper = dynamic(() => import("./rich-edit-wrapper"), {
+const RichEditWrapper = dynamic(() => import("./rich-edit-wrapper").then(m => ({ default: m.default })), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-full gap-3 text-text-muted">
