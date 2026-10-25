@@ -10,7 +10,7 @@ import { CheckCircle2, Info, Loader2 } from "lucide-react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { useEffect, useState } from "react";
 import type { BuatSuratFormValues } from "@/lib/schemas";
-import { LETTER_TEMPLATES } from "@/lib/mock-data";
+import { LETTER_TEMPLATE_LIST } from "@/lib/templates/letter-templates";
 import { fetchLookups, type LookupItem } from "@/lib/api/form";
 import { cn } from "@/lib/utils";
 import { ClassificationCombobox } from "./classification-combobox";
@@ -80,8 +80,8 @@ export function BasicFields() {
     }
   }, [urgencies.items, kecepatan, setValue]);
 
-  // Template masih mock — belum ada endpoint backend
-  const templates = LETTER_TEMPLATES.filter((t) => t.letterTypeId === letterTypeId);
+  // Template resmi tata naskah dinas frontend
+  const templates = LETTER_TEMPLATE_LIST;
 
   const sifatOptions: LookupItem[] = [
     { id: "sifat-biasa",    code: "BIASA",    name: "Biasa",    note: "Surat dapat diakses seluruh staf unit terkait.", sortOrder: 1 },
@@ -109,8 +109,18 @@ export function BasicFields() {
                 id="letterTypeId"
                 value={field.value ?? ""}
                 onChange={(e) => {
-                  field.onChange(e.target.value);
-                  setValue("templateId", undefined);
+                  const val = e.target.value;
+                  field.onChange(val);
+                  const selectedLT = letterTypes.items.find((lt) => lt.id === val);
+                  if (selectedLT) {
+                    const ltName = selectedLT.name.toLowerCase();
+                    const matched = LETTER_TEMPLATE_LIST.find((t) =>
+                      t.letterTypeKeywords.some((kw) => ltName.includes(kw))
+                    );
+                    if (matched) {
+                      setValue("templateId", matched.id, { shouldValidate: true, shouldDirty: true });
+                    }
+                  }
                 }}
                 className={inputClass(!!errors.letterTypeId)}
                 key={retryLT}

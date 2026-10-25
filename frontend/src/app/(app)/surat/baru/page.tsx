@@ -28,7 +28,7 @@ import { BuatSuratHeader } from "@/components/surat/buat-surat-header";
 import { ConfirmDialogs, type DialogType } from "@/components/surat/confirm-dialogs";
 import { DetailSection } from "@/components/surat/detail-section";
 import { SectionCard } from "@/components/surat/form-primitives";
-import { EditorPlaceholder } from "@/components/surat/editor-placeholder";
+import { LetterEditorSection } from "@/components/surat/letter-editor";
 import { LampiranSection } from "@/components/surat/lampiran-section";
 import { Loader2 } from "lucide-react";
 
@@ -405,7 +405,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           </SectionCard>
 
           <SectionCard number={3} title="Isi Surat & Tata Naskah Digital">
-            <EditorPlaceholder />
+            <LetterEditorSection />
           </SectionCard>
         </div>
 
