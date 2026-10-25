@@ -192,7 +192,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 shrink-0">
-        <p className="text-slate-500 text-[10px]">© 2026 PT Pupuk Indonesia (Persero)</p>
+        <p className="text-slate-500 text-[10px]">© 2026 PT Pupuk Sriwidjaja Palembang</p>
       </div>
     </aside>
   );

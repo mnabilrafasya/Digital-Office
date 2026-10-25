@@ -14,7 +14,10 @@ const RichEditSuratInner = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="border border-border rounded-xl bg-panel/30 h-[550px] flex flex-col items-center justify-center gap-3 text-text-muted p-8">
+      <div
+        style={{ minHeight: "520px" }}
+        className="border border-border rounded-xl bg-panel/30 flex flex-col items-center justify-center gap-3 text-text-muted p-8"
+      >
         <div className="w-12 h-12 rounded-2xl bg-surface border border-border flex items-center justify-center shadow-sm">
           <Loader2 size={24} className="animate-spin text-primary" />
         </div>

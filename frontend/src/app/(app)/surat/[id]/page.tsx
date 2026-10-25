@@ -317,7 +317,7 @@ export default function SuratDetailPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold text-sm text-gray-800 leading-tight">
-                      PT PUPUK INDONESIA (PERSERO)
+                      PT PUPUK SRIWIDJAJA PALEMBANG
                     </p>
                     <p className="text-xs text-gray-500">{letter.senderUnit.name}</p>
                   </div>

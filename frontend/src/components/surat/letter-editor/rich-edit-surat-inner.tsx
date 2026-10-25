@@ -2,8 +2,8 @@
 
 // ─────────────────────────────────────────────
 // components/surat/letter-editor/rich-edit-surat-inner.tsx
-// Implementasi DevExpress RichEdit khusus untuk Section 3 Buat Surat.
-// HANYA di-load secara dinamis via ssr: false.
+// Implementasi DevExpress RichEdit untuk Section 3 Buat Surat.
+// Di-load murni di sisi browser (ssr: false).
 // ─────────────────────────────────────────────
 
 import { useRef, useEffect, useCallback, useState } from "react";
@@ -56,7 +56,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   const [appliedTemplateId, setAppliedTemplateId] = useState<string>("tmpl-dinas-standar");
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
-  // Ambil state data form dari FormProvider Buat Surat
+  // Ambil state form dari Buat Surat
   const { control, setValue } = useFormContext<BuatSuratFormValues>();
   const formTitle = useWatch({ control, name: "title" });
   const formSifat = useWatch({ control, name: "sifat" });
@@ -65,7 +65,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   const formToUnits = useWatch({ control, name: "toUnits" });
   const formApprovers = useWatch({ control, name: "approvers" });
 
-  // Helper untuk membuat context template dari form
+  // Context dinamis dari form untuk dimasukkan ke template naskah
   const getTemplateContext = useCallback((): LetterTemplateContext => {
     return {
       title: formTitle,
@@ -81,7 +81,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
     };
   }, [formTitle, formSifat, formKecepatan, formToUnits, formApprovers]);
 
-  // Fungsi untuk memuat template ke dalam editor
+  // ─── Memuat template ke DevExpress RichEdit ───────────────────────
   const loadTemplateIntoEditor = useCallback(
     (templateId: string, showToast = true) => {
       const editor = instanceRef.current;
@@ -89,20 +89,38 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
       if (!editor || !docFmt) return;
 
       try {
+        if (templateId === "tmpl-kosong") {
+          editor.newDocument();
+          setAppliedTemplateId(templateId);
+          setFileName("Dokumen_Kosong.docx");
+          if (showToast) {
+            setStatusNotification("Dokumen kosong baru dibuka");
+            setTimeout(() => setStatusNotification(null), 3000);
+          }
+          editor.focus();
+          onDocumentChange?.();
+          return;
+        }
+
         const tpl = getTemplateById(templateId);
         const ctx = getTemplateContext();
         const html = tpl.generateHtml(ctx);
 
-        // Buka HTML template di DevExpress RichEdit
-        editor.openDocument(html, `${tpl.name}.html`, docFmt.Html, (success) => {
+        // DevExpress openDocument menerima Blob/File untuk format HTML
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+
+        editor.openDocument(blob, `${tpl.name}.html`, docFmt.Html, (success) => {
           if (success) {
             setAppliedTemplateId(templateId);
             setFileName(`${tpl.name}.docx`);
             if (showToast) {
-              setStatusNotification(`Template "${tpl.name}" berhasil diterapkan`);
-              setTimeout(() => setStatusNotification(null), 3500);
+              setStatusNotification(`Template "${tpl.name}" berhasil dimuat`);
+              setTimeout(() => setStatusNotification(null), 3000);
             }
+            editor.focus();
             onDocumentChange?.();
+          } else {
+            console.warn("[LetterEditor] openDocument callback mengembalikan false");
           }
         });
       } catch (err) {
@@ -130,6 +148,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
         const options: Options = mod.createOptions();
         options.width = "100%";
         options.height = "100%";
+        options.readOnly = false;
         options.ribbon.visible = true;
 
         if (disposed) return;
@@ -138,17 +157,33 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
         instanceRef.current = editor;
         setIsReady(true);
 
-        // Setelah inisialisasi selesai, muat template default (Surat Dinas Standar)
+        // Setelah siap, muat template default (Surat Dinas Standar)
         setTimeout(() => {
           if (!disposed && instanceRef.current && mod.DocumentFormat) {
             const initialTplId = formTemplateId || "tmpl-dinas-standar";
-            const tpl = getTemplateById(initialTplId);
-            const ctx = getTemplateContext();
-            const html = tpl.generateHtml(ctx);
-            instanceRef.current.openDocument(html, "Draft.html", mod.DocumentFormat.Html);
-            setAppliedTemplateId(initialTplId);
+            if (initialTplId === "tmpl-kosong") {
+              instanceRef.current.newDocument();
+              setAppliedTemplateId(initialTplId);
+              instanceRef.current.focus();
+            } else {
+              const tpl = getTemplateById(initialTplId);
+              const ctx = getTemplateContext();
+              const html = tpl.generateHtml(ctx);
+              const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+              instanceRef.current.openDocument(
+                blob,
+                `${tpl.name}.html`,
+                mod.DocumentFormat.Html,
+                (success) => {
+                  if (success) {
+                    instanceRef.current?.focus();
+                  }
+                }
+              );
+              setAppliedTemplateId(initialTplId);
+            }
           }
-        }, 200);
+        }, 150);
       } catch (err) {
         console.error("[LetterEditor] Inisialisasi gagal:", err);
         setErrorMsg(
@@ -165,16 +200,26 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
       instanceRef.current = null;
       setIsReady(false);
     };
-  }, []); // Run once on mount
+  }, []); // Mount sekali
 
-  // Jika user memilih template berbeda di Section 1 (formTemplateId berubah)
+  // Resize / adjust editor saat toggle fullscreen
+  useEffect(() => {
+    if (instanceRef.current) {
+      const timer = setTimeout(() => {
+        instanceRef.current?.adjust?.();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isFullscreen]);
+
+  // Jika user memilih template di Section 1 (formTemplateId berubah)
   useEffect(() => {
     if (isReady && formTemplateId && formTemplateId !== appliedTemplateId) {
       loadTemplateIntoEditor(formTemplateId, false);
     }
   }, [formTemplateId, isReady, appliedTemplateId, loadTemplateIntoEditor]);
 
-  // ─── Sinkronkan data form ke template naskah ──────────────────────
+  // ─── Sinkronkan data form ke naskah surat ─────────────────────────
   const handleSyncFormData = useCallback(() => {
     loadTemplateIntoEditor(appliedTemplateId, true);
   }, [appliedTemplateId, loadTemplateIntoEditor]);
@@ -199,11 +244,15 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             ? docFmtRef.current.PlainText
             : docFmtRef.current.OpenXml;
 
-        instanceRef.current.openDocument(buffer, file.name, fmt);
-        setFileName(file.name);
-        setStatusNotification(`File "${file.name}" berhasil dibuka`);
-        setTimeout(() => setStatusNotification(null), 3000);
-        onDocumentChange?.();
+        instanceRef.current.openDocument(buffer, file.name, fmt, (success) => {
+          if (success) {
+            setFileName(file.name);
+            setStatusNotification(`File "${file.name}" berhasil dibuka`);
+            setTimeout(() => setStatusNotification(null), 3000);
+            instanceRef.current?.focus();
+            onDocumentChange?.();
+          }
+        });
       } catch (err) {
         console.error("[LetterEditor] Gagal membuka file:", err);
         alert("Gagal membuka file: " + (err instanceof Error ? err.message : String(err)));
@@ -294,7 +343,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
 
         {/* Status Notifikasi Toast Kecil */}
         {statusNotification && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md animate-fade-in">
+          <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
             <CheckCircle2 size={13} />
             <span>{statusNotification}</span>
           </div>
@@ -343,23 +392,13 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             Variabel otomatis: <code className="bg-panel px-1 py-0.5 rounded font-mono text-[10px]">###NoSurat###</code> akan diisi nomor otomatis saat surat disetujui Approver.
           </span>
         </div>
-
-        {!LICENSE_KEY ? (
-          <span className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-            Evaluasi DevExpress (Unlicensed Watermark)
-          </span>
-        ) : (
-          <span className="text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-            DevExpress Terlisensi
-          </span>
-        )}
       </div>
 
       {/* ── Container DevExpress RichEdit ── */}
       <div
         ref={containerRef}
         style={{
-          height: isFullscreen ? "calc(100vh - 110px)" : "640px",
+          height: isFullscreen ? "calc(100vh - 100px)" : "640px",
           width: "100%",
           minHeight: "450px",
         }}

@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // lib/mock-data.ts
 // Semua data FIKTIF — tidak mengandung nama/NIK asli
-// Nama organisasi: PT Pupuk Indonesia (Persero)
+// Nama organisasi: PT Pupuk Sriwidjaja Palembang
 // Unit fokus: Direktori Teknologi Informasi
 // Tahun konsisten: 2026
 // ─────────────────────────────────────────────
@@ -16,8 +16,8 @@ import type {
 
 // ─── Organisasi ─────────────────────────────
 
-export const COMPANY_NAME = "PT Pupuk Indonesia (Persero)";
-export const COMPANY_ID = "pupuk-indonesia";
+export const COMPANY_NAME = "PT Pupuk Sriwidjaja Palembang";
+export const COMPANY_ID = "pupuk-sriwidjaja";
 
 // ─── Unit Organisasi ─────────────────────────
 
