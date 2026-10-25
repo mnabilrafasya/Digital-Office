@@ -11,11 +11,10 @@ import Link from "next/link";
 import {
   ChevronRight,
   FileText,
-  Download,
-  Printer,
   File,
   FileSpreadsheet,
   Eye,
+  Download,
   Loader2,
   AlertCircle,
   ArrowLeft,
@@ -31,6 +30,8 @@ import { StatusBadge } from "@/components/daftar-surat/status-badge";
 import type { LetterStatus } from "@/lib/types";
 import { LetterSteps } from "@/components/review/letter-steps";
 import { ReviewModals } from "@/components/review/review-modals";
+import { ReviewDocumentViewer } from "@/components/review/document-viewer";
+import { ApproverPanel } from "@/components/review/approver-panel";
 import { cn } from "@/lib/utils";
 
 // ─── Helper ──────────────────────────────────
@@ -172,6 +173,13 @@ export default function SuratDetailPage() {
       )
     : null;
 
+  const isApprover =
+    activeRole?.role === "APPROVER" || status === "IN_APPROVAL";
+  const canEdit =
+    !isApprover &&
+    status === "IN_REVIEW" &&
+    letter.allowedActions.includes("APPROVE");
+
   return (
     <div className={cn("space-y-4", hasActions && "pb-20")}>
       {/* ── Breadcrumb ── */}
@@ -277,63 +285,18 @@ export default function SuratDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
         {/* ─ Kolom Kiri ─ */}
         <div className="space-y-4">
-          {/* Pratinjau dokumen */}
-          <div className="border border-border rounded-xl overflow-hidden">
-            {/* Toolbar */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-panel/40 flex-wrap gap-2">
-              <div className="flex items-center gap-3 text-xs text-text-muted">
-                <button
-                  type="button"
-                  disabled
-                  className="flex items-center gap-1 opacity-50 cursor-not-allowed"
-                >
-                  <Eye size={13} /> Sesuaikan Halaman
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  className="flex items-center gap-1 opacity-50 cursor-not-allowed"
-                >
-                  <Printer size={13} /> Cetak
-                </button>
-              </div>
-              <button
-                type="button"
-                disabled
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary cursor-not-allowed opacity-60"
-              >
-                <Download size={13} />
-                Unduh PDF
-              </button>
-            </div>
+          {/* Pratinjau & Editor Dokumen DevExpress */}
+          <ReviewDocumentViewer
+            letter={letter}
+            isApprover={isApprover}
+            canEdit={canEdit}
+            onDocumentModified={load}
+          />
 
-            {/* Placeholder kertas surat */}
-            <div className="bg-neutral-50 dark:bg-neutral-900 p-6 min-h-80 flex items-center justify-center">
-              <div className="bg-white shadow-sm border border-neutral-200 rounded w-full max-w-140 min-h-64 p-8 space-y-4">
-                {/* Kop */}
-                <div className="flex items-start gap-4 pb-4 border-b border-neutral-200">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <span className="text-primary font-bold text-lg">P</span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-bold text-sm text-gray-800 leading-tight">
-                      PT PUPUK SRIWIDJAJA PALEMBANG
-                    </p>
-                    <p className="text-xs text-gray-500">{letter.senderUnit.name}</p>
-                  </div>
-                </div>
-                {/* Baris placeholder */}
-                <div className="space-y-2">
-                  <div className="h-3 bg-neutral-100 rounded w-1/2" />
-                  <div className="h-3 bg-neutral-100 rounded w-3/4" />
-                  <div className="h-3 bg-neutral-100 rounded w-2/3" />
-                </div>
-                <p className="text-xs text-center text-gray-400 pt-6 italic">
-                  Pratinjau dokumen belum tersedia — editor sedang dalam pengembangan.
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Panel Khusus Pengesahan Approver (Tanda Tangan Digital, QR Code, Disposisi) */}
+          {isApprover && hasActions && (
+            <ApproverPanel letter={letter} onDone={load} />
+          )}
 
           {/* Lampiran */}
           {letter.attachments.length > 0 && (
@@ -492,8 +455,8 @@ export default function SuratDetailPage() {
         </div>
       </div>
 
-      {/* ── Action Bar + Modals ── */}
-      {hasActions && (
+      {/* ── Action Bar + Modals Reviewer (Hanya jika bukan Approver) ── */}
+      {!isApprover && hasActions && (
         <ReviewModals letter={letter} onDone={load} />
       )}
     </div>

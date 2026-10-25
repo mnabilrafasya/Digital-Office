@@ -157,7 +157,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
         <span>{item.label}</span>
       </span>
       {item.badge != null && item.badge > 0 && (
-        <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+        <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1">
           {item.badge}
         </span>
       )}
