@@ -2,16 +2,16 @@
 
 // ─────────────────────────────────────────────
 // components/review/document-viewer/review-document-inner.tsx
-// Pratinjau naskah surat di halaman detail (/surat/[id]) memakai DevExpress RichEdit.
+// Pratinjau naskah surat di halaman detail / review / approval (/surat/[id]).
+// SELALU mode baca (readOnly): reviewer dan approver menilai naskah, tidak mengetik.
 // Di-load murni di browser lewat index.tsx (dynamic, ssr: false).
 //
 // Backend BELUM punya endpoint dokumen/versi, jadi naskah dibangun ulang dari template +
-// data surat (perihal, penerima, approver, nomor). Perubahan di editor TIDAK tersimpan di
-// server; pengguna hanya bisa mengunduhnya sebagai .docx.
+// data surat (perihal, penerima, approver, nomor). Editing naskah hanya di halaman Buat Surat.
 // ─────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from "react";
-import { Download, Info, Maximize2, Minimize2 } from "lucide-react";
+import { Download, FileDown, Info, Maximize2, Minimize2 } from "lucide-react";
 
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
@@ -31,10 +31,6 @@ const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
 
 export interface ReviewDocumentInnerProps {
   letter: LetterDetail;
-  isApprover: boolean;
-  /** true = boleh mengetik di editor (hanya lokal, belum tersimpan di server) */
-  canEdit: boolean;
-  onDocumentModified?: () => void;
 }
 
 /** Data surat -> konteks template naskah. */
@@ -66,10 +62,7 @@ function buildContext(letter: LetterDetail): LetterTemplateContext {
   };
 }
 
-export default function ReviewDocumentInner({
-  letter,
-  canEdit,
-}: ReviewDocumentInnerProps) {
+export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEdit | null>(null);
   const moduleRef = useRef<RichEditModule | null>(null);
@@ -93,8 +86,8 @@ export default function ReviewDocumentInner({
         const options: Options = mod.createOptions();
         options.width = "100%";
         options.height = "100%";
-        options.readOnly = !canEdit;
-        options.ribbon.visible = canEdit;
+        options.readOnly = true; // mode baca: tidak bisa diketik
+        options.ribbon.visible = false; // tanpa ribbon; unduh lewat toolbar di atas
 
         editorRef.current = mod.create(containerRef.current, options);
         setIsReady(true);
@@ -112,13 +105,7 @@ export default function ReviewDocumentInner({
       editorRef.current = null;
       setIsReady(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount sekali; canEdit dipasang di efek bawah
   }, []);
-
-  // Hak edit bisa berubah setelah surat dimuat ulang.
-  useEffect(() => {
-    if (editorRef.current) editorRef.current.readOnly = !canEdit;
-  }, [canEdit, isReady]);
 
   // Muat naskah dari template + data surat bila editor siap / data surat berubah.
   useEffect(() => {
@@ -154,6 +141,13 @@ export default function ReviewDocumentInner({
     }, mod.DocumentFormat.OpenXml);
   }
 
+  function handleDownloadPdf() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const base = `${letter.letterNumber ?? "Naskah_Dinas"}`.replace(/[\\/]/g, "-");
+    editor.downloadPdf(base);
+  }
+
   if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center p-8 bg-panel/50 border border-border rounded-xl text-center">
@@ -167,18 +161,18 @@ export default function ReviewDocumentInner({
   }
 
   const wrapperClass = isFullscreen
-    ? "fixed inset-0 z-50 bg-surface flex flex-col p-4 shadow-2xl"
-    : "flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
+    ? "fixed inset-0 z-[45] isolate bg-surface flex flex-col p-4 shadow-2xl"
+    : // isolate + z-0: z-index internal DevExpress terkurung di sini, tidak menimpa
+      // bar aksi bawah (z-20/z-30) maupun modal konfirmasi (z-40/z-50).
+      "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
 
   return (
     <div className={wrapperClass}>
       <div className="flex items-center gap-2 px-4 py-2.5 bg-panel border-b border-border flex-wrap shrink-0">
         <span className="text-xs font-semibold text-text">Naskah Surat</span>
-        {canEdit && (
-          <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-            Perubahan di editor belum tersimpan di server
-          </span>
-        )}
+        <span className="text-[11px] text-text-muted bg-surface border border-border px-2 py-0.5 rounded">
+          Mode baca
+        </span>
         <div className="flex items-center gap-2 ml-auto">
           <button
             type="button"
@@ -188,6 +182,15 @@ export default function ReviewDocumentInner({
           >
             <Download size={13} className="text-primary" />
             Unduh .docx
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={!isReady}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
+          >
+            <FileDown size={13} className="text-primary" />
+            Unduh PDF
           </button>
           <button
             type="button"

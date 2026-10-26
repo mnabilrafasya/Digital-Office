@@ -175,10 +175,6 @@ export default function SuratDetailPage() {
 
   const isApprover =
     activeRole?.role === "APPROVER" || status === "IN_APPROVAL";
-  const canEdit =
-    !isApprover &&
-    status === "IN_REVIEW" &&
-    letter.allowedActions.includes("APPROVE");
 
   return (
     <div className={cn("space-y-4", hasActions && "pb-20")}>
@@ -286,12 +282,7 @@ export default function SuratDetailPage() {
         {/* ─ Kolom Kiri ─ */}
         <div className="space-y-4">
           {/* Pratinjau & Editor Dokumen DevExpress */}
-          <ReviewDocumentViewer
-            letter={letter}
-            isApprover={isApprover}
-            canEdit={canEdit}
-            onDocumentModified={load}
-          />
+          <ReviewDocumentViewer letter={letter} />
 
           {/* Panel Khusus Pengesahan Approver (Tanda Tangan Digital, QR Code, Disposisi) */}
           {isApprover && hasActions && (

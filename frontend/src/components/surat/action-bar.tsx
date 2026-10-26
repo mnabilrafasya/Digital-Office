@@ -2,14 +2,13 @@
 
 // ─────────────────────────────────────────────
 // components/surat/action-bar.tsx
-// Action bar sticky: Batal, Simpan Draft, Pratinjau PDF (nonaktif), Submit
+// Action bar sticky: Batal, Simpan Draft, Submit (PDF ada di toolbar editor)
 // ─────────────────────────────────────────────
 
-import { FileDown, Info, Save, Send, X, Loader2 } from "lucide-react";
+import { Info, Save, Send, X, Loader2 } from "lucide-react";
 import { useFormContext, useFormState } from "react-hook-form";
 import type { BuatSuratFormValues } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Props {
   onBatal: () => void;
@@ -22,7 +21,7 @@ export function ActionBar({ onBatal, onSimpan, isSaving = false }: Props) {
   const { isValid } = useFormState({ control });
 
   return (
-    <TooltipProvider>
+    <>
       <div className="fixed bottom-0 left-56 right-0 bg-surface border-t border-border shadow-[0_-4px_24px_rgba(0,0,0,0.06)] z-20">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
           <div className="text-xs text-text-muted flex items-center gap-1.5">
@@ -54,17 +53,6 @@ export function ActionBar({ onBatal, onSimpan, isSaving = false }: Props) {
               )}
             </Button>
 
-            <Tooltip>
-              <TooltipTrigger>
-                <Button type="button" variant="outline" size="lg" disabled className="h-10 px-4">
-                  <FileDown size={14} /> Pratinjau Cetak PDF
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p>Tersedia setelah editor surat siap</p>
-              </TooltipContent>
-            </Tooltip>
-
             <Button
               type="submit"
               form="buat-surat-form"
@@ -76,6 +64,6 @@ export function ActionBar({ onBatal, onSimpan, isSaving = false }: Props) {
           </div>
         </div>
       </div>
-    </TooltipProvider>
+    </>
   );
 }

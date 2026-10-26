@@ -12,6 +12,7 @@ import {
   Upload,
   Save,
   FileText,
+  FileDown,
   RefreshCw,
   Maximize2,
   Minimize2,
@@ -47,6 +48,10 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   const instanceRef = useRef<RichEdit | null>(null);
   const moduleRef = useRef<RichEditModule | null>(null);
   const docFmtRef = useRef<typeof DocumentFormat | null>(null);
+  // true saat dokumen dimuat lewat kode (template/buka file) supaya tidak dihitung "diketik user"
+  const isLoadingDocRef = useRef(false);
+  // true bila user sudah mengetik/mengubah isi naskah sejak pemuatan terakhir
+  const userEditedRef = useRef(false);
 
   const [isReady, setIsReady] = useState(false);
   const [fileName, setFileName] = useState<string | null>("Naskah_Dinas_Draf.docx");
@@ -81,6 +86,14 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
     };
   }, [formTitle, formSifat, formKecepatan, formToUnits, formApprovers]);
 
+  // Mengganti template / sinkron form menimpa seluruh isi naskah: minta konfirmasi bila sudah diketik.
+  const confirmOverwrite = useCallback(() => {
+    if (!userEditedRef.current) return true;
+    return window.confirm(
+      "Isi naskah yang sudah Anda ketik akan diganti dengan template. Lanjutkan?"
+    );
+  }, []);
+
   // ─── Memuat template ke DevExpress RichEdit ───────────────────────
   const loadTemplateIntoEditor = useCallback(
     (templateId: string, showToast = true) => {
@@ -88,9 +101,17 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
       const docFmt = docFmtRef.current;
       if (!editor || !docFmt) return;
 
+      isLoadingDocRef.current = true;
+      userEditedRef.current = false;
+      const releaseLoading = () =>
+        setTimeout(() => {
+          isLoadingDocRef.current = false;
+        }, 500);
+
       try {
         if (templateId === "tmpl-kosong") {
           editor.newDocument();
+          releaseLoading();
           setAppliedTemplateId(templateId);
           setFileName("Dokumen_Kosong.docx");
           if (showToast) {
@@ -110,6 +131,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
         const blob = new Blob([html], { type: "text/html;charset=utf-8" });
 
         editor.openDocument(blob, `${tpl.name}.html`, docFmt.Html, (success) => {
+          releaseLoading();
           if (success) {
             setAppliedTemplateId(templateId);
             setFileName(`${tpl.name}.docx`);
@@ -124,6 +146,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
           }
         });
       } catch (err) {
+        isLoadingDocRef.current = false;
         console.error("[LetterEditor] Gagal memuat template:", err);
       }
     },
@@ -150,6 +173,9 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
         options.height = "100%";
         options.readOnly = false;
         options.ribbon.visible = true;
+        options.events.documentChanged = () => {
+          if (!isLoadingDocRef.current) userEditedRef.current = true;
+        };
 
         if (disposed) return;
 
@@ -160,9 +186,15 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
         // Setelah siap, muat template default (Surat Dinas Standar)
         setTimeout(() => {
           if (!disposed && instanceRef.current && mod.DocumentFormat) {
+            isLoadingDocRef.current = true;
+            const releaseLoading = () =>
+              setTimeout(() => {
+                isLoadingDocRef.current = false;
+              }, 500);
             const initialTplId = formTemplateId || "tmpl-dinas-standar";
             if (initialTplId === "tmpl-kosong") {
               instanceRef.current.newDocument();
+              releaseLoading();
               setAppliedTemplateId(initialTplId);
               instanceRef.current.focus();
             } else {
@@ -175,6 +207,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
                 `${tpl.name}.html`,
                 mod.DocumentFormat.Html,
                 (success) => {
+                  releaseLoading();
                   if (success) {
                     instanceRef.current?.focus();
                   }
@@ -215,14 +248,20 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   // Jika user memilih template di Section 1 (formTemplateId berubah)
   useEffect(() => {
     if (isReady && formTemplateId && formTemplateId !== appliedTemplateId) {
+      if (!confirmOverwrite()) {
+        // batal: kembalikan pilihan template di form ke template yang sedang dipakai
+        setValue("templateId", appliedTemplateId);
+        return;
+      }
       loadTemplateIntoEditor(formTemplateId, false);
     }
-  }, [formTemplateId, isReady, appliedTemplateId, loadTemplateIntoEditor]);
+  }, [formTemplateId, isReady, appliedTemplateId, loadTemplateIntoEditor, confirmOverwrite, setValue]);
 
   // ─── Sinkronkan data form ke naskah surat ─────────────────────────
   const handleSyncFormData = useCallback(() => {
+    if (!confirmOverwrite()) return;
     loadTemplateIntoEditor(appliedTemplateId, true);
-  }, [appliedTemplateId, loadTemplateIntoEditor]);
+  }, [appliedTemplateId, loadTemplateIntoEditor, confirmOverwrite]);
 
   // ─── Buka file DOCX dari komputer ────────────────────────────────
   const handleOpenDocx = useCallback(() => {
@@ -244,7 +283,12 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             ? docFmtRef.current.PlainText
             : docFmtRef.current.OpenXml;
 
+        isLoadingDocRef.current = true;
+        userEditedRef.current = false;
         instanceRef.current.openDocument(buffer, file.name, fmt, (success) => {
+          setTimeout(() => {
+            isLoadingDocRef.current = false;
+          }, 500);
           if (success) {
             setFileName(file.name);
             setStatusNotification(`File "${file.name}" berhasil dibuka`);
@@ -286,6 +330,19 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
     }
   }, [fileName]);
 
+  // ─── Unduh sebagai PDF (output final; salinan yang bisa diedit tetap .docx) ───
+  const handleDownloadPdf = useCallback(() => {
+    const editor = instanceRef.current;
+    if (!editor) return;
+    try {
+      const baseName = (fileName || "Naskah_Dinas").replace(/\.[^.]+$/, "");
+      editor.downloadPdf(baseName);
+    } catch (err) {
+      console.error("[LetterEditor] Gagal membuat PDF:", err);
+      alert("Gagal membuat PDF: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }, [fileName]);
+
   // ─── Error State ──────────────────────────────────────────────────
   if (errorMsg) {
     return (
@@ -300,8 +357,10 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   }
 
   const containerClasses = isFullscreen
-    ? "fixed inset-0 z-50 bg-surface flex flex-col p-4 shadow-2xl"
-    : "flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
+    ? "fixed inset-0 z-[45] isolate bg-surface flex flex-col p-4 shadow-2xl"
+    : // isolate + z-0: z-index internal DevExpress (hingga ribuan) terkurung di sini,
+      // jadi tidak menimpa action bar (z-20) dan dialog konfirmasi (z-50).
+      "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
 
   return (
     <div className={containerClasses}>
@@ -317,6 +376,7 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             value={appliedTemplateId}
             onChange={(e) => {
               const newTplId = e.target.value;
+              if (!confirmOverwrite()) return; // select tetap di template lama
               loadTemplateIntoEditor(newTplId, true);
               setValue("templateId", newTplId, { shouldDirty: true });
             }}
@@ -372,6 +432,17 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             {isSaving ? "Menyimpan..." : "Unduh .docx"}
           </button>
 
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={!isReady}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
+            title="Unduh naskah saat ini sebagai PDF"
+          >
+            <FileDown size={13} className="text-primary" />
+            Unduh PDF
+          </button>
+
           {/* Toggle Fullscreen */}
           <button
             type="button"
@@ -392,6 +463,9 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             Variabel otomatis: <code className="bg-panel px-1 py-0.5 rounded font-mono text-[10px]">###NoSurat###</code> akan diisi nomor otomatis saat surat disetujui Approver.
           </span>
         </div>
+        <span className="text-amber-700">
+          Isi naskah belum tersimpan di server. &quot;Simpan Draft&quot; hanya menyimpan data form; unduh .docx bila perlu menyimpan naskah.
+        </span>
       </div>
 
       {/* ── Container DevExpress RichEdit ── */}
