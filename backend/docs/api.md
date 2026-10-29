@@ -7,7 +7,7 @@ Versi API: `v1`. Semua endpoint aplikasi berada di bawah prefix `/api/v1`.
 Dari folder `backend`, dengan Docker Desktop berjalan dan `.env` sudah diisi (salin dari `.env.example`):
 
 ```powershell
-docker compose up -d          # SQL Server dan MinIO
+docker compose up -d          # SQL Server, MinIO, dan Gotenberg (LibreOffice untuk PDF resmi)
 go run ./cmd/migrate up       # development: buat database bila belum ada + jalankan migration
 go run ./cmd/seed all         # data acuan + data dummy (dummy hanya development)
 go run ./cmd/api              # server di http://localhost:8080
@@ -23,6 +23,7 @@ Konfigurasi yang dipakai API (di `.env`):
 | `APP_TIMEZONE` | Zona waktu bisnis, default `Asia/Jakarta`. Divalidasi saat start. |
 | `APP_MEMORY_LIMIT_MB` | Batas memori Go (`debug.SetMemoryLimit`), default `0` = tanpa batas. |
 | `TRUST_PROXY_HEADERS` | Default `false`. Isi `true` **hanya** bila API berada di belakang reverse proxy yang menimpa `X-Forwarded-For`/`X-Real-IP`. |
+| `GOTENBERG_URL` | Alamat Gotenberg (LibreOffice) untuk membuat PDF resmi, default `http://localhost:3001` (port 3000 dipakai front-end). Bila mati, unduhan PDF resmi mendapat `503`; fitur lain tetap jalan. |
 | `DB_TRUST_SERVER_CERTIFICATE` | Default `true` hanya saat `APP_ENV=development`; selain itu `false` (sertifikat TLS SQL Server diverifikasi). |
 
 ## 2. Format response
@@ -51,6 +52,7 @@ Error:
 | 412 | `VERSION_CONFLICT` | `If-Match` tidak sama dengan versi terbaru; header `ETag` berisi versi terbaru |
 | 428 | `PRECONDITION_REQUIRED` | Header `If-Match` wajib tetapi tidak dikirim |
 | 429 | `TOO_MANY_REQUESTS` | Terlalu banyak percobaan login gagal; header `Retry-After` berisi detik tunggu |
+| 503 | `SERVICE_UNAVAILABLE` | Layanan pendukung (pembuat PDF) sedang tidak bisa dihubungi; coba lagi nanti |
 | 500 | `INTERNAL_ERROR` | Error tak terduga. Detail hanya ada di log server. |
 
 Aturan JSON:
@@ -93,12 +95,20 @@ Login dengan NIK + password bersifat sementara sampai SSO tersedia.
 | GET | `/api/v1/recipients/aliases` | Ya | `LETTER_CREATE` |
 | POST | `/api/v1/letters` | Ya | `LETTER_CREATE` |
 | GET | `/api/v1/letters` | Ya | - |
-| GET | `/api/v1/letters/{letterId}` | Ya | drafter atau peserta surat |
+| GET | `/api/v1/letters/{letterId}` | Ya | drafter, peserta surat, atau penerima inbox (surat `SENT`) |
 | PUT | `/api/v1/letters/{letterId}` | Ya | drafter |
 | GET | `/api/v1/letters/{letterId}/history` | Ya | drafter atau peserta surat |
+| GET | `/api/v1/letters/{letterId}/qr` | Ya | drafter, peserta surat, atau penerima inbox |
+| GET | `/api/v1/letters/{letterId}/versions` | Ya | drafter atau peserta surat |
+| GET | `/api/v1/letters/{letterId}/document` | Ya | drafter atau peserta surat (`.docx`); setelah `SENT` juga penerima inbox (PDF resmi) |
+| PUT | `/api/v1/letters/{letterId}/document` | Ya | drafter saat draf, atau reviewer yang sedang memegang surat |
 | POST | `/api/v1/letters/{letterId}/submit` | Ya | drafter |
-| POST | `/api/v1/letters/{letterId}/approve` | Ya | reviewer yang sedang memegang surat (`LETTER_REVIEW`) |
+| POST | `/api/v1/letters/{letterId}/approve` | Ya | reviewer (`LETTER_REVIEW`) atau approver (`LETTER_APPROVE`) yang sedang memegang surat |
 | POST | `/api/v1/letters/{letterId}/return` | Ya | reviewer (`LETTER_REVIEW`) atau approver (`LETTER_APPROVE`) yang sedang memegang surat |
+| GET | `/api/v1/inbox` | Ya | - (selalu inbox milik user yang login) |
+| GET | `/api/v1/inbox/{itemId}` | Ya | pemilik item |
+| POST | `/api/v1/inbox/{itemId}/disposition` | Ya | pemilik item (`INBOX_DISPOSE`) |
+| POST | `/api/v1/inbox/{itemId}/redirect` | Ya | pemilik item |
 
 Angka ID di contoh response hanya ilustrasi.
 
@@ -323,7 +333,7 @@ Membuat draf (body boleh kosong). Unit pengirim dan perusahaan diambil dari user
 
 #### GET `/api/v1/letters/{letterId}`
 
-Detail surat beserta header `ETag`.
+Detail surat beserta header `ETag`. Yang boleh membuka: drafter, reviewer/approver, dan **penerima inbox** (langsung atau lewat disposisi/pengalihan) untuk surat yang sudah `SENT`. Penerima inbox selalu mendapat `allowedActions: []`; aksinya ada di endpoint inbox.
 
 ```json
 {
@@ -355,6 +365,7 @@ Detail surat beserta header `ETag`.
     "currentVersion": 0,
     "currentAssignee": null,
     "lastReturnNote": null,
+    "approval": null,
     "allowedActions": ["EDIT"],
     "createdAt": "2026-10-20T09:15:00+07:00",
     "updatedAt": "2026-10-20T10:02:11+07:00"
@@ -368,6 +379,8 @@ Detail surat beserta header `ETag`.
 - `lastReturnNote`: catatan pengembalian terakhir, hanya terisi saat status `RETURNED_TO_DRAFTER` atau `RETURNED_TO_REVIEWER`.
 - Kalau yang membuka adalah `currentAssignee`, server mencatat aksi `READ` di riwayat (sekali sejak perpindahan terakhir).
 - `resolvedHead` (pimpinan unit penerima) baru terisi setelah surat ditandatangani.
+- `approval` bernilai `null` sampai approver menyetujui. Setelah itu berisi waktu dan siapa yang menyetujui, beserta alamat gambar QR:
+  `{ "approvedAt": "2026-10-29T11:19:07+07:00", "approvedBy": { "id": "6", "name": "...", "positionName": "..." }, "qrUrl": "/api/v1/letters/{letterId}/qr" }`
 - Waktu dikirim dalam zona `APP_TIMEZONE`.
 
 #### PUT `/api/v1/letters/{letterId}`
@@ -397,6 +410,7 @@ Error:
 | `APPROVE` | reviewer terakhir | `IN_REVIEW` | `IN_APPROVAL` | approver |
 | `RETURN` | reviewer | `IN_REVIEW` | `RETURNED_TO_DRAFTER` | drafter |
 | `RETURN` | approver | `IN_APPROVAL` | `RETURNED_TO_REVIEWER` | reviewer terakhir yang meneruskan |
+| `APPROVE` | approver | `IN_APPROVAL` | `SENT` | inbox penerima (surat terbit; di riwayat tercatat `SIGN`) |
 | `APPROVE` | reviewer yang dikembalikan | `RETURNED_TO_REVIEWER` | `IN_APPROVAL` | approver (**langsung**, tidak mengulang reviewer) |
 | `RETURN` | reviewer yang dikembalikan | `RETURNED_TO_REVIEWER` | `RETURNED_TO_DRAFTER` | drafter |
 
@@ -420,6 +434,13 @@ Saat `submit`, server memeriksa:
 
 Di setiap aksi, server juga memastikan orang berikutnya masih aktif dan berwenang.
 
+Saat **approver** `approve`, surat terbit dalam satu transaksi:
+- Penerima diperiksa ulang (unit punya pimpinan aktif, alias punya anggota).
+- Nomor surat dibuat otomatis dari `companies.letter_number_format` (default `{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}`, contoh `015/TI/PSP/X/2026`). `{SEQ}` adalah nomor urut per unit pengirim per tahun, minimal 3 digit.
+- `letterDate` (tanggal surat) diisi waktu disetujui, dan approver dicatat sebagai penandatangan.
+- Surat masuk inbox (`UNREAD`): pimpinan setiap unit Kepada/Tembusan dan semua anggota alias. Orang yang sama hanya menerima sekali, dan Kepada didahulukan atas Tembusan.
+- Response berisi `status: "SENT"`, `letterNumber`, dan `approval` (lihat detail surat).
+
 | HTTP | `code` | Kapan |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Surat belum lengkap, rujukan tidak valid, catatan `return` kosong atau lebih dari 1000 karakter |
@@ -428,6 +449,77 @@ Di setiap aksi, server juga memastikan orang berikutnya masih aktif dan berwenan
 | 409 | `INVALID_STATE` | Bukan giliran user, status sudah berubah (misalnya tombol diklik dua kali), penerima surat tidak bisa dijangkau, atau orang berikutnya sudah nonaktif |
 
 Tombol yang diklik dua kali aman: request kedua menunggu request pertama selesai, lalu ditolak dengan `409` "Surat sudah diproses atau bukan giliran Anda...". Front-end cukup memuat ulang detail.
+
+### Naskah surat (.docx per versi)
+
+Naskah dari editor (DevExpress) disimpan sebagai file `.docx`. Setiap simpan menjadi versi baru dan tidak menimpa versi lama. Filenya disimpan di MinIO, datanya di `letter_versions`, dan riwayat mencatat aksi `SAVE`. `currentVersion` di detail surat adalah nomor versi terakhir (`0` = belum ada naskah).
+
+| Aturan | Sebelum disetujui approver | Setelah `SENT` |
+|---|---|---|
+| Mengubah naskah | drafter (`DRAFT`/`RETURNED_TO_DRAFTER`) dan reviewer yang sedang memegang surat; approver hanya membaca | tidak bisa |
+| Unduh (`GET /document`) | `.docx` | **PDF resmi ber-QR**; `.docx` lama ditolak `409` |
+| QR | tidak tersedia (`409`) | `GET /letters/{letterId}/qr` |
+
+#### PUT `/api/v1/letters/{letterId}/document`
+
+Body `multipart/form-data` dengan field `file` berisi `.docx` (maksimal 10 MB). Response **201** berisi versi baru dan **`ETag` baru**. Simpan ETag ini untuk `PUT /letters/{letterId}` berikutnya; ETag lama akan mendapat `412`.
+
+```json
+{
+  "data": {
+    "versionNumber": 2, "type": "DRAFT", "fileName": "Naskah Rapat.docx", "fileExtension": "docx",
+    "fileSize": 18240, "checksum": "19670d82...",
+    "createdBy": { "id": "8", "name": "Andi Kurniawan", "positionName": "..." },
+    "createdByRole": "DRAFTER", "createdAt": "2026-10-29T13:22:39+07:00"
+  }
+}
+```
+
+Error: `400 VALIDATION_ERROR` (bukan `.docx`, file kosong/rusak, lebih dari 10 MB, atau bukan multipart), `403 FORBIDDEN` (permission peran dicabut), `404 NOT_FOUND` (bukan drafter/peserta), `409 INVALID_STATE` (bukan giliran user mengubah naskah).
+
+#### GET `/api/v1/letters/{letterId}/versions`
+
+Daftar versi naskah, terbaru dulu (format item sama dengan response unggah). Untuk drafter dan peserta.
+
+#### GET `/api/v1/letters/{letterId}/document?version=...`
+
+Satu tombol unduh; format file mengikuti status surat. Response berupa file dengan `Content-Type` dan `Content-Disposition: attachment; filename="..."`.
+
+| Status surat | File | Siapa |
+|---|---|---|
+| Belum disetujui approver | `.docx` versi terbaru (atau `?version=N`) | drafter dan peserta |
+| `SENT` | PDF resmi ber-QR, nama file dari nomor surat (contoh `015-TI-PSP-X-2026.pdf`) | drafter, peserta, dan penerima inbox |
+
+PDF resmi dibuat server sekali, saat pertama kali diunduh:
+1. Penanda `###NoSurat###` di naskah `.docx` terakhir diganti nomor surat. Penanda harus ditulis dengan satu format (tidak dipecah tebal/miring di tengahnya).
+2. `.docx` diubah ke PDF oleh LibreOffice (Gotenberg).
+3. QR persetujuan ditempel di pojok kanan bawah halaman terakhir (lebar sekitar 3 cm).
+4. Hasilnya disimpan sebagai versi `FINAL` (dibuat atas nama approver). Unduhan berikutnya memakai file yang sama persis, jadi tidak berubah walaupun data user diubah.
+
+Unduhan pertama butuh waktu sekitar 0,5 sampai 2 detik; berikutnya langsung.
+
+| HTTP | `code` | Kapan |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | `version` bukan angka mulai dari 1 |
+| 404 | `NOT_FOUND` | "Naskah surat belum diunggah", "Versi naskah tidak ditemukan", atau user tidak berhak |
+| 409 | `INVALID_STATE` | Surat `SENT` tetapi naskah belum pernah diunggah (PDF tidak bisa dibuat), atau meminta `.docx` (`?version=`) setelah `SENT` |
+| 503 | `SERVICE_UNAVAILABLE` | Gotenberg tidak bisa dihubungi; coba lagi nanti |
+
+#### GET `/api/v1/letters/{letterId}/qr`
+
+Gambar **PNG** QR persetujuan untuk surat yang sudah disetujui approver. Aksesnya sama dengan detail surat. Lewat proxy front-end cukup dipakai sebagai `<img src="/api/v1/letters/{letterId}/qr">`. Isi QR berupa teks biasa:
+
+```
+Persetujuan Surat - Digital Office
+Nomor: 015/TI/PSP/X/2026
+Disetujui oleh: Agus Setiawan, S.Kom., M.T.
+Jabatan: SVP Teknologi Informasi
+Waktu: 29-10-2026 11:19:07 WIB
+```
+
+Isi QR tidak bisa dibuktikan keasliannya (tanpa kode verifikasi). Nama dan jabatan diambil dari data user saat QR diminta.
+
+Error: `401 UNAUTHORIZED`, `404 NOT_FOUND` (surat tidak ada atau user bukan drafter/peserta), `409 INVALID_STATE` (surat belum disetujui approver).
 
 ---
 
@@ -487,10 +579,114 @@ Error: `401 UNAUTHORIZED`, `404 NOT_FOUND`.
 
 ---
 
+### GET `/api/v1/inbox?status=...&q=...&page=...&pageSize=...`
+
+Surat masuk milik user yang login: surat terkirim (`SENT`) yang diterima langsung sebagai penerima (Kepada/Tembusan), atau lewat disposisi/pengalihan.
+
+| Parameter | Keterangan |
+|---|---|
+| `status` | Opsional (tab), boleh beberapa dipisah koma: `UNREAD`, `READ`, `DISPOSED`, `REDIRECTED`. Kosong berarti semua |
+| `q` | Cari di perihal dan nomor surat (maksimal 100 karakter) |
+| `page`, `pageSize` | Default 1 dan 20, `pageSize` maksimal 100 |
+
+Urut dari yang terbaru masuk.
+
+```json
+{
+  "data": [
+    {
+      "id": "2", "status": "UNREAD", "receivedAt": "2026-10-20T11:00:00+07:00", "readAt": null,
+      "source": {
+        "type": "FORWARD", "recipientType": null, "forwardType": "DISPOSITION",
+        "forwardedBy": { "id": "7", "name": "Dewi Lestari, S.Kom.", "positionName": "..." },
+        "note": "Mohon ditindaklanjuti"
+      },
+      "letter": {
+        "id": "80d2d908-...", "letterNumber": "015/TI/PSP/X/2026", "title": "Undangan Rapat",
+        "letterDate": "2026-10-20T09:00:00+07:00",
+        "letterType": { "id": "7", "code": "NOTA_DINAS", "name": "Nota Dinas" },
+        "confidentiality": { }, "urgency": { },
+        "senderUnit": { "id": "11", "code": "PA", "name": "Bagian Pengembangan Aplikasi" },
+        "approver": { "id": "6", "name": "Agus Setiawan, S.Kom., M.T.", "positionName": "..." }
+      }
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 20, "total": 1 },
+  "counts": { "UNREAD": 1, "READ": 1, "DISPOSED": 0, "REDIRECTED": 0 }
+}
+```
+
+- `id` adalah ID item inbox; `letter.id` (uuid) dipakai untuk membuka surat.
+- Kolom Keterangan dibentuk dari `source`: `DIRECT` + `TO` = "Surat dari {senderUnit}", `DIRECT` + `CC` = "CC dari {senderUnit}", `FORWARD` + `DISPOSITION`/`REDIRECT` = "Disposisi/Dialihkan dari {forwardedBy}".
+- `source.note` adalah catatan/instruksi dari yang mendisposisi atau mengalihkan (`null` untuk `DIRECT`).
+- `letterDate` adalah tanggal surat (waktu disetujui); `approver` adalah penandatangan.
+- `counts` selalu berisi keempat status, mengikuti `q` tetapi tidak mengikuti `status`, untuk angka di tab. `meta.total` mengikuti `status`.
+
+Error: `400 VALIDATION_ERROR` (`status`, `q`, `page`, atau `pageSize` tidak valid), `401 UNAUTHORIZED`.
+
+### Disposisi dan pengalihan
+
+| Aksi | Siapa | Tujuan | Status item sumber |
+|---|---|---|---|
+| `DISPOSE` | pemilik item dengan permission `INBOX_DISPOSE` (pimpinan) | satu atau lebih orang dan/atau unit (maksimal 20) | `DISPOSED` |
+| `REDIRECT` | pemilik item mana pun (misalnya surat salah alamat) | tepat satu orang | `REDIRECTED` |
+
+- Hanya item `UNREAD`/`READ` yang bisa diteruskan, dan hanya sekali. Klik dua kali mendapat `409`.
+- Penerima mendapat item inbox baru (`FORWARD`, `UNREAD`) dan sejak itu boleh membuka detail surat dan QR.
+- Disposisi ke **unit** diterima pimpinan aktif unit itu. Penerima disposisi bisa mendisposisi lagi dari item miliknya (berjenjang), asalkan punya `INBOX_DISPOSE`.
+- Tujuan wajib user/unit aktif di perusahaan yang sama, bukan diri sendiri, dan bukan unit yang dipimpin sendiri. Satu orang hanya menerima satu item per permintaan.
+- Nama dan jabatan pengirim disimpan sebagai snapshot. Setiap aksi tercatat di audit (beserta IP).
+
+#### GET `/api/v1/inbox/{itemId}`
+
+Membuka satu item inbox milik user; item `UNREAD` otomatis menjadi `READ`. Isinya sama dengan satu baris daftar inbox, ditambah:
+
+```json
+{
+  "data": {
+    "id": "5", "status": "DISPOSED", "...": "(sama dengan item daftar inbox)",
+    "forwards": [
+      {
+        "id": "3", "type": "DISPOSITION", "targetType": "UNIT",
+        "targetUser": null, "targetUnit": { "id": "8", "code": "AK", "name": "Departemen Akuntansi dan Keuangan" },
+        "recipient": { "id": "17", "name": "Joko Susilo, S.E., Ak.", "positionName": "..." },
+        "note": "Mohon ditindaklanjuti", "createdAt": "2026-10-29T13:54:14+07:00"
+      }
+    ],
+    "allowedActions": []
+  }
+}
+```
+
+- `forwards` adalah penerusan yang sudah dibuat dari item ini. `recipient` adalah orang yang menerima di inbox (untuk unit: pimpinannya).
+- `allowedActions`: `DISPOSE` (bila punya `INBOX_DISPOSE`) dan `REDIRECT`, hanya selama item masih `UNREAD`/`READ`.
+- Detail surat (isi, penerima, QR) diambil terpisah lewat `GET /letters/{letter.id}`.
+
+Error: `401 UNAUTHORIZED`, `404 NOT_FOUND` (item tidak ada atau milik orang lain).
+
+#### POST `/api/v1/inbox/{itemId}/disposition` · `/redirect`
+
+| Endpoint | Body |
+|---|---|
+| `disposition` | `{ "userIds": ["16"], "unitIds": ["8"], "note": "..." }` (minimal satu tujuan; `note` opsional, maksimal 1000 karakter) |
+| `redirect` | `{ "userId": "18", "note": "..." }` (`note` opsional) |
+
+Response **200** berisi item terbaru (format sama dengan `GET /inbox/{itemId}`).
+
+| HTTP | `code` | Kapan |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Tanpa tujuan, ID tidak valid, tujuan nonaktif atau beda perusahaan, ke diri sendiri, unit tanpa pimpinan, atau catatan terlalu panjang |
+| 403 | `FORBIDDEN` | Disposisi tanpa permission `INBOX_DISPOSE` |
+| 404 | `NOT_FOUND` | Item tidak ada atau milik orang lain |
+| 409 | `INVALID_STATE` | Item sudah didisposisi atau dialihkan |
+
+---
+
 ### Batasan Sprint 2 (sementara)
 
-- Tanda tangan (`SIGN`), nomor surat, dan pengiriman ke inbox penerima belum tersedia. Surat bisa sampai `IN_APPROVAL`, dan approver baru bisa mengembalikannya.
-- Dokumen surat (versi) dan lampiran belum ada, jadi belum diwajibkan saat `submit`.
+- PDF resmi hanya bisa dibuat bila naskah `.docx` pernah diunggah. Front-end belum mengunggah naskah dari editor (topik naskah sedang ditunda), jadi surat tanpa naskah mendapat `409` saat diunduh.
+- Disposisi belum dibatasi ke unit bawahan (semua user/unit aktif di perusahaan boleh dituju), dan belum ada tanda "selesai ditindaklanjuti".
+- Naskah belum diwajibkan saat `submit`, supaya alur front-end yang belum mengunggah naskah tetap berjalan. Lampiran belum ada.
 - Draf belum bisa dihapus.
 
 ## 5. Akun uji (data dummy development)

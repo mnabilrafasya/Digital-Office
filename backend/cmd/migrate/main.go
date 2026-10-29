@@ -24,9 +24,9 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/sqlserver"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
-	"github.com/mnabilrafasya/Digital-Office/backend/database"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
+	"office.backend/database"
+	"office.backend/internal/platform/config"
+	"office.backend/internal/platform/db"
 )
 
 // systemDatabases tidak boleh dihapus oleh reset.

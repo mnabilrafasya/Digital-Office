@@ -1,4 +1,5 @@
-// Package auth berisi pembuatan/pemeriksaan token dan pengecekan password.
+// Package auth berisi login/logout, access token, pengecekan password, middleware autentikasi dan
+// otorisasi, pembatas percobaan login, serta kode hak akses (permission).
 // Login NIK + password bersifat sementara sampai SSO tersedia; middleware hanya
 // bergantung pada token, sehingga cara login bisa diganti tanpa mengubah middleware.
 package auth
