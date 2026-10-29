@@ -1,4 +1,5 @@
-// Server API digioffice. File ini hanya merangkai komponen: config -> dependency -> server.Run.
+// Server API digioffice. Package ini hanya merangkai komponen: config -> dependency -> router
+// (router.go) -> server.Run.
 package main
 
 import (
@@ -8,15 +9,17 @@ import (
 
 	_ "time/tzdata" // data zona waktu ikut di binary, tidak bergantung pada OS
 
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/auth"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/handler"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/ratelimit"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/repository"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/server"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/service"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/storage"
+	"office.backend/internal/audit"
+	"office.backend/internal/auth"
+	"office.backend/internal/inbox"
+	"office.backend/internal/masterdata"
+	"office.backend/internal/organisasi"
+	"office.backend/internal/platform/config"
+	"office.backend/internal/platform/db"
+	"office.backend/internal/platform/pdf"
+	"office.backend/internal/platform/server"
+	"office.backend/internal/platform/storage"
+	"office.backend/internal/surat"
 )
 
 // deadlockAttempts adalah jumlah percobaan maksimal transaksi yang terkena deadlock SQL Server.
@@ -61,25 +64,42 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	limiter := ratelimit.NewLoginLimiter(nil)
-	go limiter.RunJanitor(ctx, ratelimit.JanitorInterval) // berhenti saat server shutdown
+	limiter := auth.NewLoginLimiter(nil)
+	go limiter.RunJanitor(ctx, auth.JanitorInterval) // berhenti saat server shutdown
 
-	// Repository -> service -> handler
-	users := repository.NewUserRepository(conn)
+	// Repository -> service -> handler, per fitur
+	users := auth.NewRepository(conn)
 	tokens := auth.NewJWT(cfg.JWTSecret, cfg.JWTTTL)
-	authService := service.NewAuthService(users, tokens, passwords, limiter)
-	formService := service.NewFormService(repository.NewLookupRepository(conn), repository.NewUnitRepository(conn), users)
-	letterService := service.NewLetterService(db.NewRunner(conn, deadlockAttempts), conn, service.LetterRepos{
-		Letters: func(q db.DBTX) service.LetterStore { return repository.NewLetterRepository(q) },
-		Audit:   func(q db.DBTX) service.AuditStore { return repository.NewAuditRepository(q) },
-		Refs:    repository.NewLetterRefRepository(conn),
+	authService := auth.NewService(users, tokens, passwords, limiter)
+
+	masterRepo := masterdata.NewRepository(conn)
+	orgRepo := organisasi.NewRepository(conn)
+
+	// Surat memakai fitur lain lewat interface miliknya sendiri (Directory, Lookups, Templates, Inbox)
+	suratService := surat.NewService(db.NewRunner(conn, deadlockAttempts), conn, surat.Repos{
+		Letters:   func(q db.DBTX) surat.Store { return surat.NewRepository(q) },
+		Audit:     func(q db.DBTX) surat.AuditStore { return audit.NewRepository(q) },
+		Inbox:     func(q db.DBTX) surat.InboxStore { return inbox.NewRepository(q) },
+		Directory: orgRepo,
+		Lookups:   masterRepo,
+		Templates: surat.NewRepository(conn),
+		Files:     files,
+		PDF:       pdf.NewMaker(cfg.GotenbergURL),
 	}, cfg.Location)
 
-	router := server.NewRouter(server.RouterDeps{
-		Health:            handler.NewHealthHandler(conn, files),
-		Auth:              handler.NewAuthHandler(authService, cfg.JWTTTL),
-		Form:              handler.NewFormHandler(formService),
-		Letter:            handler.NewLetterHandler(letterService),
+	inboxService := inbox.NewService(db.NewRunner(conn, deadlockAttempts), conn, inbox.Repos{
+		Items:     func(q db.DBTX) inbox.Store { return inbox.NewRepository(q) },
+		Audit:     func(q db.DBTX) inbox.AuditStore { return audit.NewRepository(q) },
+		Directory: orgRepo,
+	}, cfg.Location)
+
+	router := newRouter(routerDeps{
+		Health:            server.NewHealthHandler(conn, files),
+		Auth:              auth.NewHandler(authService, cfg.JWTTTL),
+		MasterData:        masterdata.NewHandler(masterdata.NewService(masterRepo)),
+		Organisasi:        organisasi.NewHandler(organisasi.NewService(orgRepo, orgRepo, orgRepo)),
+		Surat:             surat.NewHandler(suratService),
+		Inbox:             inbox.NewHandler(inboxService),
 		Tokens:            tokens,
 		Users:             users,
 		CORSOrigins:       cfg.CORSAllowedOrigins,
