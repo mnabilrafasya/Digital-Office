@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
@@ -11,7 +10,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Digital Office — Sistem Persuratan Perusahaan Pupuk ",
+  title: "Digital Office - Sistem Persuratan Perusahaan Pupuk",
   description: "Sistem persuratan digital untuk Perusahaan Pupuk. Buat, review, dan kelola surat korporat secara digital.",
 };
 
@@ -24,8 +23,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <Script src="/vendor/pdfkit.standalone.js" strategy="afterInteractive" />
-        <Script src="/vendor/blob-stream.js" strategy="afterInteractive" />
       </body>
     </html>
   );

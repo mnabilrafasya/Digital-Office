@@ -1,16 +1,13 @@
 "use client";
 
-// ─────────────────────────────────────────────
-// components/review/document-viewer/review-document-inner.tsx
+// ---------------------------------------------/review/document-viewer/review-document-inner.tsx
 // Pratinjau naskah surat di halaman detail / review / approval (/surat/[id]).
 // SELALU mode baca (readOnly): reviewer dan approver menilai naskah, tidak mengetik.
 // Di-load murni di browser lewat index.tsx (dynamic, ssr: false).
-// ─────────────────────────────────────────────
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Download, FileDown, Info, Maximize2, Minimize2, Loader2 } from "lucide-react";
+import { Download, Printer, Info, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ensurePdfKitLoaded } from "@/lib/pdf-kit-loader";
 
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
@@ -69,7 +66,6 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
   const [isReady, setIsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   // Default 0.58 (58%) agar seluruh 1 lembar A4 (kop s/d ttd) pas terlihat utuh di kotak 560px
   const [zoomLevel, setZoomLevel] = useState<number>(0.5);
@@ -85,14 +81,10 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
     }
   }, []);
 
-  // Inisialisasi editor sekali (mount). Preload engine PDFKit di background.
+  // Inisialisasi editor sekali (mount)
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
-
-    // Preload PDFKit di background agar siap saat user mengunduh
-    ensurePdfKitLoaded().catch(() => {});
-
     (async () => {
       try {
         const mod = (await import("devexpress-richedit")) as RichEditModule;
@@ -108,8 +100,9 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
         options.view = {
           zoomLevel: 0.5, // Tampilan 1 halaman utuh pas di container
         };
-        options.pdf = {
-          pdfKitScriptUrl: "/vendor/pdfkit.standalone.js",
+        options.printing = {
+          mode: mod.PrintMode?.Html ?? 1,
+          closePrintDialogWithHtmlPreview: true,
         };
 
         editorRef.current = mod.create(containerRef.current, options);
@@ -174,26 +167,18 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
     }, mod.DocumentFormat.OpenXml);
   }
 
-  // ─── Langsung Unduh File PDF (tanpa dialog cetak) ───────────────
-  async function handleDownloadPdf() {
+    // ─── Cetak / Simpan PDF lewat Browser (Mode Html) ────────────────
+  function handlePrintPdf() {
     const editor = editorRef.current;
+    const mod = moduleRef.current;
     if (!editor) return;
 
     try {
-      setIsDownloadingPdf(true);
-      const ready = await ensurePdfKitLoaded();
-      if (!ready) {
-        alert("Gagal memuat modul PDFKit. Pastikan koneksi dan file vendor siap.");
-        return;
-      }
-
-      const base = `${letter.letterNumber ?? "Naskah_Dinas"}`.replace(/[\\/]/g, "-");
-      editor.downloadPdf(base);
+      const mode = mod?.PrintMode?.Html ?? 1;
+      editor.printDocument(mode);
     } catch (err) {
-      console.error("[ReviewDocumentViewer] Gagal download PDF:", err);
-      alert("Gagal mengunduh file PDF: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setIsDownloadingPdf(false);
+      console.error("[ReviewDocumentViewer] Gagal mencetak / PDF:", err);
+      alert("Gagal membuka dialog cetak/PDF: " + (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -264,19 +249,15 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
             <Download size={13} className="text-primary" />
             Unduh .docx
           </button>
-          <button
+                    <button
             type="button"
-            onClick={handleDownloadPdf}
-            disabled={!isReady || isDownloadingPdf}
+            onClick={handlePrintPdf}
+            disabled={!isReady}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
-            title="Unduh naskah saat ini langsung sebagai file PDF"
+            title="Cetak naskah langsung ke printer atau simpan sebagai PDF (Save as PDF)"
           >
-            {isDownloadingPdf ? (
-              <Loader2 size={13} className="animate-spin text-primary" />
-            ) : (
-              <FileDown size={13} className="text-primary" />
-            )}
-            {isDownloadingPdf ? "Mengunduh..." : "Unduh PDF"}
+            <Printer size={13} className="text-primary" />
+            Cetak / Simpan PDF
           </button>
           <button
             type="button"
