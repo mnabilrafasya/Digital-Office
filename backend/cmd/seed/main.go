@@ -20,9 +20,9 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/mnabilrafasya/Digital-Office/backend/database"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/config"
-	"github.com/mnabilrafasya/Digital-Office/backend/internal/db"
+	"office.backend/database"
+	"office.backend/internal/platform/config"
+	"office.backend/internal/platform/db"
 )
 
 const (

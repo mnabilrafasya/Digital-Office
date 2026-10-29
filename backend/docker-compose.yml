@@ -27,6 +27,15 @@ services:
       - minio-data:/data
       - ./minio.license:/minio.license:ro
 
+  # LibreOffice untuk mengubah naskah .docx menjadi PDF resmi. Port 3001 di host, karena 3000
+  # dipakai front-end. Tanpa data permanen (PDF hasilnya disimpan back-end di MinIO).
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: digioffice-gotenberg
+    command: gotenberg --api-timeout=60s
+    ports:
+      - "127.0.0.1:3001:3000"
+
 volumes:
   sqlserver-data:
   minio-data:
