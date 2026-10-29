@@ -5,13 +5,12 @@
 // Pratinjau naskah surat di halaman detail / review / approval (/surat/[id]).
 // SELALU mode baca (readOnly): reviewer dan approver menilai naskah, tidak mengetik.
 // Di-load murni di browser lewat index.tsx (dynamic, ssr: false).
-//
-// Backend BELUM punya endpoint dokumen/versi, jadi naskah dibangun ulang dari template +
-// data surat (perihal, penerima, approver, nomor). Editing naskah hanya di halaman Buat Surat.
 // ─────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from "react";
-import { Download, FileDown, Info, Maximize2, Minimize2 } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Download, FileDown, Info, Maximize2, Minimize2, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ensurePdfKitLoaded } from "@/lib/pdf-kit-loader";
 
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
@@ -70,11 +69,29 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
   const [isReady, setIsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
-  // Inisialisasi editor sekali (mount). Konten dimuat di efek berikutnya.
+  // Default 0.58 (58%) agar seluruh 1 lembar A4 (kop s/d ttd) pas terlihat utuh di kotak 560px
+  const [zoomLevel, setZoomLevel] = useState<number>(0.5);
+  const zoomLevelRef = useRef<number>(0.5);
+  zoomLevelRef.current = zoomLevel;
+
+  // Ubah zoom level editor
+  const applyZoom = useCallback((level: number) => {
+    setZoomLevel(level);
+    if (editorRef.current) {
+      editorRef.current.zoomLevel = level;
+      editorRef.current.adjust();
+    }
+  }, []);
+
+  // Inisialisasi editor sekali (mount). Preload engine PDFKit di background.
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
+
+    // Preload PDFKit di background agar siap saat user mengunduh
+    ensurePdfKitLoaded().catch(() => {});
 
     (async () => {
       try {
@@ -88,6 +105,12 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
         options.height = "100%";
         options.readOnly = true; // mode baca: tidak bisa diketik
         options.ribbon.visible = false; // tanpa ribbon; unduh lewat toolbar di atas
+        options.view = {
+          zoomLevel: 0.5, // Tampilan 1 halaman utuh pas di container
+        };
+        options.pdf = {
+          pdfKitScriptUrl: "/vendor/pdfkit.standalone.js",
+        };
 
         editorRef.current = mod.create(containerRef.current, options);
         setIsReady(true);
@@ -118,12 +141,22 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
       .generateHtml(buildContext(letter))
       .replace(/###NoSurat###/g, letter.letterNumber ?? "###NoSurat###");
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    editor.openDocument(blob, `${tpl.name}.html`, mod.DocumentFormat.Html);
+    editor.openDocument(blob, `${tpl.name}.html`, mod.DocumentFormat.Html, (success) => {
+      if (success) {
+        editor.zoomLevel = zoomLevelRef.current;
+        editor.adjust();
+      }
+    });
   }, [isReady, letter]);
 
   // Sesuaikan ukuran saat fullscreen berubah.
   useEffect(() => {
-    const t = setTimeout(() => editorRef.current?.adjust?.(), 150);
+    const t = setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.zoomLevel = zoomLevelRef.current;
+        editorRef.current.adjust();
+      }
+    }, 150);
     return () => clearTimeout(t);
   }, [isFullscreen]);
 
@@ -141,11 +174,27 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
     }, mod.DocumentFormat.OpenXml);
   }
 
-  function handleDownloadPdf() {
+  // ─── Langsung Unduh File PDF (tanpa dialog cetak) ───────────────
+  async function handleDownloadPdf() {
     const editor = editorRef.current;
     if (!editor) return;
-    const base = `${letter.letterNumber ?? "Naskah_Dinas"}`.replace(/[\\/]/g, "-");
-    editor.downloadPdf(base);
+
+    try {
+      setIsDownloadingPdf(true);
+      const ready = await ensurePdfKitLoaded();
+      if (!ready) {
+        alert("Gagal memuat modul PDFKit. Pastikan koneksi dan file vendor siap.");
+        return;
+      }
+
+      const base = `${letter.letterNumber ?? "Naskah_Dinas"}`.replace(/[\\/]/g, "-");
+      editor.downloadPdf(base);
+    } catch (err) {
+      console.error("[ReviewDocumentViewer] Gagal download PDF:", err);
+      alert("Gagal mengunduh file PDF: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   }
 
   if (errorMsg) {
@@ -168,17 +217,49 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
 
   return (
     <div className={wrapperClass}>
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-panel border-b border-border flex-wrap shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border flex-wrap shrink-0">
         <span className="text-xs font-semibold text-text">Naskah Surat</span>
         <span className="text-[11px] text-text-muted bg-surface border border-border px-2 py-0.5 rounded">
           Mode baca
         </span>
+
+        {/* Toggle Zoom: Fit 1 Halaman vs 100% */}
+        <div className="inline-flex items-center gap-1 bg-surface border border-border rounded-lg p-0.5 ml-2">
+          <button
+            type="button"
+            onClick={() => applyZoom(0.5)}
+            className={cn(
+              "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+              zoomLevel === 0.5
+                ? "bg-primary text-white shadow-xs"
+                : "text-text-muted hover:text-text"
+            )}
+            title="Tampilkan 1 halaman penuh tanpa scroll"
+          >
+            Fit 1 Halaman
+          </button>
+          <button
+            type="button"
+            onClick={() => applyZoom(1.0)}
+            className={cn(
+              "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+              zoomLevel === 1.0
+                ? "bg-primary text-white shadow-xs"
+                : "text-text-muted hover:text-text"
+            )}
+            title="Ukuran standar 100%"
+          >
+            100%
+          </button>
+        </div>
+
         <div className="flex items-center gap-2 ml-auto">
           <button
             type="button"
             onClick={handleDownload}
             disabled={!isReady}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
+            title="Unduh dokumen sebagai file Microsoft Word (.docx)"
           >
             <Download size={13} className="text-primary" />
             Unduh .docx
@@ -186,11 +267,16 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
           <button
             type="button"
             onClick={handleDownloadPdf}
-            disabled={!isReady}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
+            disabled={!isReady || isDownloadingPdf}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
+            title="Unduh naskah saat ini langsung sebagai file PDF"
           >
-            <FileDown size={13} className="text-primary" />
-            Unduh PDF
+            {isDownloadingPdf ? (
+              <Loader2 size={13} className="animate-spin text-primary" />
+            ) : (
+              <FileDown size={13} className="text-primary" />
+            )}
+            {isDownloadingPdf ? "Mengunduh..." : "Unduh PDF"}
           </button>
           <button
             type="button"
@@ -206,9 +292,10 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
       <div
         ref={containerRef}
         style={{
-          height: isFullscreen ? "calc(100vh - 100px)" : "640px",
+          // 560px setara dengan tinggi kartu Metadata di kolom kanan
+          height: isFullscreen ? "calc(100vh - 80px)" : "560px",
           width: "100%",
-          minHeight: "450px",
+          minHeight: "570px",
         }}
         className="w-full bg-white relative"
       />

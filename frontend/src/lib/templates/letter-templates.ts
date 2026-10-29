@@ -64,16 +64,16 @@ function generateSuratDinasHtml(ctx: LetterTemplateContext): string {
   <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
     <tr>
       <td style="text-align: center; vertical-align: top;">
-        <p style="font-family: 'Times New Roman', serif; font-size: 14pt; font-weight: bold; text-transform: uppercase; margin: 0 0 2px 0;">PT PUPUK SRIWIDJAJA PALEMBANG</p>
-        <p style="font-family: 'Times New Roman', serif; font-size: 12.5pt; font-weight: bold; text-transform: uppercase; margin: 0 0 3px 0;">DIREKTORAT TEKNOLOGI INFORMASI</p>
-        <p style="font-family: 'Times New Roman', serif; font-size: 9.5pt; margin: 0 0 4px 0;">Jalan Mayor Zen, Kalidoni, Kota Palembang, Sumatera Selatan</p>
+        <p style="font-family: 'Calibri', serif; font-size: 14pt; font-weight: bold; text-transform: uppercase; margin: 0 0 2px 0;">PT PUPUK SRIWIDJAJA PALEMBANG</p>
+        <p style="font-family: 'Calibri', serif; font-size: 12.5pt; font-weight: bold; text-transform: uppercase; margin: 0 0 3px 0;">DIREKTORAT TEKNOLOGI INFORMASI</p>
+        <p style="font-family: 'Calibri', serif; font-size: 9.5pt; margin: 0 0 4px 0;">Jalan Mayor Zen, Kalidoni, Kota Palembang, Sumatera Selatan</p>
       </td>
     </tr>
   </table>
   <hr style="border-top: 2px solid #000; border-bottom: none; margin: 2px 0 16px 0;" />
 
   <!-- TANGGAL & METADATA SURAT -->
-  <table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt; margin-bottom: 16px;">
+  <table style="width: 100%; border-collapse: collapse; font-family: 'Calibri', serif; font-size: 11pt; margin-bottom: 16px;">
     <tr>
       <td style="width: 15%; padding: 2px 0; vertical-align: top;">Nomor</td>
       <td style="width: 2%; padding: 2px 0; vertical-align: top;">:</td>
@@ -101,34 +101,34 @@ function generateSuratDinasHtml(ctx: LetterTemplateContext): string {
   </table>
 
   <!-- KEPADA YTH -->
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; margin: 0 0 14px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; margin: 0 0 14px 0; line-height: 1.4;">
     Kepada Yth.<br/>
     <strong>${penerima}</strong><br/>
     di Tempat
   </p>
 
   <!-- SALAM PEMBUKA -->
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; margin: 0 0 10px 0;">Dengan hormat,</p>
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; margin: 0 0 10px 0;">Dengan hormat,</p>
 
   <!-- ISI SURAT -->
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 10px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 10px 0; line-height: 1.4;">
     Sehubungan dengan pelaksanaan program kerja dan operasional di lingkungan PT SRIWIDJAJA Palembang, dengan ini kami sampaikan pokok-pokok pemberitahuan dan koordinasi sebagai berikut:
   </p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 10px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 10px 0; line-height: 1.4;">
     1. [Uraikan latar belakang atau konteks perihal surat dinas secara jelas dan ringkas di bagian ini].
   </p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 10px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 10px 0; line-height: 1.4;">
     2. [Uraikan isi pokok, instruksi, permohonan, atau pemberitahuan yang ingin disampaikan kepada pihak penerima].
   </p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 16px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; text-indent: 36pt; margin: 0 0 16px 0; line-height: 1.4;">
     Demikian surat ini kami sampaikan untuk menjadi perhatian dan dapat ditindaklanjuti sebagaimana mestinya. Atas perhatian dan kerja sama yang baik, kami ucapkan terima kasih.
   </p>
 
   <!-- TANDA TANGAN / APPROVER -->
-  <table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt; margin-top: 24px;">
+  <table style="width: 100%; border-collapse: collapse; font-family: 'Calibri', serif; font-size: 11pt; margin-top: 24px;">
     <tr>
       <td style="width: 50%;"></td>
       <td style="width: 50%; text-align: center; vertical-align: top;">
@@ -141,7 +141,7 @@ function generateSuratDinasHtml(ctx: LetterTemplateContext): string {
   </table>
 
   <!-- TEMBUSAN -->
-  <p style="font-family: 'Times New Roman', serif; font-size: 9.5pt; margin-top: 24px; line-height: 1.3;">
+  <p style="font-family: 'Calibri', serif; font-size: 9.5pt; margin-top: 24px; line-height: 1.3;">
     <strong>Tembusan:</strong><br/>
     1. Direksi PT Pupuk Sriwidjaja Palembang<br/>
     2. Arsip Digital Office
@@ -239,14 +239,14 @@ function generateUndanganHtml(ctx: LetterTemplateContext): string {
   <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
     <tr>
       <td style="text-align: center; vertical-align: top;">
-        <p style="font-family: 'Times New Roman', serif; font-size: 13pt; font-weight: bold; text-transform: uppercase; margin: 0 0 2px 0;">PT PUPUK SRIWIDJAJA PALEMBANG</p>
-        <p style="font-family: 'Times New Roman', serif; font-size: 11pt; margin: 0 0 4px 0;">DIREKTORAT TEKNOLOGI INFORMASI</p>
+        <p style="font-family: 'Calibri', serif; font-size: 13pt; font-weight: bold; text-transform: uppercase; margin: 0 0 2px 0;">PT PUPUK SRIWIDJAJA PALEMBANG</p>
+        <p style="font-family: 'Calibri', serif; font-size: 11pt; margin: 0 0 4px 0;">DIREKTORAT TEKNOLOGI INFORMASI</p>
       </td>
     </tr>
   </table>
   <hr style="border-top: 2px solid #000; border-bottom: none; margin: 2px 0 14px 0;" />
 
-  <table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt; margin-bottom: 14px;">
+  <table style="width: 100%; border-collapse: collapse; font-family: 'Calibri', serif; font-size: 11pt; margin-bottom: 14px;">
     <tr>
       <td style="width: 15%; padding: 2px 0; vertical-align: top;">Nomor</td>
       <td style="width: 2%; padding: 2px 0; vertical-align: top;">:</td>
@@ -273,19 +273,19 @@ function generateUndanganHtml(ctx: LetterTemplateContext): string {
     </tr>
   </table>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; margin: 0 0 12px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; margin: 0 0 12px 0; line-height: 1.4;">
     Kepada Yth.<br/>
     <strong>${penerima}</strong><br/>
     di Tempat
   </p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; margin: 0 0 10px 0;">Dengan hormat,</p>
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; margin: 0 0 10px 0;">Dengan hormat,</p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; text-indent: 30pt; margin: 0 0 10px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; text-indent: 30pt; margin: 0 0 10px 0; line-height: 1.4;">
     Dalam rangka koordinasi dan penyelarasan target operasional, kami mengharapkan kehadiran Bapak/Ibu dalam rapat koordinasi yang akan diselenggarakan pada:
   </p>
 
-  <table style="margin: 8px 0 14px 24px; font-family: 'Times New Roman', serif; font-size: 11pt; border-collapse: collapse;">
+  <table style="margin: 8px 0 14px 24px; font-family: 'Calibri', serif; font-size: 11pt; border-collapse: collapse;">
     <tr>
       <td style="width: 140px; padding: 3px 0; vertical-align: top;"><strong>Hari / Tanggal</strong></td>
       <td style="width: 15px; padding: 3px 0; vertical-align: top;">:</td>
@@ -308,11 +308,11 @@ function generateUndanganHtml(ctx: LetterTemplateContext): string {
     </tr>
   </table>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; text-indent: 30pt; margin: 0 0 16px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; text-indent: 30pt; margin: 0 0 16px 0; line-height: 1.4;">
     Mengingat pentingnya agenda tersebut, dimohon kehadiran Bapak/Ibu tepat pada waktunya. Demikian undangan ini kami sampaikan, atas kehadiran dan kerja samanya diucapkan terima kasih.
   </p>
 
-  <table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt; margin-top: 24px;">
+  <table style="width: 100%; border-collapse: collapse; font-family: 'Calibri', serif; font-size: 11pt; margin-top: 24px;">
     <tr>
       <td style="width: 50%;"></td>
       <td style="width: 50%; text-align: center; vertical-align: top;">
@@ -336,20 +336,20 @@ function generateSuratTugasHtml(ctx: LetterTemplateContext): string {
   <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
     <tr>
       <td style="text-align: center; vertical-align: top;">
-        <p style="font-family: 'Times New Roman', serif; font-size: 12pt; font-weight: bold; text-transform: uppercase; margin: 0 0 2px 0;">PT PUPUK SRIWIDJAJA PALEMBANG</p>
+        <p style="font-family: 'Calibri', serif; font-size: 12pt; font-weight: bold; text-transform: uppercase; margin: 0 0 2px 0;">PT PUPUK SRIWIDJAJA PALEMBANG</p>
       </td>
     </tr>
   </table>
   <hr style="border-top: 2px solid #000; border-bottom: none; margin: 2px 0 16px 0;" />
 
-  <p style="font-family: 'Times New Roman', serif; text-align: center; font-size: 14pt; font-weight: bold; text-decoration: underline; margin: 0 0 2px 0;">SURAT PERINTAH TUGAS</p>
-  <p style="font-family: 'Times New Roman', serif; text-align: center; font-size: 10.5pt; margin: 0 0 18px 0;">Nomor: ###NoSurat###</p>
+  <p style="font-family: 'Calibri', serif; text-align: center; font-size: 14pt; font-weight: bold; text-decoration: underline; margin: 0 0 2px 0;">SURAT PERINTAH TUGAS</p>
+  <p style="font-family: 'Calibri', serif; text-align: center; font-size: 10.5pt; margin: 0 0 18px 0;">Nomor: ###NoSurat###</p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; margin: 0 0 12px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; margin: 0 0 12px 0; line-height: 1.4;">
     Yang bertanda tangan di bawah ini, <strong>${approverJabatan}</strong> PT Pupuk Sriwidjaja Palembang, dengan ini menugaskan kepada pegawai berikut:
   </p>
 
-  <table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 10.5pt; margin: 10px 0 14px 0;">
+  <table style="width: 100%; border-collapse: collapse; font-family: 'Calibri', serif; font-size: 10.5pt; margin: 10px 0 14px 0;">
     <thead>
       <tr style="background-color: #f2f2f2;">
         <th style="border: 1px solid #000; padding: 4px 6px; width: 6%; text-align: center;">No</th>
@@ -374,15 +374,15 @@ function generateSuratTugasHtml(ctx: LetterTemplateContext): string {
     </tbody>
   </table>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; margin: 0 0 10px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; margin: 0 0 10px 0; line-height: 1.4;">
     <strong>Untuk:</strong> Melaksanakan penugasan ${perihal} sesuai dengan ketentuan dan prosedur standar operasional perusahaan.
   </p>
 
-  <p style="font-family: 'Times New Roman', serif; font-size: 11pt; text-align: justify; margin: 0 0 16px 0; line-height: 1.4;">
+  <p style="font-family: 'Calibri', serif; font-size: 11pt; text-align: justify; margin: 0 0 16px 0; line-height: 1.4;">
     Demikian Surat Perintah Tugas ini dibuat untuk dapat dilaksanakan dengan penuh tanggung jawab dan menyampaikan laporan hasil pelaksanaan setelah kegiatan selesai.
   </p>
 
-  <table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt; margin-top: 24px;">
+  <table style="width: 100%; border-collapse: collapse; font-family: 'Calibri', serif; font-size: 11pt; margin-top: 24px;">
     <tr>
       <td style="width: 50%;"></td>
       <td style="width: 50%; text-align: center; vertical-align: top;">
@@ -399,7 +399,7 @@ function generateSuratTugasHtml(ctx: LetterTemplateContext): string {
 
 // ─── 5. Template Dokumen Kosong (Blank) ─────────────────────────────
 function generateBlankHtml(): string {
-  return `<p style="font-family: 'Times New Roman', serif; font-size: 12pt; margin: 0;">&nbsp;</p>`;
+  return `<p style="font-family: 'Calibri', serif; font-size: 12pt; margin: 0;">&nbsp;</p>`;
 }
 
 // ─── Daftar Template Resmi Frontend ────────────────────────────────

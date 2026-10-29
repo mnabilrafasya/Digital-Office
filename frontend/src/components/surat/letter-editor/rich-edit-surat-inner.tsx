@@ -19,7 +19,11 @@ import {
   Sparkles,
   Info,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import { ensurePdfKitLoaded } from "@/lib/pdf-kit-loader";
 
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
@@ -56,10 +60,23 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   const [isReady, setIsReady] = useState(false);
   const [fileName, setFileName] = useState<string | null>("Naskah_Dinas_Draf.docx");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [appliedTemplateId, setAppliedTemplateId] = useState<string>("tmpl-dinas-standar");
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
+
+  const [zoomLevel, setZoomLevel] = useState<number>(0.5);
+  const zoomLevelRef = useRef<number>(0.5);
+  zoomLevelRef.current = zoomLevel;
+
+  const applyZoom = useCallback((level: number) => {
+    setZoomLevel(level);
+    if (instanceRef.current) {
+      instanceRef.current.zoomLevel = level;
+      instanceRef.current.adjust();
+    }
+  }, []);
 
   // Ambil state form dari Buat Surat
   const { control, setValue } = useFormContext<BuatSuratFormValues>();
@@ -118,6 +135,8 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             setStatusNotification("Dokumen kosong baru dibuka");
             setTimeout(() => setStatusNotification(null), 3000);
           }
+          editor.zoomLevel = zoomLevelRef.current;
+          editor.adjust();
           editor.focus();
           onDocumentChange?.();
           return;
@@ -139,6 +158,8 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
               setStatusNotification(`Template "${tpl.name}" berhasil dimuat`);
               setTimeout(() => setStatusNotification(null), 3000);
             }
+            editor.zoomLevel = zoomLevelRef.current;
+            editor.adjust();
             editor.focus();
             onDocumentChange?.();
           } else {
@@ -158,6 +179,9 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
     if (!containerRef.current) return;
     let disposed = false;
 
+    // Preload PDFKit di background agar siap saat user mengunduh
+    ensurePdfKitLoaded().catch(() => {});
+
     (async () => {
       try {
         const mod = (await import("devexpress-richedit")) as RichEditModule;
@@ -173,6 +197,12 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
         options.height = "100%";
         options.readOnly = false;
         options.ribbon.visible = true;
+        options.view = {
+          zoomLevel: 0.5, 
+        };
+        options.pdf = {
+          pdfKitScriptUrl: "/vendor/pdfkit.standalone.js",
+        };
         options.events.documentChanged = () => {
           if (!isLoadingDocRef.current) userEditedRef.current = true;
         };
@@ -196,6 +226,8 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
               instanceRef.current.newDocument();
               releaseLoading();
               setAppliedTemplateId(initialTplId);
+              instanceRef.current.zoomLevel = zoomLevelRef.current;
+              instanceRef.current.adjust();
               instanceRef.current.focus();
             } else {
               const tpl = getTemplateById(initialTplId);
@@ -210,6 +242,10 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
                   releaseLoading();
                   if (success) {
                     instanceRef.current?.focus();
+                    if (instanceRef.current) {
+                      instanceRef.current.zoomLevel = zoomLevelRef.current;
+                      instanceRef.current.adjust();
+                    }
                   }
                 }
               );
@@ -239,7 +275,10 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
   useEffect(() => {
     if (instanceRef.current) {
       const timer = setTimeout(() => {
-        instanceRef.current?.adjust?.();
+        if (instanceRef.current) {
+          instanceRef.current.zoomLevel = zoomLevelRef.current;
+          instanceRef.current.adjust();
+        }
       }, 150);
       return () => clearTimeout(timer);
     }
@@ -293,7 +332,11 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             setFileName(file.name);
             setStatusNotification(`File "${file.name}" berhasil dibuka`);
             setTimeout(() => setStatusNotification(null), 3000);
-            instanceRef.current?.focus();
+            if (instanceRef.current) {
+              instanceRef.current.zoomLevel = zoomLevelRef.current;
+              instanceRef.current.adjust();
+              instanceRef.current.focus();
+            }
             onDocumentChange?.();
           }
         });
@@ -330,16 +373,26 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
     }
   }, [fileName]);
 
-  // ─── Unduh sebagai PDF (output final; salinan yang bisa diedit tetap .docx) ───
-  const handleDownloadPdf = useCallback(() => {
+  // ─── Langsung Unduh File PDF (tanpa dialog cetak) ───────────────
+  const handleDownloadPdf = useCallback(async () => {
     const editor = instanceRef.current;
     if (!editor) return;
+
     try {
+      setIsDownloadingPdf(true);
+      const ready = await ensurePdfKitLoaded();
+      if (!ready) {
+        alert("Gagal memuat modul PDFKit. Pastikan koneksi dan file vendor siap.");
+        return;
+      }
+
       const baseName = (fileName || "Naskah_Dinas").replace(/\.[^.]+$/, "");
       editor.downloadPdf(baseName);
     } catch (err) {
       console.error("[LetterEditor] Gagal membuat PDF:", err);
-      alert("Gagal membuat PDF: " + (err instanceof Error ? err.message : String(err)));
+      alert("Gagal mengunduh file PDF: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsDownloadingPdf(false);
     }
   }, [fileName]);
 
@@ -399,6 +452,36 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
             <RefreshCw size={12} className="text-text-muted" />
             Sinkronkan Form
           </button>
+
+          {/* Toggle Zoom: Fit 1 Halaman vs 100% */}
+          <div className="inline-flex items-center gap-1 bg-surface border border-border rounded-lg p-0.5 ml-1">
+            <button
+              type="button"
+              onClick={() => applyZoom(0.5)}
+              className={cn(
+                "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                zoomLevel === 0.5
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-text-muted hover:text-text"
+              )}
+              title="Tampilkan 1 halaman penuh tanpa scroll"
+            >
+              Fit 1 Halaman
+            </button>
+            <button
+              type="button"
+              onClick={() => applyZoom(1.0)}
+              className={cn(
+                "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                zoomLevel === 1.0
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-text-muted hover:text-text"
+              )}
+              title="Ukuran standar 100%"
+            >
+              100%
+            </button>
+          </div>
         </div>
 
         {/* Status Notifikasi Toast Kecil */}
@@ -435,12 +518,16 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
           <button
             type="button"
             onClick={handleDownloadPdf}
-            disabled={!isReady}
+            disabled={!isReady || isDownloadingPdf}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
-            title="Unduh naskah saat ini sebagai PDF"
+            title="Unduh naskah saat ini langsung sebagai file PDF"
           >
-            <FileDown size={13} className="text-primary" />
-            Unduh PDF
+            {isDownloadingPdf ? (
+              <Loader2 size={13} className="animate-spin text-primary" />
+            ) : (
+              <FileDown size={13} className="text-primary" />
+            )}
+            {isDownloadingPdf ? "Mengunduh..." : "Unduh PDF"}
           </button>
 
           {/* Toggle Fullscreen */}
@@ -472,9 +559,10 @@ export default function RichEditSuratInner({ onDocumentChange }: RichEditSuratIn
       <div
         ref={containerRef}
         style={{
-          height: isFullscreen ? "calc(100vh - 100px)" : "640px",
+          // 980px memberikan ruang yang cukup bagi ribbon + 1 lembar A4 penuh dari kop surat sampai tanda tangan
+          height: isFullscreen ? "calc(100vh - 100px)" : "980px",
           width: "100%",
-          minHeight: "450px",
+          minHeight: "1200px",
         }}
         className="w-full bg-white relative"
       />
