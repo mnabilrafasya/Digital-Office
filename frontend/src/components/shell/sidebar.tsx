@@ -27,15 +27,39 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { getInboxUnreadCount } from "@/lib/api/inbox";
 
 interface NavItem {
   label: string;
   href?: string;
   icon: React.ReactNode;
   badge?: number;
+  dynamicBadge?: boolean;
   children?: NavItem[];
 }
+
+// ─── Badge dinamis inbox dari backend ────────
+
+function InboxBadge() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    getInboxUnreadCount()
+      .then(setCount)
+      .catch(() => {});
+  }, []);
+
+  if (count === 0) return null;
+
+  return (
+    <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// ─── Nav items ───────────────────────────────
 
 const NAV_ITEMS: NavItem[] = [
   {
@@ -54,11 +78,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Penciptaan Surat",
     icon: <FilePlus size={16} />,
     children: [
-      { label: "Buat Surat Baru",     href: "/surat/baru",          icon: <FilePlus size={14} /> },
-      { label: "Buat SP/ASP",         href: "/surat/sp-asp",        icon: <FileText size={14} /> },
-      { label: "Daftar Surat",        href: "/surat/daftar",        icon: <FileText size={14} /> },
-      { label: "Menunggu Review",     href: "/surat/review",        icon: <ClipboardCheck size={14} /> },
-      { label: "Menunggu Approval",   href: "/surat/approval",      icon: <CheckSquare size={14} /> },
+      { label: "Buat Surat Baru",   href: "/surat/baru",     icon: <FilePlus size={14} /> },
+      { label: "Buat SP/ASP",       href: "/surat/sp-asp",   icon: <FileText size={14} /> },
+      { label: "Daftar Surat",      href: "/surat/daftar",   icon: <FileText size={14} /> },
+      { label: "Menunggu Review",   href: "/surat/review",   icon: <ClipboardCheck size={14} /> },
+      { label: "Menunggu Approval", href: "/surat/approval", icon: <CheckSquare size={14} /> },
     ],
   },
   {
@@ -85,7 +109,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Inbox",
     href: "/inbox",
     icon: <Inbox size={16} />,
-    badge: 5,
+    dynamicBadge: true, // badge dari backend, bukan hardcode
   },
   {
     label: "Notifikasi",
@@ -104,6 +128,8 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Search size={16} />,
   },
 ];
+
+// ─── Nav group ───────────────────────────────
 
 function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   const pathname = usePathname();
@@ -156,14 +182,19 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
         {item.icon}
         <span>{item.label}</span>
       </span>
+      {/* Badge statis */}
       {item.badge != null && item.badge > 0 && (
         <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1">
           {item.badge}
         </span>
       )}
+      {/* Badge dinamis (inbox) */}
+      {item.dynamicBadge && <InboxBadge />}
     </Link>
   );
 }
+
+// ─── Sidebar ─────────────────────────────────
 
 export function Sidebar() {
   return (
@@ -192,7 +223,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 shrink-0">
-        <p className="text-slate-500 text-[10px]">© 2026 PT Pupuk Sriwidjaja Palembang</p>
+        <p className="text-slate-500 text-[10px]">&copy; 2026 PT Pupuk Sriwidjaja Palembang</p>
       </div>
     </aside>
   );

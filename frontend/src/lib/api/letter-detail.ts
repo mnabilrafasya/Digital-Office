@@ -1,8 +1,8 @@
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // lib/api/letter-detail.ts
 // Integrasi nyata ke backend  GET /api/v1/letters/{id}
 // POST /api/v1/letters/{id}/approve | return | submit
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
 // ─── Tipe sesuai model backend (model/letter.go) ───
 
@@ -90,12 +90,17 @@ export interface LetterDetail {
   currentVersion: number;
   currentAssignee: PersonRef | null;
   lastReturnNote: string | null;
+  approval: {
+    approvedAt: string;
+    approvedBy: PersonRef;
+    qrUrl: string;
+  } | null;
   allowedActions: string[];
   createdAt: string;
   updatedAt: string;
 }
 
-// ─── Helper fetch ────────────────────────────────
+// ─── Helper fetch ──────────────────────────────────────────────
 
 const API = "/api/v1";
 
@@ -126,11 +131,19 @@ async function apiFetch<T>(
   return { data: json.data, etag };
 }
 
-// ─── GET detail surat ────────────────────────────
+// ─── GET detail surat ──────────────────────────────────────────
 
 export async function getLetter(id: string): Promise<LetterDetail | null> {
   try {
     const { data } = await apiFetch<LetterDetail>(`/letters/${encodeURIComponent(id)}`);
+    // DEBUG SEMENTARA — hapus setelah bug allowedActions teratasi
+    console.log("[DEBUG getLetter] status:", data.status);
+    console.log("[DEBUG getLetter] allowedActions:", data.allowedActions);
+    console.log("[DEBUG getLetter] currentAssignee:", data.currentAssignee);
+    console.log("[DEBUG getLetter] steps:", data.steps.map(s => ({
+      role: s.role, order: s.order, state: s.state,
+      userId: s.user.id, name: s.user.name,
+    })));
     return data;
   } catch (e) {
     const err = e as Error;
@@ -139,7 +152,7 @@ export async function getLetter(id: string): Promise<LetterDetail | null> {
   }
 }
 
-// ─── Aksi workflow ───────────────────────────────
+// ─── Aksi workflow ─────────────────────────────────────────────
 
 export type ReviewActionType = "APPROVE" | "RETURN" | "SUBMIT" | "CANCEL";
 
@@ -181,7 +194,7 @@ export async function reviewAction(
   }
 }
 
-// ─── Util ────────────────────────────────────────
+// ─── Util ──────────────────────────────────────────────────────
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024)            return `${bytes} B`;
@@ -198,4 +211,27 @@ export function isEditableByDrafter(status: string, allowedActions: string[]): b
     (status === "DRAFT" || status === "RETURNED_TO_DRAFTER") &&
     allowedActions.includes("EDIT")
   );
+}
+
+// ─── Riwayat surat ─────────────────────────────────────────────
+
+export interface LetterHistoryEntry {
+  action: "SUBMIT" | "APPROVE" | "RETURN" | "READ" | "SIGN";
+  actorRole: string;
+  actor: PersonRef;
+  target: PersonRef | null;
+  fromStatus: string;
+  toStatus: string;
+  note: string | null;
+  versionNumber: number;
+  createdAt: string;
+}
+
+export async function getLetterHistory(id: string): Promise<LetterHistoryEntry[]> {
+  try {
+    const { data } = await apiFetch<LetterHistoryEntry[]>(`/letters/${encodeURIComponent(id)}/history`);
+    return data;
+  } catch {
+    return [];
+  }
 }

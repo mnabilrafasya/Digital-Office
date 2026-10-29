@@ -2,13 +2,15 @@
 
 // ─────────────────────────────────────────────
 // components/review/review-modals.tsx
-// Action bar + modal: Setujui, Kembalikan, Batalkan
+// Action bar + modal: Setujui/Sahkan, Kembalikan, Batalkan
+// Digunakan oleh Reviewer DAN Approver
 // ─────────────────────────────────────────────
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
+  ShieldCheck,
   RotateCcw,
   XCircle,
   X,
@@ -37,7 +39,7 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
 
   // ── Info assignee saat ini ──
   const activeStep = letter.steps.find((s) => s.state === "ACTIVE");
-  const isApprover = activeStep?.role === "APPROVER";
+  const isApprover = activeStep?.role === "APPROVER" || letter.status === "IN_APPROVAL";
   const currentLabel = isApprover
     ? "Approver"
     : `Reviewer ${activeStep?.order ?? ""}`;
@@ -46,13 +48,13 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
   const returnTarget = isApprover ? "Reviewer terakhir" : "Drafter";
 
   const nextPendingStep = letter.steps.find((s) => s.state === "PENDING");
-  const approveTarget   = isApprover
-    ? "Surat ditandatangani dan nomor surat dibuat otomatis"
+  const approveTarget = isApprover
+    ? "Nomor surat diterbitkan otomatis dan surat dikirim ke inbox penerima."
     : nextPendingStep?.role === "APPROVER"
-      ? "Surat diteruskan ke Approver"
-      : nextPendingStep
-        ? `Surat diteruskan ke Reviewer ${nextPendingStep.order}`
-        : "Surat diteruskan ke tahap berikutnya";
+    ? "Surat diteruskan ke Approver untuk ditandatangani."
+    : nextPendingStep
+    ? `Surat diteruskan ke Reviewer ${nextPendingStep.order}.`
+    : "Surat diteruskan ke tahap berikutnya.";
 
   // ── Submit aksi ke backend ──
   async function submit(action: "APPROVE" | "RETURN" | "CANCEL") {
@@ -76,21 +78,18 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
     setModal(null);
     setNote("");
 
-    // ── Redirect sesuai hasil aksi ──
     if (action === "APPROVE") {
       const nextStatus = res.data?.status;
       if (nextStatus === "SENT") {
-        // Surat selesai → kembali ke daftar dengan toast
-        router.push("/surat/daftar?approved=1");
+        // Approver menyetujui → reload halaman ini untuk tampilkan QR & nomor surat
+        onDone();
       } else {
-        // Masih ada tahap berikutnya → reload halaman ini
+        // Reviewer meneruskan ke tahap berikutnya → reload
         onDone();
       }
     } else if (action === "RETURN") {
-      // Dikembalikan → kembali ke daftar
       router.push("/surat/daftar?returned=1");
     } else {
-      // Cancel → kembali ke daftar
       router.push("/surat/daftar?cancelled=1");
     }
   }
@@ -101,9 +100,10 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
     setErr(null);
   }
 
-  const hasApprove = letter.allowedActions.includes("APPROVE");
-  const hasReturn  = letter.allowedActions.includes("RETURN");
-  const hasCancel  = letter.allowedActions.includes("CANCEL");
+  const allowed = (letter.allowedActions ?? []).map((a) => a.toUpperCase());
+  const hasApprove = allowed.includes("APPROVE");
+  const hasReturn  = allowed.includes("RETURN");
+  const hasCancel  = allowed.includes("CANCEL");
 
   if (!hasApprove && !hasReturn && !hasCancel) return null;
 
@@ -144,7 +144,7 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border border-border text-text hover:bg-panel transition-colors"
             >
               <RotateCcw size={15} />
-              Kembalikan (Revisi)
+              {isApprover ? "Kembalikan ke Reviewer" : "Kembalikan (Revisi)"}
             </button>
           )}
           {hasApprove && (
@@ -153,8 +153,8 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
               onClick={() => openModal("approve")}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
             >
-              <CheckCircle2 size={15} />
-              Setujui Naskah
+              {isApprover ? <ShieldCheck size={15} /> : <CheckCircle2 size={15} />}
+              {isApprover ? "Tanda Tangani & Sahkan" : "Setujui Naskah"}
             </button>
           )}
         </div>
@@ -172,7 +172,10 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div className="flex items-center gap-2">
-                {modal === "approve" && (
+                {modal === "approve" && isApprover && (
+                  <ShieldCheck size={18} className="text-primary" />
+                )}
+                {modal === "approve" && !isApprover && (
                   <CheckCircle2 size={18} className="text-primary" />
                 )}
                 {modal === "return" && (
@@ -182,7 +185,8 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
                   <XCircle size={18} className="text-status-danger-text" />
                 )}
                 <h2 className="text-base font-semibold text-text">
-                  {modal === "approve" && "Konfirmasi Persetujuan"}
+                  {modal === "approve" && isApprover && "Konfirmasi Penandatanganan"}
+                  {modal === "approve" && !isApprover && "Konfirmasi Persetujuan"}
                   {modal === "return" && "Kembalikan untuk Revisi"}
                   {modal === "cancel" && "Batalkan Naskah"}
                 </h2>
@@ -199,11 +203,20 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
             {/* Body */}
             <div className="px-5 py-4 space-y-3">
               {modal === "approve" && (
-                <p className="text-sm text-text-muted">
-                  Dengan menyetujui naskah ini:
-                  <br />
-                  <span className="font-medium text-text">{approveTarget}.</span>
-                </p>
+                <div className="text-sm text-text-muted space-y-1">
+                  {isApprover && (
+                    <p className="text-xs bg-panel border border-border rounded-lg px-3 py-2 text-text-muted leading-relaxed">
+                      Setelah ditandatangani:{" "}
+                      <span className="font-medium text-text">{approveTarget}</span>
+                    </p>
+                  )}
+                  {!isApprover && (
+                    <p>
+                      Dengan menyetujui:{" "}
+                      <span className="font-medium text-text">{approveTarget}</span>
+                    </p>
+                  )}
+                </div>
               )}
 
               {modal === "return" && (
@@ -250,7 +263,6 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
                 </div>
               )}
 
-              {/* Error dari backend untuk approve */}
               {modal === "approve" && err && (
                 <p className="text-xs text-status-danger-text">{err}</p>
               )}
@@ -279,19 +291,16 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
                 disabled={loading}
                 className={cn(
                   "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                  modal === "approve" &&
-                    "bg-primary text-white hover:bg-primary-dark",
-                  modal === "return" &&
-                    "bg-status-warn-text text-white hover:opacity-90",
-                  modal === "cancel" &&
-                    "bg-status-danger-text text-white hover:opacity-90",
+                  modal === "approve" && "bg-primary text-white hover:bg-primary-dark",
+                  modal === "return"  && "bg-status-warn-text text-white hover:opacity-90",
+                  modal === "cancel"  && "bg-status-danger-text text-white hover:opacity-90",
                   loading && "opacity-60 cursor-not-allowed"
                 )}
               >
                 {loading && <Loader2 size={14} className="animate-spin" />}
-                {modal === "approve" && "Ya, Setujui"}
-                {modal === "return" && "Kembalikan"}
-                {modal === "cancel" && "Batalkan Naskah"}
+                {modal === "approve" && (isApprover ? "Ya, Tanda Tangani" : "Ya, Setujui")}
+                {modal === "return"  && "Kembalikan"}
+                {modal === "cancel"  && "Batalkan Naskah"}
               </button>
             </div>
           </div>
