@@ -21,7 +21,7 @@ var (
 
 // letterAt menyiapkan surat lengkap (reviewer [9, 4], approver 3) pada status dan assignee tertentu.
 func letterAt(status string, assignee, forwardedBy int64) *fakeLetterStore {
-	d, _ := parseDraft(completeInput(), 15)
+	d, _ := parseDraft(completeInput())
 	var current *PersonRef
 	if assignee != 0 {
 		current = &PersonRef{ID: assignee}

@@ -263,8 +263,7 @@ Kandidat reviewer atau approver untuk form Buat Surat. Wajib login dan punya per
 Aturan:
 
 - Hanya user aktif di perusahaan yang sama, dengan jabatan, unit, dan role yang aktif.
-- `REVIEWER`: user yang login **boleh** muncul (boleh memilih dirinya sendiri).
-- `APPROVER`: user yang login **tidak** muncul (tidak menyetujui suratnya sendiri).
+- User yang login ikut muncul di kedua tipe: drafter boleh memilih dirinya sendiri sebagai reviewer maupun approver (bila punya permission-nya).
 - Urut berdasarkan nama.
 
 Contoh: `GET /api/v1/users/candidates?type=APPROVER&q=agus`
@@ -322,8 +321,10 @@ Semua field opsional selama masih draf. `PUT` **mengganti seluruh isi**: field y
 | `templateId` | Template aktif milik perusahaan; kalau template dibuat untuk jenis surat tertentu, jenisnya harus sama dengan `letterTypeId` |
 | `title` / `specialNote` / `summary` | Maksimal 250 / 500 / 1000 karakter (emoji dihitung 2). Spasi di awal/akhir dibuang; teks kosong = `null` |
 | `reviewerIds` | Maksimal 10, tanpa duplikat, **urutan = urutan paraf**. Syaratnya sama dengan kandidat `REVIEWER`. Drafter boleh menjadi reviewer |
-| `approverId` | Tepat satu orang. Syaratnya sama dengan kandidat `APPROVER`, bukan drafter, dan bukan reviewer surat yang sama |
+| `approverId` | Tepat satu orang. Syaratnya sama dengan kandidat `APPROVER` |
 | `recipients` | Setiap elemen berisi **tepat satu** dari `unitId` (unit aktif perusahaan) atau `aliasLevelId` (dari `/recipients/aliases`). Unit/alias yang sama tidak boleh muncul dua kali, termasuk di `to` dan `cc` sekaligus. Maksimal 50 |
+
+**Peran tidak saling membatasi.** Pejabat yang punya `LETTER_APPROVE` (role `PIMPINAN`: Direktur, SVP, VP, AVP) boleh menjadi drafter, reviewer, dan approver **di surat yang sama**, tanpa syarat reviewer lain. Ia menjalankan tiap tahap berurutan sesuai status surat (submit, approve sebagai reviewer, lalu approve sebagai approver), dan setiap aksi tetap tercatat di riwayat dan audit.
 
 Kelengkapan (jenis surat, klasifikasi, sifat, kecepatan, perihal, minimal 1 reviewer, approver, minimal 1 penerima `to`) belum diwajibkan saat draf. Kelengkapan diwajibkan saat surat dikirim, dan saat menyimpan surat berstatus `RETURNED_TO_DRAFTER`.
 

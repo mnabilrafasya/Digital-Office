@@ -67,8 +67,8 @@ type CandidateQuery struct {
 	Limit  string
 }
 
-// Candidates mencari kandidat reviewer/approver di perusahaan user yang login.
-// Drafter boleh memilih dirinya sendiri sebagai reviewer, tetapi tidak sebagai approver.
+// Candidates mencari kandidat reviewer/approver di perusahaan user yang login. User yang login
+// ikut muncul: drafter boleh memilih dirinya sendiri sebagai reviewer maupun approver.
 func (s *Service) Candidates(ctx context.Context, user *auth.CurrentUser, cq CandidateQuery) ([]Candidate, error) {
 	f := CandidateFilter{CompanyCode: user.Company.Code}
 
@@ -77,7 +77,6 @@ func (s *Service) Candidates(ctx context.Context, user *auth.CurrentUser, cq Can
 		f.PermissionCode = auth.LetterReview
 	case CandidateApprover:
 		f.PermissionCode = auth.LetterApprove
-		f.ExcludeUserID = user.ID
 	default:
 		return nil, apperr.Invalid("Parameter type wajib REVIEWER atau APPROVER")
 	}

@@ -44,8 +44,13 @@ func TestParseDraft(t *testing.T) {
 		{"emoji dihitung 2", func(in *LetterInput) { in.Title = ptr(strings.Repeat("😀", 126)) }, "Perihal maksimal 250"},
 		{"reviewer duplikat", func(in *LetterInput) { in.ReviewerIDs = []string{"9", "9"} }, "Reviewer yang sama"},
 		{"reviewer kosong", func(in *LetterInput) { in.ReviewerIDs = []string{""} }, "Reviewer tidak valid"},
-		{"approver = drafter", func(in *LetterInput) { in.ApproverID = ptr("15") }, "pembuat surat"},
-		{"approver juga reviewer", func(in *LetterInput) { in.ApproverID = ptr("9") }, "sekaligus menjadi reviewer"},
+		// Peran tidak saling membatasi: pejabat boleh drafter, reviewer, dan approver sekaligus
+		{"approver = drafter", func(in *LetterInput) { in.ApproverID = ptr("15") }, ""},
+		{"approver juga reviewer", func(in *LetterInput) { in.ApproverID = ptr("9") }, ""},
+		{"drafter jadi reviewer dan approver", func(in *LetterInput) {
+			in.ReviewerIDs = []string{"15"}
+			in.ApproverID = ptr("15")
+		}, ""},
 		{"penerima tanpa unit/alias", func(in *LetterInput) { in.Recipients.To = []RecipientInput{{}} }, "tepat satu"},
 		{"penerima unit dan alias sekaligus", func(in *LetterInput) {
 			in.Recipients.To = []RecipientInput{{UnitID: ptr("7"), AliasLevelID: ptr("60")}}
@@ -56,7 +61,7 @@ func TestParseDraft(t *testing.T) {
 	for _, tt := range tests {
 		in := completeInput()
 		tt.mutate(&in)
-		d, err := parseDraft(in, drafter.ID)
+		d, err := parseDraft(in)
 		if tt.wantErr == "" {
 			if err != nil {
 				t.Errorf("%s: error = %v, want nil", tt.name, err)
@@ -69,25 +74,25 @@ func TestParseDraft(t *testing.T) {
 		}
 	}
 
-	d, _ := parseDraft(completeInput(), drafter.ID)
+	d, _ := parseDraft(completeInput())
 	if *d.Title != "Undangan Rapat" || len(d.Recipients) != 3 || d.Recipients[2].Type != RecipientCC {
 		t.Errorf("hasil parse salah: title=%q recipients=%+v", *d.Title, d.Recipients)
 	}
-	d, _ = parseDraft(LetterInput{Title: ptr("   "), Summary: ptr("")}, drafter.ID)
+	d, _ = parseDraft(LetterInput{Title: ptr("   "), Summary: ptr("")})
 	if d.Title != nil || d.Summary != nil {
 		t.Error("teks kosong harus menjadi nil")
 	}
 }
 
 func TestCheckComplete(t *testing.T) {
-	d, _ := parseDraft(completeInput(), drafter.ID)
+	d, _ := parseDraft(completeInput())
 	if err := checkComplete(d); err != nil {
 		t.Fatalf("draf lengkap: %v", err)
 	}
 	in := completeInput()
 	in.Title, in.ApproverID = nil, nil
 	in.Recipients.To = nil
-	d, _ = parseDraft(in, drafter.ID)
+	d, _ = parseDraft(in)
 	err := checkComplete(d)
 	for _, want := range []string{"perihal", "approver", "minimal 1 penerima Kepada"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -117,7 +122,7 @@ func TestLetterCheckRefs(t *testing.T) {
 		tt.refs(refs)
 		in := completeInput()
 		in.TemplateID = ptr("2")
-		d, err := parseDraft(in, drafter.ID)
+		d, err := parseDraft(in)
 		if err == nil {
 			err = newTestLetterService(&fakeLetterStore{}, refs).checkRefs(context.Background(), drafter.Company.Code, d)
 		}

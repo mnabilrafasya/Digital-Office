@@ -49,9 +49,10 @@ type RecipientInput struct {
 	AliasLevelID *string `json:"aliasLevelId"`
 }
 
-// parseDraft memeriksa format input tanpa database: ID, panjang teks, duplikat, dan aturan
-// peran (approver bukan drafter dan bukan reviewer). Teks di-trim; kosong menjadi nil.
-func parseDraft(in LetterInput, drafterID int64) (*LetterDraft, error) {
+// parseDraft memeriksa format input tanpa database: ID, panjang teks, dan duplikat. Teks
+// di-trim; kosong menjadi nil. Peran tidak saling membatasi: pejabat boleh sekaligus menjadi
+// drafter, reviewer, dan approver di surat yang sama (keputusan bisnis; jejaknya di audit_logs).
+func parseDraft(in LetterInput) (*LetterDraft, error) {
 	var (
 		d   LetterDraft
 		err error
@@ -101,14 +102,6 @@ func parseDraft(in LetterInput, drafterID int64) (*LetterDraft, error) {
 			return nil, apperr.Invalid("Reviewer yang sama tidak boleh dipilih lebih dari sekali")
 		}
 		d.ReviewerIDs = append(d.ReviewerIDs, id)
-	}
-	if d.ApproverID != nil {
-		switch {
-		case *d.ApproverID == drafterID:
-			return nil, apperr.Invalid("Approver tidak boleh pembuat surat")
-		case slices.Contains(d.ReviewerIDs, *d.ApproverID):
-			return nil, apperr.Invalid("Approver tidak boleh sekaligus menjadi reviewer")
-		}
 	}
 
 	if d.Recipients, err = parseRecipients(in.Recipients.To, in.Recipients.CC); err != nil {
@@ -184,7 +177,7 @@ func optionalText(raw *string, maxLen int, label string) (*string, error) {
 
 // Create membuat draf surat baru. Unit pengirim dan perusahaan diambil dari user yang login.
 func (s *Service) Create(ctx context.Context, user *auth.CurrentUser, in LetterInput) (*LetterDetail, error) {
-	d, err := parseDraft(in, user.ID)
+	d, err := parseDraft(in)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +209,7 @@ func (s *Service) Update(ctx context.Context, user *auth.CurrentUser, letterID s
 	if !ok {
 		return nil, ErrLetterNotFound
 	}
-	d, err := parseDraft(in, user.ID)
+	d, err := parseDraft(in)
 	if err != nil {
 		return nil, err
 	}

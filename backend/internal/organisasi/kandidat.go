@@ -12,8 +12,7 @@ import (
 type CandidateFilter struct {
 	CompanyCode    string
 	PermissionCode string
-	ExcludeUserID  int64  // 0 = tidak ada user yang dikecualikan
-	Search         string // "" = tidak mencari; selain itu dicari di nama user dan nama jabatan
+	Search         string // "" = tidak mencari; selain itu dicari di nama user, jabatan, dan unit
 	Limit          int
 }
 
@@ -47,10 +46,6 @@ SELECT TOP (@limit)
 		sql.Named("limit", f.Limit),
 		sql.Named("companyCode", f.CompanyCode),
 		sql.Named("permissionCode", f.PermissionCode),
-	}
-	if f.ExcludeUserID != 0 {
-		q += "\n  AND u.id <> @currentUserId"
-		args = append(args, sql.Named("currentUserId", f.ExcludeUserID))
 	}
 	if f.Search != "" {
 		q += "\n  AND (u.name LIKE @pattern ESCAPE '\\' OR p.name LIKE @pattern ESCAPE '\\' OR un.name LIKE @pattern ESCAPE '\\')"

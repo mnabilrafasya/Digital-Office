@@ -28,14 +28,14 @@ func TestCandidates(t *testing.T) {
 	if _, err := svc.Candidates(ctx, user, CandidateQuery{Type: "REVIEWER"}); err != nil {
 		t.Fatal(err)
 	}
-	if got.PermissionCode != auth.LetterReview || got.ExcludeUserID != 0 || got.CompanyCode != "PSP" || got.Limit != 20 {
+	if got.PermissionCode != auth.LetterReview || got.CompanyCode != "PSP" || got.Limit != 20 {
 		t.Errorf("REVIEWER: filter = %+v", got)
 	}
 
 	if _, err := svc.Candidates(ctx, user, CandidateQuery{Type: "APPROVER", Search: "  agus ", Limit: "50"}); err != nil {
 		t.Fatal(err)
 	}
-	if got.PermissionCode != auth.LetterApprove || got.ExcludeUserID != 8 || got.Search != "agus" || got.Limit != 50 {
+	if got.PermissionCode != auth.LetterApprove || got.Search != "agus" || got.Limit != 50 {
 		t.Errorf("APPROVER: filter = %+v", got)
 	}
 
