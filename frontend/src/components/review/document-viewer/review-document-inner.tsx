@@ -68,8 +68,8 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Default 0.58 (58%) agar seluruh 1 lembar A4 (kop s/d ttd) pas terlihat utuh di kotak 560px
-  const [zoomLevel, setZoomLevel] = useState<number>(0.5);
-  const zoomLevelRef = useRef<number>(0.5);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const zoomLevelRef = useRef<number>(1);
   zoomLevelRef.current = zoomLevel;
 
   // Ubah zoom level editor
@@ -276,7 +276,7 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
           // 560px setara dengan tinggi kartu Metadata di kolom kanan
           height: isFullscreen ? "calc(100vh - 80px)" : "560px",
           width: "100%",
-          minHeight: "570px",
+          minHeight: "1100px",
         }}
         className="w-full bg-white relative"
       />
