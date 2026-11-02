@@ -176,6 +176,42 @@ func TestStepState(t *testing.T) {
 	}
 }
 
+// TestSamePersonAllRoles: pejabat yang sekaligus drafter, satu-satunya reviewer, dan approver bisa
+// menjalankan seluruh alur sendiri, termasuk mengembalikan surat ke dirinya sendiri sebagai reviewer.
+func TestSamePersonAllRoles(t *testing.T) {
+	s := State{Status: StatusDraft, DrafterID: agus, Reviewers: []int64{agus}, ApproverID: agus}
+	steps := []struct {
+		action   Action
+		allowed  string // tombol sebelum aksi
+		role     string
+		to       string
+		recorded Action
+	}{
+		{Submit, "SUBMIT", RoleDrafter, StatusInReview, Submit},
+		{Approve, "APPROVE,RETURN", RoleReviewer, StatusInApproval, Approve},
+		{Return, "APPROVE,RETURN", RoleApprover, StatusReturnedToReviewer, Return},
+		{Approve, "APPROVE,RETURN", RoleReviewer, StatusInApproval, Approve},
+		{Approve, "APPROVE,RETURN", RoleApprover, StatusSent, Sign},
+	}
+	for i, st := range steps {
+		var allowed []string
+		for _, a := range AllowedActions(s, agus) {
+			allowed = append(allowed, string(a))
+		}
+		d, err := Decide(s, st.action, agus)
+		if err != nil || strings.Join(allowed, ",") != st.allowed || d.ActorRole != st.role || d.To != st.to || d.Action != st.recorded {
+			t.Fatalf("langkah %d (%s di %s): allowed=%v err=%v decision=%+v", i+1, st.action, s.Status, allowed, err, d)
+		}
+		s.Status, s.AssigneeID = d.To, d.AssigneeID
+		if d.ForwardedBy.Changed {
+			s.ForwardedByID = d.ForwardedBy.UserID
+		}
+		if d.To != StatusSent && d.AssigneeID != agus {
+			t.Fatalf("langkah %d: surat harus tetap dipegang orang yang sama, assignee=%d", i+1, d.AssigneeID)
+		}
+	}
+}
+
 func TestAssigneeRole(t *testing.T) {
 	want := map[string]string{
 		StatusDraft: "", StatusInReview: RoleReviewer, StatusReturnedToReviewer: RoleReviewer,
