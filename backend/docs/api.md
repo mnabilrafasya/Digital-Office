@@ -109,6 +109,12 @@ Login dengan NIK + password bersifat sementara sampai SSO tersedia.
 | GET | `/api/v1/inbox/{itemId}` | Ya | pemilik item |
 | POST | `/api/v1/inbox/{itemId}/disposition` | Ya | pemilik item (`INBOX_DISPOSE`) |
 | POST | `/api/v1/inbox/{itemId}/redirect` | Ya | pemilik item |
+| GET | `/api/v1/letters/{letterId}/tracking` | Ya | drafter, peserta surat, atau penerima inbox (surat `SENT`) |
+| GET | `/api/v1/letters/{letterId}/audit` | Ya | `AUDIT_VIEW` |
+| GET | `/api/v1/audit-logs` | Ya | `AUDIT_VIEW` |
+| GET | `/api/v1/audit-logs/{logId}` | Ya | `AUDIT_VIEW` |
+| GET | `/api/v1/audit-logs/export` | Ya | `AUDIT_VIEW` |
+| GET | `/api/v1/monitoring/letters` | Ya | `AUDIT_VIEW` |
 
 Angka ID di contoh response hanya ilustrasi.
 
@@ -680,6 +686,107 @@ Response **200** berisi item terbaru (format sama dengan `GET /inbox/{itemId}`).
 | 403 | `FORBIDDEN` | Disposisi tanpa permission `INBOX_DISPOSE` |
 | 404 | `NOT_FOUND` | Item tidak ada atau milik orang lain |
 | 409 | `INVALID_STATE` | Item sudah didisposisi atau dialihkan |
+
+---
+
+### Audit log dan pelacakan surat
+
+Setiap kejadian penting dicatat ke `audit_logs` dalam transaksi yang sama dengan aksinya, beserta pelaku, waktu, alamat IP, dan `requestId` (cocok dengan log server). Tabel ini **hanya bisa ditambah**: trigger database menolak setiap `UPDATE` dan `DELETE`, termasuk dari aplikasi sendiri.
+
+| Aksi | Kapan | Pelaku |
+|---|---|---|
+| `CREATE` | Draf surat dibuat | drafter |
+| `SAVE` | Naskah `.docx` disimpan | drafter / reviewer |
+| `SUBMIT`, `APPROVE`, `RETURN`, `SIGN` | Alur persetujuan | pelaku aksi |
+| `VIEW` | Surat **Rahasia** dibuka (surat lain tidak dicatat) | pembuka |
+| `DELIVER` | Surat terbit dikirim ke inbox penerima | Sistem |
+| `INBOX_READ` | Surat masuk dibuka pertama kali | penerima |
+| `DISPOSITION`, `REDIRECT` | Surat didisposisi / dialihkan | penerima |
+| `FINAL_PDF` | PDF resmi ber-QR dibuat | Sistem |
+| `DOWNLOAD` | Dokumen surat diunduh | pengunduh |
+| `AUDIT_EXPORT` | Audit log diekspor ke CSV | pengekspor |
+
+Ubahan isi draf, login, dan logout sengaja tidak dicatat. Isi surat tidak pernah disalin ke log; snapshot hanya berisi data ringkas (status, nomor surat, ID penerima, versi naskah).
+
+#### GET `/api/v1/letters/{letterId}/tracking`
+
+Lacak Surat: posisi surat saat ini, timeline kejadian, dan distribusi setelah terbit.
+
+```json
+{
+  "data": {
+    "letterId": "73e4270e-...", "letterNumber": null, "title": "Undangan Rapat", "status": "IN_REVIEW", "scope": "FULL",
+    "position": {
+      "label": "Sedang diperiksa Reviewer 2", "role": "REVIEWER", "step": 2,
+      "holder": { "id": "7", "name": "Dewi Lestari, S.Kom.", "positionName": "..." },
+      "since": "2026-11-03T10:30:00+07:00", "waitingHours": 22, "stuck": false
+    },
+    "timeline": [
+      { "at": "...", "action": "CREATE", "label": "Draf dibuat", "actor": { }, "role": "DRAFTER", "target": null, "note": null },
+      { "at": "...", "action": "SUBMIT", "label": "Dikirim untuk diperiksa", "actor": { }, "role": "DRAFTER", "target": { }, "note": null }
+    ],
+    "distribution": [
+      { "inboxItemId": "5", "recipient": { }, "via": "TO", "from": null, "note": null, "status": "DISPOSED",
+        "receivedAt": "...", "readAt": "...",
+        "forwards": [ { "via": "DISPOSITION", "recipient": { }, "from": { }, "note": "Tindak lanjuti", "status": "UNREAD", "forwards": [] } ] }
+    ]
+  }
+}
+```
+
+- `position`: pemegang surat, perannya, sejak kapan (perpindahan terakhir), dan lama menunggu dalam jam. `stuck` bernilai `true` bila menunggu **48 jam atau lebih** (tidak berlaku untuk draf). Untuk surat terbit atau batal, `holder` bernilai `null`.
+- `timeline`: kejadian alur dari yang paling lama, dengan `label` siap tampil. `target` adalah orang yang menerima surat setelah aksi; `note` adalah catatan pengembalian.
+- `distribution`: pohon penerima setelah surat terbit. `via`: `TO`, `CC`, `DISPOSITION`, atau `REDIRECT`; `forwards` berisi penerusan berjenjang.
+- `scope`: `FULL` untuk drafter dan peserta. `RECIPIENT` untuk penerima inbox: timeline hanya berisi kejadian terbit (`SIGN`), dan distribusi hanya cabang yang berawal dari dirinya.
+- Alamat IP tidak ditampilkan di sini.
+
+Error: `401 UNAUTHORIZED`, `404 NOT_FOUND` (surat tidak ada, atau user bukan drafter/peserta/penerima).
+
+#### GET `/api/v1/audit-logs?from=...&to=...&actorId=...&action=...&entityType=...&q=...&page=...&pageSize=...`
+
+Audit log perusahaan, terbaru dulu. Wajib `AUDIT_VIEW`.
+
+| Parameter | Keterangan |
+|---|---|
+| `from`, `to` | Tanggal `YYYY-MM-DD` (WIB), `to` ikut dihitung. Default 7 hari terakhir |
+| `actorId` | ID pelaku |
+| `action` | Boleh beberapa dipisah koma, contoh `SUBMIT,SIGN` |
+| `entityType` | `LETTER` atau `AUDIT` |
+| `q` | Cari nomor surat atau perihal (perihal yang disamarkan tidak ikut dicari) |
+
+```json
+{
+  "data": [
+    { "id": "120", "at": "...", "action": "DOWNLOAD", "entityType": "LETTER", "entityId": "73e4270e-...",
+      "actor": { "id": "8", "name": "Andi Kurniawan" },
+      "letter": { "number": "015/TI/PSP/XI/2026", "title": null, "masked": true },
+      "ipAddress": "10.0.0.5", "requestId": "..." }
+  ],
+  "meta": { "page": 1, "pageSize": 20, "total": 1 }
+}
+```
+
+- `actor.id` bernilai `null` dan `name` bernilai `"Sistem"` untuk kejadian oleh sistem.
+- `letter` adalah data surat **saat ini**. Perihal surat **Terbatas/Rahasia** disamarkan (`title: null`, `masked: true`) bila pembaca bukan drafter atau peserta surat itu.
+
+#### GET `/api/v1/audit-logs/{logId}` · `/api/v1/letters/{letterId}/audit`
+
+Detail satu baris (ditambah `snapshot`), dan semua log satu surat (terbaru dulu, maksimal 1000, dengan `snapshot`). Wajib `AUDIT_VIEW`.
+
+#### GET `/api/v1/audit-logs/export?from=...&to=...`
+
+File CSV (UTF-8, terbaca langsung di Excel) dengan filter yang sama seperti daftar. `from` dan `to` wajib, rentang maksimal **31 hari**. Kolom: Waktu, Aksi, Pelaku, Nomor Surat, Perihal, Alamat IP, Request ID. Setiap ekspor ikut tercatat (`AUDIT_EXPORT`). Wajib `AUDIT_VIEW`.
+
+#### GET `/api/v1/monitoring/letters?status=...&minWaitingHours=...&page=...&pageSize=...`
+
+Pantauan surat yang sedang diproses (`IN_REVIEW`, `RETURNED_TO_DRAFTER`, `IN_APPROVAL`, `RETURNED_TO_REVIEWER`), yang paling lama menunggu tampil lebih dulu. Wajib `AUDIT_VIEW`.
+
+| Parameter | Keterangan |
+|---|---|
+| `status` | Opsional, boleh beberapa dipisah koma (hanya status di atas) |
+| `minWaitingHours` | Opsional, contoh `48` untuk surat yang tertahan |
+
+Setiap item berisi `letterId`, `title` (atau `titleMasked: true`), `status`, `senderUnit`, `drafter`, `holder`, `step`, `since`, `waitingHours`, dan `stuck`.
 
 ---
 

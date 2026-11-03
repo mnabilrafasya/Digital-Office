@@ -114,10 +114,10 @@ func (s *Service) SaveDocument(ctx context.Context, user *auth.CurrentUser, in D
 		}
 		return s.repos.Audit(q).Record(ctx, audit.Entry{
 			CompanyCode: user.Company.Code,
-			EntityType:  "LETTER",
+			EntityType:  audit.EntityLetter,
 			EntityID:    l.ID,
 			EntityUUID:  id,
-			Action:      "SAVE",
+			Action:      audit.ActionSave,
 			ActorID:     user.ID,
 			ActorName:   user.Name,
 			IPAddress:   in.ClientIP,

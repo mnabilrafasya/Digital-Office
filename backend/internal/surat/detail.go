@@ -3,6 +3,7 @@ package surat
 import (
 	"context"
 
+	"office.backend/internal/audit"
 	"office.backend/internal/auth"
 	"office.backend/internal/platform/db"
 )
@@ -18,6 +19,12 @@ func (s *Service) Get(ctx context.Context, user *auth.CurrentUser, letterID stri
 	d, err := s.detail(ctx, user, id)
 	if err != nil {
 		return nil, err
+	}
+	if d.Confidentiality != nil && d.Confidentiality.Code == ConfidentialitySecret {
+		// Setiap pembukaan surat Rahasia dicatat; surat lain tidak, supaya audit log tidak terlalu ramai
+		if err := s.audit.Record(ctx, letterEntry(user, d.InternalID, d.ID, audit.ActionView, nil)); err != nil {
+			return nil, err
+		}
 	}
 	if role := AssigneeRole(d.Status); role != "" && d.CurrentAssignee != nil && d.CurrentAssignee.ID == user.ID {
 		err := s.tx.InTx(ctx, func(q db.DBTX) error {

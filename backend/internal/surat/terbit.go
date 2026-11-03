@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"office.backend/internal/audit"
 	"office.backend/internal/platform/apperr"
 )
 
@@ -43,11 +44,31 @@ type Publication struct {
 	UnitHeads  map[int64]int64 // unit penerima -> pimpinan yang menerima (letter_recipients.resolved_head_id)
 }
 
+// publishTarget adalah surat yang diterbitkan beserta repository di dalam transaksinya.
+type publishTarget struct {
+	letters     Store
+	inbox       InboxStore
+	audit       AuditStore
+	companyCode string
+	letterID    int64
+	letterUUID  string
+	signerID    int64
+}
+
+// deliverSnapshot adalah isi audit_logs.snapshot saat surat terkirim ke inbox penerima.
+type deliverSnapshot struct {
+	LetterNumber string  `json:"letterNumber"`
+	To           []int64 `json:"to"`
+	CC           []int64 `json:"cc,omitempty"`
+}
+
 // publish menerbitkan surat yang sedang disetujui approver: memastikan penerima masih bisa
-// dijangkau, memberi nomor, lalu mengirim ke inbox. Wajib dipanggil di dalam transaksi, setelah
-// surat dikunci dan sebelum ApplyTransition (CHECK ck_letters_sent_complete mewajibkan nomor,
-// tanggal, dan penandatangan sudah terisi saat status menjadi SENT).
-func (s *Service) publish(ctx context.Context, letters Store, inbox InboxStore, companyCode string, letterID, signerID int64) (string, error) {
+// dijangkau, memberi nomor, mengirim ke inbox, lalu mencatat pengiriman (DELIVER, oleh sistem).
+// Wajib dipanggil di dalam transaksi, setelah surat dikunci dan sebelum ApplyTransition (CHECK
+// ck_letters_sent_complete mewajibkan nomor, tanggal, dan penandatangan sudah terisi saat status
+// menjadi SENT).
+func (s *Service) publish(ctx context.Context, t publishTarget) (string, error) {
+	letters, companyCode, letterID := t.letters, t.companyCode, t.letterID
 	d, err := letters.LoadDraft(ctx, letterID)
 	if err != nil {
 		return "", err
@@ -67,11 +88,17 @@ func (s *Service) publish(ctx context.Context, letters Store, inbox InboxStore, 
 	}
 	number := FormatLetterNumber(format, seq, unitCode, companyCode, now)
 	if err := letters.Publish(ctx, letterID, Publication{
-		Number: number, Seq: seq, Year: now.Year(), ApprovedAt: now, SignerID: signerID, UnitHeads: heads,
+		Number: number, Seq: seq, Year: now.Year(), ApprovedAt: now, SignerID: t.signerID, UnitHeads: heads,
 	}); err != nil {
 		return "", err
 	}
-	if err := inbox.DeliverDirect(ctx, letterID, to, cc); err != nil {
+	if err := t.inbox.DeliverDirect(ctx, letterID, to, cc); err != nil {
+		return "", err
+	}
+	if err := t.audit.Record(ctx, audit.Entry{
+		CompanyCode: companyCode, EntityType: audit.EntityLetter, EntityID: letterID, EntityUUID: t.letterUUID,
+		Action: audit.ActionDeliver, Snapshot: deliverSnapshot{LetterNumber: number, To: to, CC: cc},
+	}); err != nil {
 		return "", err
 	}
 	return number, nil

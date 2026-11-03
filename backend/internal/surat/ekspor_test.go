@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -17,27 +18,27 @@ import (
 
 // sentLetter menyiapkan surat terbit (nomor 015/TI/PSP/X/2026, disetujui Agus) yang naskah
 // .docx-nya sudah tersimpan sebagai versi 1, beserta service dengan pembuat PDF palsu.
-func sentLetter(withDraft bool) (*Service, *fakeLetterStore, *fakePDF, *fakeInbox) {
+func sentLetter(withDraft bool) (*Service, *fakeLetterStore, *fakePDF, *fakeInbox, *fakeAudit) {
 	store := letterAt(StatusSent, 0, 4)
 	store.detail.LetterNumber = ptr("015/TI/PSP/X/2026")
 	store.detail.Approval = &Approval{ApprovedAt: time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC),
 		ApprovedBy: PersonRef{ID: 3, Name: "Agus", PositionName: "SVP"}}
-	files, pdf, inbox := &fakeFiles{}, &fakePDF{}, &fakeInbox{}
+	files, pdf, inbox, audit := &fakeFiles{}, &fakePDF{}, &fakeInbox{}, &fakeAudit{}
 	if withDraft {
 		files.objects = map[string][]byte{"draf-1": makeDocx("<w:t>Nomor: ###NoSurat###</w:t>")}
 		store.versions = []DocumentVersion{{VersionNumber: 1, Type: VersionDraft, FileName: "Naskah.docx", ObjectKey: "draf-1"}}
 	}
 	refs := newFakeRefs()
 	svc := NewService(fakeTx{}, nil, Repos{
-		Letters: func(db.DBTX) Store { return store }, Audit: func(db.DBTX) AuditStore { return &fakeAudit{} },
+		Letters: func(db.DBTX) Store { return store }, Audit: func(db.DBTX) AuditStore { return audit },
 		Inbox: func(db.DBTX) InboxStore { return inbox }, Directory: refs, Lookups: refs, Templates: refs,
 		Files: files, PDF: pdf,
 	}, time.UTC)
-	return svc, store, pdf, inbox
+	return svc, store, pdf, inbox, audit
 }
 
 func TestFinalPDFCreatedOnceAndReused(t *testing.T) {
-	svc, store, pdf, inbox := sentLetter(true)
+	svc, store, pdf, inbox, audit := sentLetter(true)
 	inbox.holders = map[int64]bool{50: true}
 	recipient := &auth.CurrentUser{ID: 50, Company: auth.UserCompany{Code: "PSP"}}
 	ctx := context.Background()
@@ -56,6 +57,14 @@ func TestFinalPDFCreatedOnceAndReused(t *testing.T) {
 	}
 	if pdf.conversions != 1 {
 		t.Errorf("konversi = %d kali, want 1 (PDF dipakai ulang)", pdf.conversions)
+	}
+	// Audit: PDF resmi dibuat sekali oleh sistem, lalu setiap unduhan dicatat atas nama pengunduhnya
+	var got []string
+	for _, e := range audit.entries {
+		got = append(got, fmt.Sprintf("%s:%d", e.Action, e.ActorID))
+	}
+	if strings.Join(got, ",") != "FINAL_PDF:0,DOWNLOAD:15,DOWNLOAD:50,DOWNLOAD:3" {
+		t.Errorf("audit = %v", got)
 	}
 	if v := store.versions[1]; len(store.versions) != 2 || v.Type != VersionFinal || v.CreatedByRole != RoleApprover || v.CreatedBy.ID != 3 {
 		t.Errorf("versi FINAL salah: %+v", store.versions)
@@ -108,12 +117,12 @@ func TestFinalPDFRejected(t *testing.T) {
 	ctx := context.Background()
 	var is *apperr.InvalidStateError
 
-	svc, _, _, _ := sentLetter(true)
+	svc, _, _, _, _ := sentLetter(true)
 	if _, err := svc.OpenDocument(ctx, andiUser, testLetterID, 1); !errors.As(err, &is) || !strings.Contains(is.Message, "PDF resmi") {
 		t.Errorf(".docx lama setelah terbit: error = %v", err)
 	}
 
-	svc, store, _, _ := sentLetter(false)
+	svc, store, _, _, _ := sentLetter(false)
 	if _, err := svc.OpenDocument(ctx, andiUser, testLetterID, 0); !errors.As(err, &is) || !strings.Contains(is.Message, "belum diunggah") {
 		t.Errorf("tanpa naskah: error = %v", err)
 	}
@@ -121,7 +130,7 @@ func TestFinalPDFRejected(t *testing.T) {
 		t.Errorf("tidak boleh ada versi FINAL: %+v", store.versions)
 	}
 
-	svc, store, pdf, _ := sentLetter(true)
+	svc, store, pdf, _, _ := sentLetter(true)
 	pdf.down = true
 	var ue *apperr.UnavailableError
 	if _, err := svc.OpenDocument(ctx, andiUser, testLetterID, 0); !errors.As(err, &ue) {

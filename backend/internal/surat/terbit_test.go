@@ -53,10 +53,19 @@ func TestApproverPublishesLetter(t *testing.T) {
 	if !slices.Equal(inbox.to, []int64{50, 52}) || !slices.Equal(inbox.cc, []int64{51}) {
 		t.Errorf("inbox to=%v cc=%v, want to=[50 52] cc=[51]", inbox.to, inbox.cc)
 	}
-	e := audit.entries[0]
-	snap, _ := e.Snapshot.(transitionSnapshot)
-	if e.Action != "SIGN" || snap.LetterNumber == nil || *snap.LetterNumber != p.Number {
-		t.Errorf("audit salah: %+v %+v", e, snap)
+	// Urutan audit: pengiriman ke inbox (oleh sistem), lalu persetujuan approver
+	if len(audit.entries) != 2 {
+		t.Fatalf("audit = %d entri, want 2 (DELIVER, SIGN)", len(audit.entries))
+	}
+	deliver, sign := audit.entries[0], audit.entries[1]
+	ds, _ := deliver.Snapshot.(deliverSnapshot)
+	if deliver.Action != "DELIVER" || deliver.ActorID != 0 || ds.LetterNumber != p.Number ||
+		!slices.Equal(ds.To, []int64{50, 52}) || !slices.Equal(ds.CC, []int64{51}) {
+		t.Errorf("audit DELIVER salah: %+v", deliver)
+	}
+	snap, _ := sign.Snapshot.(transitionSnapshot)
+	if sign.Action != "SIGN" || sign.ActorID != 3 || snap.LetterNumber == nil || *snap.LetterNumber != p.Number {
+		t.Errorf("audit SIGN salah: %+v %+v", sign, snap)
 	}
 }
 

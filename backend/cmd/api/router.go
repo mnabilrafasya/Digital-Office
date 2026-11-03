@@ -7,6 +7,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"office.backend/internal/audit"
 	"office.backend/internal/auth"
 	"office.backend/internal/inbox"
 	"office.backend/internal/masterdata"
@@ -25,6 +26,7 @@ type routerDeps struct {
 	Organisasi *organisasi.Handler
 	Surat      *surat.Handler
 	Inbox      *inbox.Handler
+	Audit      *audit.Handler
 
 	Tokens auth.TokenVerifier
 	Users  auth.UserLoader
@@ -85,7 +87,18 @@ func newRouter(d routerDeps) http.Handler {
 					r.Post("/submit", d.Surat.Submit)
 					r.Post("/approve", d.Surat.Approve)
 					r.Post("/return", d.Surat.Return)
+					r.Get("/tracking", d.Audit.Tracking)
+					r.With(auth.RequirePermission(auth.AuditView)).Get("/audit", d.Audit.LetterLogs)
 				})
+			})
+
+			// Audit log dan pantauan surat hanya untuk pemegang AUDIT_VIEW
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequirePermission(auth.AuditView))
+				r.Get("/audit-logs", d.Audit.Logs)
+				r.Get("/audit-logs/export", d.Audit.Export)
+				r.Get("/audit-logs/{logId}", d.Audit.Log)
+				r.Get("/monitoring/letters", d.Audit.Monitor)
 			})
 
 			// Inbox selalu milik user yang login. Disposisi butuh INBOX_DISPOSE (diperiksa service,

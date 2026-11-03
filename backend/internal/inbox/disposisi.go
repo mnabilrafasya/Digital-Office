@@ -82,11 +82,34 @@ func (s *Service) Get(ctx context.Context, user *auth.CurrentUser, itemID string
 		return nil, err
 	}
 	if it.Status == StatusUnread {
-		if err := s.reader.MarkRead(ctx, id); err != nil {
+		if err := s.markRead(ctx, user, id); err != nil {
 			return nil, err
 		}
 	}
 	return s.detail(ctx, user, id)
+}
+
+// markRead mengubah item UNREAD menjadi READ dan mencatat INBOX_READ dalam satu transaksi. Item
+// dikunci dulu, jadi dua pembukaan bersamaan hanya mencatat sekali.
+func (s *Service) markRead(ctx context.Context, user *auth.CurrentUser, itemID int64) error {
+	return s.tx.InTx(ctx, func(q db.DBTX) error {
+		items := s.repos.Items(q)
+		it, err := items.LockItem(ctx, user.Company.Code, user.ID, itemID)
+		if err != nil {
+			return notFoundAs(err)
+		}
+		if it.Status != StatusUnread {
+			return nil
+		}
+		if err := items.MarkRead(ctx, itemID); err != nil {
+			return err
+		}
+		return s.repos.Audit(q).Record(ctx, audit.Entry{
+			CompanyCode: user.Company.Code, EntityType: audit.EntityLetter, EntityID: it.LetterID,
+			EntityUUID: it.LetterUUID, Action: audit.ActionInboxRead, ActorID: user.ID, ActorName: user.Name,
+			Snapshot: forwardSnapshot{InboxItemID: itemID},
+		})
+	})
 }
 
 // Dispose mendisposisikan surat ke orang dan/atau unit (wajib permission INBOX_DISPOSE).
@@ -178,7 +201,7 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 		}
 		return s.repos.Audit(q).Record(ctx, audit.Entry{
 			CompanyCode: user.Company.Code,
-			EntityType:  "LETTER",
+			EntityType:  audit.EntityLetter,
 			EntityID:    it.LetterID,
 			EntityUUID:  it.LetterUUID,
 			Action:      kind,

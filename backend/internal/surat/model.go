@@ -20,6 +20,9 @@ const (
 	StatusCancelled          = "CANCELLED"
 )
 
+// ConfidentialitySecret adalah kode sifat surat Rahasia (lookup CONFIDENTIALITY); pembukaannya dicatat.
+const ConfidentialitySecret = "RAHASIA"
+
 // Peran dalam surat.
 const (
 	RoleDrafter  = "DRAFTER"
