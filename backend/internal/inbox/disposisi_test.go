@@ -25,12 +25,20 @@ func itemOf(ownerID int64, status string) *fakeRepo {
 
 func TestGetMarksRead(t *testing.T) {
 	repo := itemOf(15, StatusUnread)
-	svc := newTestService(repo, &fakeDirectory{}, time.UTC)
+	svc, audit := newTestServiceWithAudit(repo, &fakeDirectory{}, time.UTC)
 	ctx := context.Background()
 
 	d, err := svc.Get(ctx, pimpinan, "7")
 	if err != nil || !repo.marked || d.Status != StatusRead || strings.Join(d.AllowedActions, ",") != "DISPOSE,REDIRECT" {
 		t.Fatalf("Get: err=%v marked=%v detail=%+v", err, repo.marked, d)
+	}
+	// Pembukaan pertama dicatat sekali; membuka lagi (sudah READ) tidak menambah catatan
+	if _, err := svc.Get(ctx, pimpinan, "7"); err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Action != "INBOX_READ" || audit.entries[0].EntityID != 500 ||
+		audit.entries[0].ActorID != 15 {
+		t.Errorf("audit INBOX_READ salah: %+v", audit.entries)
 	}
 	for _, tc := range []struct {
 		user *auth.CurrentUser

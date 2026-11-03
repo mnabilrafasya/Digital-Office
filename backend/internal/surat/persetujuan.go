@@ -94,7 +94,10 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 
 		var number *string
 		if dec.Action == Sign {
-			n, err := s.publish(ctx, letters, s.repos.Inbox(q), user.Company.Code, l.ID, user.ID)
+			n, err := s.publish(ctx, publishTarget{
+				letters: letters, inbox: s.repos.Inbox(q), audit: s.repos.Audit(q),
+				companyCode: user.Company.Code, letterID: l.ID, letterUUID: id, signerID: user.ID,
+			})
 			if err != nil {
 				return err
 			}
@@ -105,7 +108,7 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 		}
 		return s.repos.Audit(q).Record(ctx, audit.Entry{
 			CompanyCode: user.Company.Code,
-			EntityType:  "LETTER",
+			EntityType:  audit.EntityLetter,
 			EntityID:    l.ID,
 			EntityUUID:  id,
 			Action:      string(dec.Action),

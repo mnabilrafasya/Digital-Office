@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"office.backend/internal/audit"
 	"office.backend/internal/auth"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
@@ -44,18 +45,53 @@ func (s *Service) OpenDocument(ctx context.Context, user *auth.CurrentUser, lett
 	if err != nil {
 		return nil, err
 	}
+	var (
+		v           *DocumentVersion
+		contentType = DocxContentType
+	)
 	if d.Status == StatusSent {
 		if version != 0 {
 			return nil, &apperr.InvalidStateError{Message: "Surat sudah disetujui. Yang bisa diunduh hanya PDF resmi ber-QR."}
 		}
-		return s.finalPDF(ctx, user, d)
+		if v, err = s.finalPDF(ctx, user, d); err != nil {
+			return nil, err
+		}
+		contentType = PDFContentType
+	} else {
+		if v, err = s.draftVersion(ctx, d.InternalID, version); err != nil {
+			return nil, err
+		}
 	}
 
-	var v *DocumentVersion
+	f, err := s.openVersion(ctx, v, contentType)
+	if err != nil {
+		return nil, err
+	}
+	err = s.audit.Record(ctx, letterEntry(user, d.InternalID, d.ID, audit.ActionDownload,
+		downloadSnapshot{VersionNumber: v.VersionNumber, Type: v.Type}))
+	if err != nil {
+		f.Body.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// downloadSnapshot adalah isi audit_logs.snapshot saat dokumen surat diunduh.
+type downloadSnapshot struct {
+	VersionNumber int    `json:"versionNumber"`
+	Type          string `json:"type"` // DRAFT (.docx) atau FINAL (PDF resmi)
+}
+
+// draftVersion mengambil versi naskah .docx (version 0 = terbaru).
+func (s *Service) draftVersion(ctx context.Context, letterID int64, version int) (*DocumentVersion, error) {
+	var (
+		v   *DocumentVersion
+		err error
+	)
 	if version == 0 {
-		v, err = s.reader.LatestVersion(ctx, d.InternalID, VersionDraft)
+		v, err = s.reader.LatestVersion(ctx, letterID, VersionDraft)
 	} else {
-		v, err = s.reader.FindVersion(ctx, d.InternalID, version)
+		v, err = s.reader.FindVersion(ctx, letterID, version)
 	}
 	if errors.Is(err, db.ErrNotFound) || (err == nil && v.Type != VersionDraft) {
 		if version == 0 {
@@ -63,22 +99,23 @@ func (s *Service) OpenDocument(ctx context.Context, user *auth.CurrentUser, lett
 		}
 		return nil, &apperr.NotFoundError{Message: "Versi naskah tidak ditemukan"}
 	}
-	if err != nil {
-		return nil, err
-	}
-	return s.openVersion(ctx, v, DocxContentType)
+	return v, err
 }
 
-// finalPDF mengembalikan PDF resmi surat terbit, membuatnya lebih dulu bila belum ada.
-func (s *Service) finalPDF(ctx context.Context, user *auth.CurrentUser, d *LetterDetail) (*DocumentFile, error) {
+// finalPDF mengambil versi PDF resmi surat terbit, membuatnya lebih dulu bila belum ada.
+func (s *Service) finalPDF(ctx context.Context, user *auth.CurrentUser, d *LetterDetail) (*DocumentVersion, error) {
 	v, err := s.reader.LatestVersion(ctx, d.InternalID, VersionFinal)
 	if errors.Is(err, db.ErrNotFound) {
-		v, err = s.createFinalPDF(ctx, user, d)
+		return s.createFinalPDF(ctx, user, d)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return s.openVersion(ctx, v, PDFContentType)
+	return v, err
+}
+
+// finalPDFSnapshot adalah isi audit_logs.snapshot saat PDF resmi dibuat (oleh sistem).
+type finalPDFSnapshot struct {
+	VersionNumber int    `json:"versionNumber"`
+	Checksum      string `json:"checksum"`
+	RequestedBy   int64  `json:"requestedBy"` // user yang unduhannya memicu pembuatan PDF
 }
 
 // createFinalPDF membuat dan menyimpan PDF resmi. Baris surat dikunci selama pembuatan, jadi dua
@@ -135,13 +172,21 @@ func (s *Service) createFinalPDF(ctx context.Context, user *auth.CurrentUser, d 
 			return err
 		}
 		sum := sha256.Sum256(stamped)
+		checksum := hex.EncodeToString(sum[:])
 		number, _, err := letters.AddVersion(ctx, NewVersion{
 			LetterID: d.InternalID, Status: d.Status, Type: VersionFinal, ObjectKey: key,
 			FileName: finalFileName(*d.LetterNumber), FileExtension: "pdf",
-			FileSize: int64(len(stamped)), Checksum: hex.EncodeToString(sum[:]),
+			FileSize: int64(len(stamped)), Checksum: checksum,
 			CreatedBy: d.Approval.ApprovedBy.ID, CreatedByRole: RoleApprover, // dibuat atas nama penandatangan
 		})
 		if err != nil {
+			return err
+		}
+		if err := s.repos.Audit(q).Record(ctx, audit.Entry{
+			CompanyCode: user.Company.Code, EntityType: audit.EntityLetter, EntityID: d.InternalID, EntityUUID: d.ID,
+			Action:   audit.ActionFinalPDF,
+			Snapshot: finalPDFSnapshot{VersionNumber: number, Checksum: checksum, RequestedBy: user.ID},
+		}); err != nil {
 			return err
 		}
 		final, err = letters.FindVersion(ctx, d.InternalID, number)

@@ -100,6 +100,7 @@ func run() error {
 		Organisasi:        organisasi.NewHandler(organisasi.NewService(orgRepo, orgRepo, orgRepo)),
 		Surat:             surat.NewHandler(suratService),
 		Inbox:             inbox.NewHandler(inboxService),
+		Audit:             audit.NewHandler(audit.NewService(conn, cfg.Location)),
 		Tokens:            tokens,
 		Users:             users,
 		CORSOrigins:       cfg.CORSAllowedOrigins,

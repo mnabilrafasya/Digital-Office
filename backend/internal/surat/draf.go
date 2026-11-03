@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"office.backend/internal/audit"
 	"office.backend/internal/auth"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
@@ -187,14 +188,22 @@ func (s *Service) Create(ctx context.Context, user *auth.CurrentUser, in LetterI
 
 	var id string
 	err = s.tx.InTx(ctx, func(q db.DBTX) error {
+		letters := s.repos.Letters(q)
 		var err error
-		id, err = s.repos.Letters(q).Create(ctx, NewLetter{
+		id, err = letters.Create(ctx, NewLetter{
 			CompanyCode:  user.Company.Code,
 			SenderUnitID: user.Unit.ID,
 			DrafterID:    user.ID,
 			Draft:        d,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		l, err := letters.FindByUUID(ctx, user.Company.Code, id)
+		if err != nil {
+			return err
+		}
+		return s.repos.Audit(q).Record(ctx, letterEntry(user, l.ID, id, audit.ActionCreate, nil))
 	})
 	if err != nil {
 		return nil, err

@@ -117,13 +117,29 @@ type Service struct {
 	repos  Repos
 	reader Store      // repository surat di luar transaksi (baca saja)
 	inbox  InboxStore // repository inbox di luar transaksi (baca saja)
+	audit  AuditStore // audit di luar transaksi, untuk kejadian baca (unduh, buka surat Rahasia)
 	loc    *time.Location
 }
 
 // NewService membuat Service. conn dipakai untuk query baca di luar transaksi;
 // loc adalah zona waktu yang dikirim ke klien.
 func NewService(tx db.TxRunner, conn db.DBTX, repos Repos, loc *time.Location) *Service {
-	return &Service{tx: tx, repos: repos, reader: repos.Letters(conn), inbox: repos.Inbox(conn), loc: loc}
+	return &Service{tx: tx, repos: repos, reader: repos.Letters(conn), inbox: repos.Inbox(conn),
+		audit: repos.Audit(conn), loc: loc}
+}
+
+// letterEntry menyiapkan baris audit untuk satu surat oleh user (IP diambil dari request).
+func letterEntry(user *auth.CurrentUser, letterID int64, letterUUID, action string, snapshot any) audit.Entry {
+	return audit.Entry{
+		CompanyCode: user.Company.Code,
+		EntityType:  audit.EntityLetter,
+		EntityID:    letterID,
+		EntityUUID:  letterUUID,
+		Action:      action,
+		ActorID:     user.ID,
+		ActorName:   user.Name,
+		Snapshot:    snapshot,
+	}
 }
 
 // rolePermission adalah permission yang wajib dimiliki untuk beraksi sebagai peran tertentu.
