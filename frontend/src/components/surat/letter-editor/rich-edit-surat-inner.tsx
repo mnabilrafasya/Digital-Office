@@ -23,6 +23,10 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import {
+  WordZoomControl,
+  useWordZoomInteractivity,
+} from "@/components/ui/word-zoom-control";
 
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
@@ -49,6 +53,7 @@ interface RichEditSuratInnerProps {
 export default function RichEditSuratInner({
   onDocumentChange,
 }: RichEditSuratInnerProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<RichEdit | null>(null);
   const moduleRef = useRef<RichEditModule | null>(null);
@@ -76,12 +81,22 @@ export default function RichEditSuratInner({
   zoomLevelRef.current = zoomLevel;
 
   const applyZoom = useCallback((level: number) => {
-    setZoomLevel(level);
+    const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
+    setZoomLevel(clamped);
+    zoomLevelRef.current = clamped;
     if (instanceRef.current) {
-      instanceRef.current.zoomLevel = level;
+      instanceRef.current.zoomLevel = clamped;
       instanceRef.current.adjust();
     }
   }, []);
+
+  const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
+    wrapperRef,
+    containerRef,
+    zoomLevel,
+    onZoomChange: applyZoom,
+    isReady,
+  });
 
   // Ambil state form dari Buat Surat
   const { control, setValue } = useFormContext<BuatSuratFormValues>();
@@ -216,6 +231,9 @@ export default function RichEditSuratInner({
         };
         options.events.documentChanged = () => {
           if (!isLoadingDocRef.current) userEditedRef.current = true;
+        };
+        options.events.keyDown = (_s, args) => {
+          handleDevExpressKeyDown(_s, args);
         };
 
         if (disposed) return;
@@ -440,7 +458,7 @@ export default function RichEditSuratInner({
       "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
 
   return (
-    <div className={containerClasses}>
+    <div ref={wrapperRef} className={containerClasses}>
       {/* â”€â”€ Toolbar Atas: Template, Aksi Dokumen, Fullscreen â”€â”€ */}
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-panel border-b border-border flex-wrap shrink-0">
         {/* Pilihan Template Tata Naskah */}
@@ -477,35 +495,12 @@ export default function RichEditSuratInner({
             Sinkronkan Form
           </button>
 
-          {/* Toggle Zoom: Fit 1 Halaman vs 100% */}
-          <div className="inline-flex items-center gap-1 bg-surface border border-border rounded-lg p-0.5 ml-1">
-            <button
-              type="button"
-              onClick={() => applyZoom(0.5)}
-              className={cn(
-                "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
-                zoomLevel === 0.5
-                  ? "bg-primary text-white shadow-xs"
-                  : "text-text-muted hover:text-text",
-              )}
-              title="Tampilkan 1 halaman penuh tanpa scroll"
-            >
-              Fit 1 Halaman
-            </button>
-            <button
-              type="button"
-              onClick={() => applyZoom(1.0)}
-              className={cn(
-                "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
-                zoomLevel === 1.0
-                  ? "bg-primary text-white shadow-xs"
-                  : "text-text-muted hover:text-text",
-              )}
-              title="Ukuran standar 100%"
-            >
-              100%
-            </button>
-          </div>
+          {/* Kontrol Zoom Gaya Microsoft Word */}
+          <WordZoomControl
+            zoomLevel={zoomLevel}
+            onZoomChange={applyZoom}
+            className="ml-1"
+          />
         </div>
 
         {/* Status Notifikasi Toast Kecil */}
@@ -582,7 +577,7 @@ export default function RichEditSuratInner({
         </span>
       </div>
 
-      {/* â”€â”€ Container DevExpress RichEdit â”€â”€ */}
+      {/* ── Container DevExpress RichEdit ── */}
       <div
         ref={containerRef}
         style={{
@@ -593,6 +588,13 @@ export default function RichEditSuratInner({
         }}
         className="w-full bg-white relative"
       />
+
+      {/* Floating feedback saat zoom via shortcut keyboard / wheel */}
+      {feedbackPercent !== null && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-neutral-900/90 text-white text-xs px-3.5 py-1.5 rounded-full font-medium shadow-lg flex items-center gap-1.5 animate-in fade-in duration-150">
+          <span>Zoom: {feedbackPercent}%</span>
+        </div>
+      )}
     </div>
   );
 }

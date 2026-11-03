@@ -18,6 +18,10 @@ import {
   getTemplateById,
   type LetterTemplateContext,
 } from "@/lib/templates/letter-templates";
+import {
+  WordZoomControl,
+  useWordZoomInteractivity,
+} from "@/components/ui/word-zoom-control";
 
 type RichEditModule = typeof import("devexpress-richedit") & {
   license?: (key: string) => void;
@@ -59,6 +63,7 @@ function buildContext(letter: LetterDetail): LetterTemplateContext {
 }
 
 export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEdit | null>(null);
   const moduleRef = useRef<RichEditModule | null>(null);
@@ -72,14 +77,24 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
   const zoomLevelRef = useRef<number>(1);
   zoomLevelRef.current = zoomLevel;
 
-  // Ubah zoom level editor
+  // Ubah zoom level editor dengan pembatasan 50% - 200%
   const applyZoom = useCallback((level: number) => {
-    setZoomLevel(level);
+    const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
+    setZoomLevel(clamped);
+    zoomLevelRef.current = clamped;
     if (editorRef.current) {
-      editorRef.current.zoomLevel = level;
+      editorRef.current.zoomLevel = clamped;
       editorRef.current.adjust();
     }
   }, []);
+
+  const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
+    wrapperRef,
+    containerRef,
+    zoomLevel,
+    onZoomChange: applyZoom,
+    isReady,
+  });
 
   // Inisialisasi editor sekali (mount)
   useEffect(() => {
@@ -103,6 +118,9 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
         options.printing = {
           mode: mod.PrintMode?.Html ?? 1,
           closePrintDialogWithHtmlPreview: true,
+        };
+        options.events.keyDown = (_s, args) => {
+          handleDevExpressKeyDown(_s, args);
         };
 
         editorRef.current = mod.create(containerRef.current, options);
@@ -201,42 +219,19 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
       "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
 
   return (
-    <div className={wrapperClass}>
+    <div ref={wrapperRef} className={wrapperClass}>
       <div className="flex items-center gap-2 px-4 py-2 bg-panel border-b border-border flex-wrap shrink-0">
         <span className="text-xs font-semibold text-text">Naskah Surat</span>
         <span className="text-[11px] text-text-muted bg-surface border border-border px-2 py-0.5 rounded">
           Mode baca
         </span>
 
-        {/* Toggle Zoom: Fit 1 Halaman vs 100% */}
-        <div className="inline-flex items-center gap-1 bg-surface border border-border rounded-lg p-0.5 ml-2">
-          <button
-            type="button"
-            onClick={() => applyZoom(0.5)}
-            className={cn(
-              "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
-              zoomLevel === 0.5
-                ? "bg-primary text-white shadow-xs"
-                : "text-text-muted hover:text-text"
-            )}
-            title="Tampilkan 1 halaman penuh tanpa scroll"
-          >
-            Fit 1 Halaman
-          </button>
-          <button
-            type="button"
-            onClick={() => applyZoom(1.0)}
-            className={cn(
-              "px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
-              zoomLevel === 1.0
-                ? "bg-primary text-white shadow-xs"
-                : "text-text-muted hover:text-text"
-            )}
-            title="Ukuran standar 100%"
-          >
-            100%
-          </button>
-        </div>
+        {/* Kontrol Zoom Gaya Microsoft Word */}
+        <WordZoomControl
+          zoomLevel={zoomLevel}
+          onZoomChange={applyZoom}
+          className="ml-2"
+        />
 
         <div className="flex items-center gap-2 ml-auto">
           <button
@@ -280,6 +275,13 @@ export default function ReviewDocumentInner({ letter }: ReviewDocumentInnerProps
         }}
         className="w-full bg-white relative"
       />
+
+      {/* Floating feedback saat zoom via shortcut keyboard / wheel */}
+      {feedbackPercent !== null && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-neutral-900/90 text-white text-xs px-3.5 py-1.5 rounded-full font-medium shadow-lg flex items-center gap-1.5 animate-in fade-in duration-150">
+          <span>Zoom: {feedbackPercent}%</span>
+        </div>
+      )}
     </div>
   );
 }

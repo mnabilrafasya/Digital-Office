@@ -1,0 +1,238 @@
+// ─────────────────────────────────────────────
+// lib/dev-accounts.ts
+// Daftar akun database seed development untuk pengujian alur persuratan:
+// Buat Surat → Review/Paraf → Tanda Tangan → Inbox Masuk → Disposisi / Alihkan.
+// Berdasarkan database/seeds/dev/003_users.sql & 002_positions.sql.
+// ─────────────────────────────────────────────
+
+export interface DevUserAccount {
+  nik: string;
+  name: string;
+  position: string;
+  unit: string;
+  category: "workflow" | "inbox" | "direksi" | "admin";
+  badge: string;
+  badgeVariant: "emerald" | "sky" | "violet" | "amber" | "rose" | "indigo" | "gray";
+  flowNote: string;
+  isActive?: boolean;
+}
+
+export const DEV_ACCOUNTS: DevUserAccount[] = [
+  // ── 1. Alur Persuratan TI (Drafter → Reviewer → Approver) ──
+  {
+    nik: "2015047",
+    name: "Andi Kurniawan",
+    position: "Staf Pengembangan Aplikasi",
+    unit: "Bagian PA · Kompartemen TI",
+    category: "workflow",
+    badge: "Drafter Utama",
+    badgeVariant: "emerald",
+    flowNote: "Buat konsep surat dinas, simpan draf, ajukan ke Reviewer",
+    isActive: true,
+  },
+  {
+    nik: "2012060",
+    name: "Fajar Nugroho",
+    position: "Analis Sistem Informasi",
+    unit: "Bagian PA · Kompartemen TI",
+    category: "workflow",
+    badge: "Reviewer 1",
+    badgeVariant: "sky",
+    flowNote: "Verifikasi teknis naskah (IN_REVIEW) & teruskan ke Reviewer 2",
+    isActive: true,
+  },
+  {
+    nik: "2003035",
+    name: "Dewi Lestari, S.Kom.",
+    position: "AVP Pengembangan Aplikasi",
+    unit: "Bagian PA · Kompartemen TI",
+    category: "workflow",
+    badge: "Reviewer 2 / AVP",
+    badgeVariant: "indigo",
+    flowNote: "Pemeriksa tahap akhir bagian (IN_REVIEW) sebelum ke Approver",
+    isActive: true,
+  },
+  {
+    nik: "1995021",
+    name: "Agus Setiawan, S.Kom., M.T.",
+    position: "SVP Teknologi Informasi",
+    unit: "Kompartemen TI",
+    category: "workflow",
+    badge: "Approver (Penandatangan)",
+    badgeVariant: "violet",
+    flowNote: "Setujui surat (IN_APPROVAL) → status SENT, terbit nomor & QR",
+    isActive: true,
+  },
+  {
+    nik: "2017052",
+    name: "Rina Marlina",
+    position: "Staf Pengembangan Aplikasi",
+    unit: "Bagian PA · Kompartemen TI",
+    category: "workflow",
+    badge: "Drafter Cadangan",
+    badgeVariant: "emerald",
+    flowNote: "Uji pembuatan naskah paralel staf TI",
+    isActive: true,
+  },
+
+  // ── 2. Penerima Surat Masuk & Alur Disposisi ──
+  {
+    nik: "1998102",
+    name: "Sri Wahyuni, S.Psi.",
+    position: "VP Sumber Daya Manusia",
+    unit: "Departemen SDM",
+    category: "inbox",
+    badge: "Penerima Surat (Pimpinan SDM)",
+    badgeVariant: "rose",
+    flowNote: "Terima surat di Inbox (SENT) → Disposisi ke Staf Pengembangan SDM",
+    isActive: true,
+  },
+  {
+    nik: "2019110",
+    name: "Maya Anggraini",
+    position: "Staf Pengembangan SDM",
+    unit: "Departemen SDM",
+    category: "inbox",
+    badge: "Penerima Disposisi SDM",
+    badgeVariant: "amber",
+    flowNote: "Terima lembar disposisi dari VP SDM di Inbox untuk ditindaklanjuti",
+    isActive: true,
+  },
+  {
+    nik: "1997118",
+    name: "Joko Susilo, S.E., Ak.",
+    position: "VP Akuntansi dan Keuangan",
+    unit: "Departemen AK",
+    category: "inbox",
+    badge: "Penerima Surat (Pimpinan AK)",
+    badgeVariant: "rose",
+    flowNote: "Terima surat/tembusan di Keuangan → Disposisi ke Staf Anggaran",
+    isActive: true,
+  },
+  {
+    nik: "2020125",
+    name: "Indah Permatasari",
+    position: "Staf Anggaran",
+    unit: "Departemen AK",
+    category: "inbox",
+    badge: "Penerima Disposisi AK",
+    badgeVariant: "amber",
+    flowNote: "Menerima disposisi anggaran & keuangan di Inbox",
+    isActive: true,
+  },
+  {
+    nik: "2016163",
+    name: "Wahyu Hidayat",
+    position: "Staf Tata Usaha",
+    unit: "Kompartemen SP",
+    category: "inbox",
+    badge: "Staf Tata Usaha (Alihkan)",
+    badgeVariant: "sky",
+    flowNote: "Uji alihkan surat (redirect) atau kelola administrasi TU",
+    isActive: true,
+  },
+  {
+    nik: "1992014",
+    name: "Nurul Hidayah, S.H.",
+    position: "SVP Sekretariat Perusahaan",
+    unit: "Kompartemen SP",
+    category: "inbox",
+    badge: "Pimpinan Sekretariat",
+    badgeVariant: "violet",
+    flowNote: "Penerima surat dinas tingkat sekretariat perusahaan",
+    isActive: true,
+  },
+
+  // ── 3. Direksi (Top Management) ──
+  {
+    nik: "1887001",
+    name: "Ir. Hendra Gunawan, M.T.",
+    position: "Direktur Utama",
+    unit: "Direktorat Utama (PSP)",
+    category: "direksi",
+    badge: "Direktur Utama",
+    badgeVariant: "violet",
+    flowNote: "Pimpinan tertinggi Pusri · Penandatangan surat tingkat Direksi",
+    isActive: true,
+  },
+  {
+    nik: "1889002",
+    name: "Dra. Ratna Kusumawati, M.M.",
+    position: "Direktur Keuangan dan Umum",
+    unit: "Direktorat Keuangan dan Umum",
+    category: "direksi",
+    badge: "Direktur Keuangan",
+    badgeVariant: "violet",
+    flowNote: "Direksi pembina TI, Keuangan & SDM",
+    isActive: true,
+  },
+  {
+    nik: "1888003",
+    name: "Ir. Bambang Sutrisno",
+    position: "Direktur Operasi dan Produksi",
+    unit: "Direktorat Operasi dan Produksi",
+    category: "direksi",
+    badge: "Direktur Operasi",
+    badgeVariant: "violet",
+    flowNote: "Direksi operasional pabrik dan produksi",
+    isActive: true,
+  },
+
+  // ── 4. Admin, Unit Lapangan & Multi-Perusahaan ──
+  {
+    nik: "2014090",
+    name: "Rudi Hartono",
+    position: "Administrator Sistem",
+    unit: "Bagian IKT · Kompartemen TI",
+    category: "admin",
+    badge: "Admin Sistem",
+    badgeVariant: "amber",
+    flowNote: "Akses menu audit log sistem & manajemen template naskah",
+    isActive: true,
+  },
+  {
+    nik: "2008202",
+    name: "Bayu Aji Pamungkas, S.T.",
+    position: "VP Teknologi Informasi",
+    unit: "Departemen TI (Petrokimia Gresik)",
+    category: "admin",
+    badge: "Multi-Company (PKG)",
+    badgeVariant: "indigo",
+    flowNote: "Uji isolasi data antar perusahaan (surat PSP tersembunyi dari PKG)",
+    isActive: true,
+  },
+  {
+    nik: "2004071",
+    name: "Yudi Pratama, S.T.",
+    position: "AVP Infrastruktur dan Keamanan TI",
+    unit: "Bagian IKT · Kompartemen TI",
+    category: "admin",
+    badge: "Pimpinan Bagian IKT",
+    badgeVariant: "indigo",
+    flowNote: "Penerima disposisi internal TI dari SVP TI",
+    isActive: true,
+  },
+  {
+    nik: "2021150",
+    name: "Dimas Saputra",
+    position: "Staf Operasi Pabrik",
+    unit: "Bagian OP · Kompartemen Produksi",
+    category: "admin",
+    badge: "Staf Pabrik",
+    badgeVariant: "sky",
+    flowNote: "Uji alur persuratan ke staf pabrik/lapangan",
+    isActive: true,
+  },
+  {
+    nik: "1990170",
+    name: "Slamet Riyadi",
+    position: "Staf Pengembangan Aplikasi",
+    unit: "Bagian PA (Status Nonaktif)",
+    category: "admin",
+    badge: "Akun Nonaktif",
+    badgeVariant: "gray",
+    flowNote: "Uji penolakan sistem (401 INVALID_CREDENTIALS / user inactive)",
+    isActive: false,
+  },
+];
+

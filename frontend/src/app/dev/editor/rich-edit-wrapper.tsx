@@ -17,6 +17,10 @@
 
 import { useRef, useEffect, useCallback, useState } from "react";
 import { Upload, Save, FileText, Info } from "lucide-react";
+import {
+  WordZoomControl,
+  useWordZoomInteractivity,
+} from "@/components/ui/word-zoom-control";
 
 // CSS DevExpress — wajib dimuat agar editor tampil benar
 import "devextreme/dist/css/dx.light.css";
@@ -32,6 +36,7 @@ const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
 
 // ─── Komponen ───────────────────────────────────────────────────────
 export default function RichEditWrapper() {
+  const wrapperRef   = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const instanceRef  = useRef<RichEdit | null>(null);
   const moduleRef    = useRef<RichEditModule | null>(null);
@@ -41,6 +46,28 @@ export default function RichEditWrapper() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const zoomLevelRef = useRef<number>(1);
+  zoomLevelRef.current = zoomLevel;
+
+  const applyZoom = useCallback((level: number) => {
+    const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
+    setZoomLevel(clamped);
+    zoomLevelRef.current = clamped;
+    if (instanceRef.current) {
+      instanceRef.current.zoomLevel = clamped;
+      instanceRef.current.adjust();
+    }
+  }, []);
+
+  const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
+    wrapperRef,
+    containerRef,
+    zoomLevel,
+    onZoomChange: applyZoom,
+    isReady,
+  });
 
   // ── Inisialisasi editor ──────────────────────────────────────────
   useEffect(() => {
@@ -63,6 +90,9 @@ export default function RichEditWrapper() {
         options.width  = "100%";
         options.height = "100%";
         options.ribbon.visible = true;
+        options.events.keyDown = (_s, args) => {
+          handleDevExpressKeyDown(_s, args);
+        };
 
         if (disposed) return;
 
@@ -164,7 +194,7 @@ export default function RichEditWrapper() {
 
   // ── Render: normal ──────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full">
+    <div ref={wrapperRef} className="flex flex-col h-full relative">
       {/* Toolbar aksi file */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-panel/40 shrink-0 flex-wrap">
         <button
@@ -185,6 +215,13 @@ export default function RichEditWrapper() {
           <Save size={13} />
           {isSaving ? "Menyimpan..." : "Simpan sebagai .docx"}
         </button>
+
+        {/* Kontrol Zoom Gaya Microsoft Word */}
+        <WordZoomControl
+          zoomLevel={zoomLevel}
+          onZoomChange={applyZoom}
+          className="ml-2"
+        />
 
         {fileName && (
           <span className="flex items-center gap-1.5 text-xs text-text-muted">
@@ -208,6 +245,13 @@ export default function RichEditWrapper() {
         className="flex-1"
         style={{ minHeight: 0 }}
       />
+
+      {/* Floating feedback saat zoom via shortcut keyboard / wheel */}
+      {feedbackPercent !== null && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-neutral-900/90 text-white text-xs px-3.5 py-1.5 rounded-full font-medium shadow-lg flex items-center gap-1.5 animate-in fade-in duration-150">
+          <span>Zoom: {feedbackPercent}%</span>
+        </div>
+      )}
     </div>
   );
 }

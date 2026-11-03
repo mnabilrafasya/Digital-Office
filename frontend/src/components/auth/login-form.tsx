@@ -6,11 +6,11 @@
 // Fitur:
 //   - Input NIK + password → loginAction (Server Action)
 //   - Tampilkan pesan error dari backend
-//   - "Akses Cepat Developer" untuk pilih role tanpa mengetik
+//   - "Akses Cepat Developer" untuk pilih role pengujian tanpa mengetik
 //   - Redirect ke ?next= atau /surat/daftar setelah berhasil
 // ─────────────────────────────────────────────
 
-import { useState, useTransition } from "react";
+import { useState, useRef, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -20,46 +20,12 @@ import {
   Lock,
   LoaderCircle,
   AlertCircle,
-  ChevronDown,
-  ChevronUp,
-  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loginAction, devLoginAction } from "@/app/actions/auth";
+import { DevLoginPanel } from "@/components/auth/dev-login-panel";
 
-// ─── Akun dev siap pakai (sesuai backend seeds) ────────────────
-const DEV_ACCOUNTS = [
-  {
-    label: "Drafter",
-    sub: "Andi Kurniawan · Staf PA",
-    nik: "2015047",
-    color: "bg-emerald-600",
-    ring: "ring-emerald-400/40",
-  },
-  {
-    label: "Reviewer",
-    sub: "Fajar Nugroho · Analis SI",
-    nik: "2012060",
-    color: "bg-sky-600",
-    ring: "ring-sky-400/40",
-  },
-  {
-    label: "Approver",
-    sub: "Agus Setiawan · SVP TI",
-    nik: "1995021",
-    color: "bg-violet-600",
-    ring: "ring-violet-400/40",
-  },
-  {
-    label: "Admin",
-    sub: "Rudi Hartono · Administrator",
-    nik: "2014090",
-    color: "bg-amber-600",
-    ring: "ring-amber-400/40",
-  },
-] as const;
-
-// Panel dev hanya untuk pengembangan; dihapus total sebelum production.
+// Panel dev hanya untuk pengembangan; otomatis disembunyikan di production.
 const SHOW_DEV_PANEL = process.env.NODE_ENV !== "production";
 const labelClass =
   "block text-xs font-semibold tracking-wide uppercase text-text-muted mb-1.5";
@@ -77,9 +43,11 @@ export function LoginForm() {
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") ?? "/surat/daftar";
 
+  const [nikInput, setNikInput] = useState("");
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotNote, setShowForgotNote] = useState(false);
-  const [showDevPanel, setShowDevPanel] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [devLoading, setDevLoading] = useState<string | null>(null);
 
@@ -109,7 +77,7 @@ export function LoginForm() {
   }
 
   async function handleDevLogin(nik: string, label: string) {
-    setDevLoading(label);
+    setDevLoading(nik);
     setErrorMsg(null);
     const result = await devLoginAction(nik);
     setDevLoading(null);
@@ -117,7 +85,17 @@ export function LoginForm() {
       router.push(nextPath);
       router.refresh();
     } else {
-      setErrorMsg(result.error ?? "Login dev gagal. Pastikan backend berjalan.");
+      setErrorMsg(
+        result.error ?? `Login gagal sebagai ${label}. Pastikan backend berjalan dan database telah di-seed.`
+      );
+    }
+  }
+
+  function handleFillNik(nik: string) {
+    setNikInput(nik);
+    setErrorMsg(null);
+    if (passwordInputRef.current) {
+      passwordInputRef.current.focus();
     }
   }
 
@@ -154,7 +132,9 @@ export function LoginForm() {
               type="text"
               autoComplete="username"
               autoFocus
-              placeholder="Contoh: 2015047"
+              value={nikInput}
+              onChange={(e) => setNikInput(e.target.value)}
+              placeholder="Contoh: 2015047 (Andi Kurniawan)"
               className={inputClass(!!errorMsg)}
             />
           </div>
@@ -172,6 +152,7 @@ export function LoginForm() {
               aria-hidden
             />
             <input
+              ref={passwordInputRef}
               id="password"
               name="password"
               type={showPassword ? "text" : "password"}
@@ -240,69 +221,11 @@ export function LoginForm() {
 
       {/* ── Panel Akses Cepat Developer ─────────── */}
       {SHOW_DEV_PANEL && (
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        <button
-          type="button"
-          id="btn-dev-panel-toggle"
-          onClick={() => setShowDevPanel((v) => !v)}
-          className={cn(
-            "w-full flex items-center gap-2.5 px-5 py-3.5 text-sm font-medium text-text-muted",
-            "hover:bg-bg transition-colors",
-            showDevPanel && "border-b border-border"
-          )}
-        >
-          <Zap size={14} className="text-amber-500 shrink-0" />
-          <span className="flex-1 text-left">Akses Cepat Developer</span>
-          {showDevPanel ? (
-            <ChevronUp size={14} />
-          ) : (
-            <ChevronDown size={14} />
-          )}
-        </button>
-
-        {showDevPanel && (
-          <div className="p-4 space-y-2.5">
-            <p className="text-xs text-text-muted mb-3 leading-relaxed">
-              Login instan menggunakan akun seed. Hanya tersedia di mode development.
-            </p>
-            {DEV_ACCOUNTS.map((acc) => (
-              <button
-                key={acc.nik}
-                id={`btn-dev-login-${acc.label.toLowerCase()}`}
-                type="button"
-                disabled={devLoading !== null}
-                onClick={() => handleDevLogin(acc.nik, acc.label)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg border border-border",
-                  "hover:bg-bg transition-colors disabled:opacity-60 disabled:cursor-not-allowed",
-                  `ring-0 hover:ring-2 ${acc.ring}`
-                )}
-              >
-                <span
-                  className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0",
-                    acc.color
-                  )}
-                >
-                  {acc.label[0]}
-                </span>
-                <span className="flex-1 text-left">
-                  <span className="block text-sm font-semibold text-text">{acc.label}</span>
-                  <span className="block text-xs text-text-muted">{acc.sub}</span>
-                </span>
-                {devLoading === acc.label ? (
-                  <LoaderCircle size={14} className="animate-spin text-text-muted shrink-0" />
-                ) : (
-                  <ArrowRight size={14} className="text-text-muted shrink-0" />
-                )}
-              </button>
-            ))}
-            <p className="text-[11px] text-text-muted/70 pt-1 text-center">
-              NIK: 2015047 / 2012060 / 1995021 / 2014090 — password diatur via <code>SEED_PASSWORD</code> di <code>.env.local</code>
-            </p>
-          </div>
-        )}
-      </div>
+        <DevLoginPanel
+          onDevLogin={handleDevLogin}
+          onFillNik={handleFillNik}
+          devLoading={devLoading}
+        />
       )}
     </div>
   );
