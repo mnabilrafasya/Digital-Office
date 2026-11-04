@@ -2,11 +2,11 @@
 
 // ─────────────────────────────────────────────
 // components/surat/lampiran-section.tsx
-// Section 2: Lampiran
-// Validasi: PDF, DOCX, XLSX, PPTX; max 25 MB per file
+// Section 2: Lampiran (Terintegrasi MinIO /api/v1/letters/{id}/attachments)
+// Validasi: PDF, DOCX, XLSX, PPTX, DOC; maks. 25 MB per file; maks. 20 berkas per surat
 // ─────────────────────────────────────────────
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Upload,
   FileText,
@@ -19,9 +19,20 @@ import {
   Search,
   CloudUpload,
   Paperclip,
+  Loader2,
 } from "lucide-react";
-import { formatBytes, formatDateTimeWIB, generateId, mimeToLabel } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import {
+  formatBytes,
+  formatDateTimeWIB,
+  generateId,
+  mimeToLabel,
+  cn,
+} from "@/lib/utils";
+import {
+  uploadLetterAttachment,
+  deleteLetterAttachment,
+  getLetterAttachmentDownloadUrl,
+} from "@/lib/api/letter-document";
 import type { LetterAttachment } from "@/lib/types";
 
 const ALLOWED_MIME = [
@@ -31,7 +42,9 @@ const ALLOWED_MIME = [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/msword",
 ];
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".pptx", ".doc"];
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+const MAX_ATTACHMENTS = 20;
 
 interface UploadItem {
   id: string;
@@ -42,13 +55,17 @@ interface UploadItem {
   attachment?: LetterAttachment;
 }
 
-interface LampiranSectionProps {
+export interface LampiranSectionProps {
   value: LetterAttachment[];
   onChange: (attachments: LetterAttachment[]) => void;
+  letterId?: string | null;
+  ensureLetterId?: () => Promise<string>;
+  onEtagChange?: (etag: string) => void;
 }
 
 function FileIcon({ mimeType }: { mimeType: string }) {
-  if (mimeType === "application/pdf") return <FileText size={18} className="text-red-500" />;
+  if (mimeType === "application/pdf")
+    return <FileText size={18} className="text-red-500" />;
   if (mimeType.includes("spreadsheet") || mimeType.includes("excel"))
     return <FileSpreadsheet size={18} className="text-green-600" />;
   if (mimeType.includes("presentation"))
@@ -56,90 +73,230 @@ function FileIcon({ mimeType }: { mimeType: string }) {
   return <File size={18} className="text-blue-500" />;
 }
 
-export function LampiranSection({ value, onChange }: LampiranSectionProps) {
+export function LampiranSection({
+  value,
+  onChange,
+  letterId,
+  ensureLetterId,
+  onEtagChange,
+}: LampiranSectionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
+  const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
   const [filterQuery, setFilterQuery] = useState("");
 
-  function validateFile(file: File): string | null {
-    if (!ALLOWED_MIME.includes(file.type)) {
-      return `Tipe file tidak didukung. Gunakan PDF, DOCX, XLSX, atau PPTX.`;
+  const valueRef = useRef<LetterAttachment[]>(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  const letterIdRef = useRef<string | null | undefined>(letterId);
+  useEffect(() => {
+    letterIdRef.current = letterId;
+  }, [letterId]);
+
+  function validateFile(file: File, currentCount: number): string | null {
+    if (currentCount >= MAX_ATTACHMENTS) {
+      return `Maksimal ${MAX_ATTACHMENTS} berkas lampiran per surat.`;
+    }
+    const lowerName = file.name.toLowerCase();
+    const hasAllowedExt = ALLOWED_EXTENSIONS.some((ext) =>
+      lowerName.endsWith(ext)
+    );
+    const hasAllowedMime = file.type ? ALLOWED_MIME.includes(file.type) : true;
+    if (!hasAllowedExt || !hasAllowedMime) {
+      return "Tipe file tidak didukung. Gunakan PDF, DOCX, XLSX, PPTX, atau DOC.";
+    }
+    if (file.size <= 0) {
+      return "Berkas lampiran kosong.";
     }
     if (file.size > MAX_BYTES) {
-      return `Ukuran file melebihi batas 25 MB.`;
+      return "Ukuran file melebihi batas 25 MB.";
     }
     return null;
   }
 
-  function processFiles(files: FileList | File[]) {
+  async function processFiles(files: FileList | File[]) {
     const arr = Array.from(files);
-    arr.forEach((file) => {
-      const errMsg = validateFile(file);
-      const id = generateId();
+    const validQueue: Array<{ tempId: string; file: File }> = [];
+    let projectedCount = valueRef.current.length;
 
+    for (const file of arr) {
+      const tempId = generateId();
+      const errMsg = validateFile(file, projectedCount);
       if (errMsg) {
         setUploadItems((prev) => [
           ...prev,
-          { id, file, state: "error", progress: 0, errorMsg: errMsg },
+          { id: tempId, file, state: "error", progress: 0, errorMsg: errMsg },
         ]);
+      } else {
+        projectedCount++;
+        validQueue.push({ tempId, file });
+        setUploadItems((prev) => [
+          ...prev,
+          { id: tempId, file, state: "uploading", progress: 25 },
+        ]);
+      }
+    }
+
+    if (validQueue.length === 0) return;
+
+    // Jika tidak terhubung ke halaman draf (mis. mode sandbox murni), gunakan fallback lokal
+    if (!letterIdRef.current && !ensureLetterId) {
+      for (const { tempId, file } of validQueue) {
+        const attachment: LetterAttachment = {
+          id: tempId,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          uploadedAt: new Date().toISOString(),
+        };
+        const nextList = [...valueRef.current, attachment];
+        valueRef.current = nextList;
+        onChange(nextList);
+        setUploadItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? { ...item, state: "done", progress: 100, attachment }
+              : item
+          )
+        );
+      }
+      return;
+    }
+
+    let resolvedId = letterIdRef.current ?? null;
+    if (!resolvedId && ensureLetterId) {
+      try {
+        resolvedId = await ensureLetterId();
+        letterIdRef.current = resolvedId;
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Gagal membuat draf surat sebelum mengunggah lampiran.";
+        const failedIds = new Set(validQueue.map((q) => q.tempId));
+        setUploadItems((prev) =>
+          prev.map((item) =>
+            failedIds.has(item.id)
+              ? { ...item, state: "error", progress: 0, errorMsg: msg }
+              : item
+          )
+        );
         return;
       }
+    }
 
-      // Simulasi upload (tidak ada backend nyata)
-      setUploadItems((prev) => [
-        ...prev,
-        { id, file, state: "uploading", progress: 0 },
-      ]);
+    if (!resolvedId) return;
 
-      // Fake progress
-      let prog = 0;
-      const interval = setInterval(() => {
-        prog += Math.floor(Math.random() * 25) + 15;
-        if (prog >= 100) {
-          prog = 100;
-          clearInterval(interval);
-          const attachment: LetterAttachment = {
-            id,
-            fileName: file.name,
-            mimeType: file.type,
-            sizeBytes: file.size,
-            uploadedAt: new Date().toISOString(),
-          };
-          setUploadItems((prev) =>
-            prev.map((item) =>
-              item.id === id ? { ...item, state: "done", progress: 100, attachment } : item,
-            ),
-          );
-          onChange([...value, attachment]);
-        } else {
-          setUploadItems((prev) =>
-            prev.map((item) =>
-              item.id === id ? { ...item, progress: prog } : item,
-            ),
-          );
+    for (const { tempId, file } of validQueue) {
+      setUploadItems((prev) =>
+        prev.map((item) =>
+          item.id === tempId ? { ...item, progress: 65 } : item
+        )
+      );
+      try {
+        const res = await uploadLetterAttachment(resolvedId, file);
+        if (res.etag) {
+          onEtagChange?.(res.etag);
         }
-      }, 200);
-    });
+        const nextList = [...valueRef.current, res.attachment];
+        valueRef.current = nextList;
+        onChange(nextList);
+        setUploadItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                  ...item,
+                  state: "done",
+                  progress: 100,
+                  attachment: res.attachment,
+                }
+              : item
+          )
+        );
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Gagal mengunggah lampiran.";
+        setUploadItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? { ...item, state: "error", progress: 0, errorMsg: msg }
+              : item
+          )
+        );
+      }
+    }
   }
 
   function retryUpload(item: UploadItem) {
     setUploadItems((prev) => prev.filter((i) => i.id !== item.id));
-    processFiles([item.file]);
+    void processFiles([item.file]);
   }
 
-  function removeAttachment(id: string) {
-    onChange(value.filter((a) => a.id !== id));
+  function dismissErrorItem(id: string) {
     setUploadItems((prev) => prev.filter((i) => i.id !== id));
+  }
+
+  async function removeAttachment(id: string) {
+    const activeLetterId = letterIdRef.current;
+    if (activeLetterId) {
+      setDeletingIds((prev) => ({ ...prev, [id]: true }));
+      try {
+        const res = await deleteLetterAttachment(activeLetterId, id);
+        if (res.etag) {
+          onEtagChange?.(res.etag);
+        }
+      } catch (err) {
+        alert(
+          err instanceof Error
+            ? err.message
+            : "Gagal menghapus lampiran dari server."
+        );
+        setDeletingIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        return;
+      }
+      setDeletingIds((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+
+    const nextList = valueRef.current.filter((a) => a.id !== id);
+    valueRef.current = nextList;
+    onChange(nextList);
+    setUploadItems((prev) =>
+      prev.filter((i) => i.id !== id && i.attachment?.id !== id)
+    );
+  }
+
+  function handleViewAttachment(att: LetterAttachment) {
+    const activeLetterId = letterIdRef.current;
+    if (!activeLetterId) return;
+    window.open(
+      getLetterAttachmentDownloadUrl(activeLetterId, att.id),
+      "_blank",
+      "noopener,noreferrer"
+    );
   }
 
   // Gabungkan: attachment yang sudah selesai + yang error/sedang upload
   const displayAttachments = value;
-  const filtered = displayAttachments.filter((a) =>
-    filterQuery === "" || a.fileName.toLowerCase().includes(filterQuery.toLowerCase()),
+  const filtered = displayAttachments.filter(
+    (a) =>
+      filterQuery === "" ||
+      a.fileName.toLowerCase().includes(filterQuery.toLowerCase())
   );
 
-  const pendingItems = uploadItems.filter((i) => i.state === "uploading" || i.state === "error");
+  const pendingItems = uploadItems.filter(
+    (i) => i.state === "uploading" || i.state === "error"
+  );
 
   return (
     <div className="space-y-4">
@@ -149,15 +306,25 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
           "border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer",
           dragging
             ? "border-primary bg-primary/5"
-            : "border-border hover:border-primary/50 hover:bg-panel/60",
+            : "border-border hover:border-primary/50 hover:bg-panel/60"
         )}
-        onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={(e) => { e.preventDefault(); setDragging(false); }}
-        onDragOver={(e) => { e.preventDefault(); }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setDragging(false);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+        }}
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          if (e.dataTransfer.files.length > 0) processFiles(e.dataTransfer.files);
+          if (e.dataTransfer.files.length > 0) {
+            void processFiles(e.dataTransfer.files);
+          }
         }}
         onClick={() => inputRef.current?.click()}
       >
@@ -168,25 +335,34 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
           accept=".pdf,.docx,.xlsx,.pptx,.doc"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files) processFiles(e.target.files);
+            if (e.target.files) void processFiles(e.target.files);
             e.target.value = "";
           }}
         />
         <CloudUpload
           size={36}
-          className={cn("mx-auto mb-3", dragging ? "text-primary" : "text-text-muted")}
+          className={cn(
+            "mx-auto mb-3",
+            dragging ? "text-primary" : "text-text-muted"
+          )}
         />
         <p className="text-sm font-medium text-text">
           Seret & lepas berkas di sini, atau{" "}
-          <span className="text-primary underline underline-offset-2">pilih dari komputer</span>
+          <span className="text-primary underline underline-offset-2">
+            pilih dari komputer
+          </span>
         </p>
         <p className="text-xs text-text-muted mt-1">
-          Format: PDF, DOCX, XLSX, PPTX &nbsp;&bull;&nbsp; Maks. 25 MB per berkas
+          Format: PDF, DOCX, XLSX, PPTX, DOC &nbsp;&bull;&nbsp; Maks. 25 MB per
+          berkas (maks. 20 berkas)
         </p>
 
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            inputRef.current?.click();
+          }}
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors"
         >
           <Upload size={14} />
@@ -204,12 +380,14 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
                 "flex items-center gap-3 px-4 py-3 rounded-lg border text-sm",
                 item.state === "error"
                   ? "border-status-danger-bg bg-status-danger-bg/40"
-                  : "border-border bg-panel",
+                  : "border-border bg-panel"
               )}
             >
               <Paperclip size={14} className="text-text-muted shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-text truncate">{item.file.name}</div>
+                <div className="font-medium text-text truncate">
+                  {item.file.name}
+                </div>
                 {item.state === "uploading" ? (
                   <div className="mt-1.5 h-1.5 w-full bg-border rounded-full overflow-hidden">
                     <div
@@ -218,18 +396,30 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
                     />
                   </div>
                 ) : (
-                  <div className="text-status-danger-text text-xs mt-0.5">{item.errorMsg}</div>
+                  <div className="text-status-danger-text text-xs mt-0.5">
+                    {item.errorMsg}
+                  </div>
                 )}
               </div>
               {item.state === "error" && (
-                <button
-                  type="button"
-                  onClick={() => retryUpload(item)}
-                  className="text-text-muted hover:text-primary transition-colors shrink-0"
-                  title="Coba lagi"
-                >
-                  <RefreshCw size={14} />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => retryUpload(item)}
+                    className="text-text-muted hover:text-primary transition-colors"
+                    title="Coba lagi"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dismissErrorItem(item.id)}
+                    className="text-text-muted hover:text-status-danger-text transition-colors"
+                    title="Hapus pesan gagal"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               )}
             </div>
           ))}
@@ -242,7 +432,10 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
           {/* Filter + counter */}
           <div className="flex items-center gap-3">
             <div className="relative flex-1 max-w-xs">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <Search
+                size={13}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+              />
               <input
                 type="text"
                 placeholder="Saring nama berkas lampiran..."
@@ -252,7 +445,8 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
               />
             </div>
             <span className="text-xs text-text-muted whitespace-nowrap">
-              Menampilkan {filtered.length} dari {displayAttachments.length} berkas
+              Menampilkan {filtered.length} dari {displayAttachments.length}{" "}
+              berkas
             </span>
           </div>
 
@@ -262,57 +456,87 @@ export function LampiranSection({ value, onChange }: LampiranSectionProps) {
               <thead>
                 <tr className="bg-panel text-text-muted text-xs">
                   <th className="px-4 py-2.5 text-left font-semibold w-8">#</th>
-                  <th className="px-4 py-2.5 text-left font-semibold w-20">Aksi</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">Nama Berkas & Format</th>
-                  <th className="px-4 py-2.5 text-left font-semibold w-24">Ukuran</th>
-                  <th className="px-4 py-2.5 text-left font-semibold w-40">Waktu Unggah</th>
+                  <th className="px-4 py-2.5 text-left font-semibold w-20">
+                    Aksi
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold">
+                    Nama Berkas & Format
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold w-24">
+                    Ukuran
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold w-40">
+                    Waktu Unggah
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
+                    <td
+                      colSpan={5}
+                      className="px-4 py-8 text-center text-text-muted"
+                    >
                       Tidak ada berkas yang cocok dengan filter.
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((att, idx) => (
-                    <tr key={att.id} className="hover:bg-panel/50 transition-colors">
-                      <td className="px-4 py-3 text-text-muted">{idx + 1}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            title="Lihat"
-                            className="p-1.5 rounded hover:bg-panel text-text-muted hover:text-primary transition-colors"
-                          >
-                            <Eye size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            title="Hapus"
-                            onClick={() => removeAttachment(att.id)}
-                            className="p-1.5 rounded hover:bg-status-danger-bg text-text-muted hover:text-status-danger-text transition-colors"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <FileIcon mimeType={att.mimeType} />
-                          <div>
-                            <div className="font-medium text-text">{att.fileName}</div>
-                            <div className="text-xs text-text-muted">{mimeToLabel(att.mimeType)}</div>
+                  filtered.map((att, idx) => {
+                    const isDeleting = Boolean(deletingIds[att.id]);
+                    return (
+                      <tr
+                        key={att.id}
+                        className="hover:bg-panel/50 transition-colors"
+                      >
+                        <td className="px-4 py-3 text-text-muted">{idx + 1}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              title="Unduh / Lihat Lampiran"
+                              disabled={!letterId}
+                              onClick={() => handleViewAttachment(att)}
+                              className="p-1.5 rounded hover:bg-panel text-text-muted hover:text-primary transition-colors disabled:opacity-40"
+                            >
+                              <Eye size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              title="Hapus"
+                              disabled={isDeleting}
+                              onClick={() => void removeAttachment(att.id)}
+                              className="p-1.5 rounded hover:bg-status-danger-bg text-text-muted hover:text-status-danger-text transition-colors disabled:opacity-40"
+                            >
+                              {isDeleting ? (
+                                <Loader2 size={13} className="animate-spin" />
+                              ) : (
+                                <Trash2 size={13} />
+                              )}
+                            </button>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-text-muted">{formatBytes(att.sizeBytes)}</td>
-                      <td className="px-4 py-3 text-text-muted text-xs">
-                        {formatDateTimeWIB(att.uploadedAt)}
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <FileIcon mimeType={att.mimeType} />
+                            <div>
+                              <div className="font-medium text-text">
+                                {att.fileName}
+                              </div>
+                              <div className="text-xs text-text-muted">
+                                {mimeToLabel(att.mimeType)}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-text-muted">
+                          {formatBytes(att.sizeBytes)}
+                        </td>
+                        <td className="px-4 py-3 text-text-muted text-xs">
+                          {formatDateTimeWIB(att.uploadedAt)}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

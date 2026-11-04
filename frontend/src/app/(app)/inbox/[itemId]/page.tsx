@@ -21,11 +21,16 @@ import {
   CheckCircle2,
   MailOpen,
   ExternalLink,
+  FileText,
+  File,
+  FileSpreadsheet,
+  Eye,
 } from "lucide-react";
 import { getInboxItem, inboxSourceLabel } from "@/lib/api/inbox";
 import type { InboxItemDetail, ForwardRecord } from "@/lib/api/inbox";
-import { getLetter } from "@/lib/api/letter-detail";
+import { getLetter, formatBytes } from "@/lib/api/letter-detail";
 import type { LetterDetail } from "@/lib/api/letter-detail";
+import { getLetterAttachmentDownloadUrl } from "@/lib/api/letter-document";
 import { DisposisiModal } from "@/components/inbox/disposisi-modal";
 import { RedirectModal } from "@/components/inbox/redirect-modal";
 import { cn } from "@/lib/utils";
@@ -43,7 +48,21 @@ function formatDateTime(iso: string) {
   }).format(new Date(iso));
 }
 
-function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
+function fileIcon(contentType: string) {
+  if (contentType.includes("pdf"))
+    return <File size={16} className="text-red-500 shrink-0" />;
+  if (contentType.includes("spreadsheet") || contentType.includes("excel"))
+    return <FileSpreadsheet size={16} className="text-emerald-600 shrink-0" />;
+  return <FileText size={16} className="text-blue-500 shrink-0" />;
+}
+
+function MetaRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-0.5">
@@ -83,7 +102,9 @@ function ForwardItem({ f }: { f: ForwardRecord }) {
           {f.recipient.positionName}
         </p>
         {f.note && (
-          <p className="text-xs text-text-muted italic mt-0.5">"{f.note}"</p>
+          <p className="text-xs text-text-muted italic mt-0.5">
+            &ldquo;{f.note}&rdquo;
+          </p>
         )}
         <p className="text-[11px] text-text-muted/70 mt-0.5">
           {formatDateTime(f.createdAt)}
@@ -99,21 +120,22 @@ export default function InboxDetailPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const router = useRouter();
 
-  const [item,    setItem]    = useState<InboxItemDetail | null>(null);
-  const [letter,  setLetter]  = useState<LetterDetail | null>(null);
+  const [item, setItem] = useState<InboxItemDetail | null>(null);
+  const [letter, setLetter] = useState<LetterDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
-  const [modal,   setModal]   = useState<"disposisi" | "redirect" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<"disposisi" | "redirect" | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const inboxItem = await getInboxItem(itemId);
       setItem(inboxItem);
-      // Muat detail surat (untuk QR, penerima lengkap) — gagal tidak fatal
+      setError(null);
+      // Muat detail surat (untuk QR, penerima lengkap, dan lampiran) — gagal tidak fatal
       getLetter(inboxItem.letter.id)
-        .then((ld) => { if (ld) setLetter(ld); })
+        .then((ld) => {
+          if (ld) setLetter(ld);
+        })
         .catch(() => {});
     } catch (e) {
       setError((e as Error).message ?? "Gagal memuat item inbox.");
@@ -122,7 +144,33 @@ export default function InboxDetailPage() {
     }
   }, [itemId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    getInboxItem(itemId)
+      .then((inboxItem) => {
+        if (cancelled) return;
+        setItem(inboxItem);
+        setError(null);
+        getLetter(inboxItem.letter.id)
+          .then((ld) => {
+            if (!cancelled && ld) setLetter(ld);
+          })
+          .catch(() => {});
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(
+            e instanceof Error ? e.message : "Gagal memuat item inbox."
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId]);
 
   // ── Loading ──
   if (loading) {
@@ -139,7 +187,9 @@ export default function InboxDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 text-center">
         <AlertCircle size={32} className="text-status-danger-text" />
-        <p className="text-sm text-text-muted">{error ?? "Item tidak ditemukan."}</p>
+        <p className="text-sm text-text-muted">
+          {error ?? "Item tidak ditemukan."}
+        </p>
         <button
           type="button"
           onClick={() => router.push("/inbox")}
@@ -151,9 +201,9 @@ export default function InboxDetailPage() {
     );
   }
 
-  const canDispose  = item.allowedActions.includes("DISPOSE");
+  const canDispose = item.allowedActions.includes("DISPOSE");
   const canRedirect = item.allowedActions.includes("REDIRECT");
-  const hasActions  = canDispose || canRedirect;
+  const hasActions = canDispose || canRedirect;
 
   return (
     <div className={cn("space-y-4", hasActions && "pb-20")}>
@@ -198,19 +248,19 @@ export default function InboxDetailPage() {
             item.status === "UNREAD"
               ? "bg-status-danger-bg text-status-danger-text"
               : item.status === "DISPOSED"
-              ? "bg-status-info-bg text-status-info-text"
-              : item.status === "REDIRECTED"
-              ? "bg-status-warn-bg text-status-warn-text"
-              : "bg-panel text-text-muted border border-border"
+                ? "bg-status-info-bg text-status-info-text"
+                : item.status === "REDIRECTED"
+                  ? "bg-status-warn-bg text-status-warn-text"
+                  : "bg-panel text-text-muted border border-border"
           )}
         >
           {item.status === "UNREAD"
             ? "Belum Dibaca"
             : item.status === "READ"
-            ? "Sudah Dibaca"
-            : item.status === "DISPOSED"
-            ? "Didisposisikan"
-            : "Dialihkan"}
+              ? "Sudah Dibaca"
+              : item.status === "DISPOSED"
+                ? "Didisposisikan"
+                : "Dialihkan"}
         </span>
       </div>
 
@@ -252,7 +302,9 @@ export default function InboxDetailPage() {
             <div className="border border-border rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center gap-2">
                 <QrCode size={15} className="text-primary" />
-                <h3 className="text-sm font-semibold text-text">QR Persetujuan & Dokumen Resmi</h3>
+                <h3 className="text-sm font-semibold text-text">
+                  QR Persetujuan & Dokumen Resmi
+                </h3>
               </div>
               <div className="p-4 flex items-start gap-4 flex-wrap">
                 <div className="w-24 h-24 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
@@ -261,7 +313,8 @@ export default function InboxDetailPage() {
                     alt="QR Persetujuan"
                     className="w-full h-full object-contain"
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      (e.currentTarget as HTMLImageElement).style.display =
+                        "none";
                     }}
                   />
                 </div>
@@ -278,10 +331,11 @@ export default function InboxDetailPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                    <CheckCircle2 size={13} className="text-status-success-text shrink-0" />
-                    <span>
-                      {formatDateTime(letter.approval.approvedAt)}
-                    </span>
+                    <CheckCircle2
+                      size={13}
+                      className="text-status-success-text shrink-0"
+                    />
+                    <span>{formatDateTime(letter.approval.approvedAt)}</span>
                   </div>
                   <a
                     href={`/api/v1/letters/${item.letter.id}/document`}
@@ -293,6 +347,64 @@ export default function InboxDetailPage() {
                   </a>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Lampiran Berkas Pendukung */}
+          {letter && letter.attachments.length > 0 && (
+            <div className="border border-border rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-border bg-panel/30">
+                <h3 className="text-sm font-semibold text-text">
+                  Lampiran Berkas Pendukung ({letter.attachments.length} Berkas)
+                </h3>
+                <p className="text-xs text-text-muted">
+                  Total{" "}
+                  {formatBytes(
+                    letter.attachments.reduce((s, a) => s + a.size, 0)
+                  )}
+                </p>
+              </div>
+              <ul className="divide-y divide-border">
+                {letter.attachments.map((att) => {
+                  const downloadUrl = getLetterAttachmentDownloadUrl(
+                    item.letter.id,
+                    att.id
+                  );
+                  return (
+                    <li
+                      key={att.id}
+                      className="flex items-center gap-3 px-4 py-3"
+                    >
+                      {fileIcon(att.contentType)}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-text truncate">
+                          {att.fileName}
+                        </p>
+                        <p className="text-xs text-text-muted">
+                          {formatBytes(att.size)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a
+                          href={downloadUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-text-muted hover:text-primary flex items-center gap-1 transition-colors"
+                        >
+                          <Eye size={13} /> Buka
+                        </a>
+                        <a
+                          href={downloadUrl}
+                          download={att.fileName}
+                          className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+                        >
+                          <Download size={13} /> Unduh
+                        </a>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
 
@@ -414,17 +526,22 @@ export default function InboxDetailPage() {
         <DisposisiModal
           itemId={itemId}
           onClose={() => setModal(null)}
-          onSuccess={() => { setModal(null); load(); }}
+          onSuccess={() => {
+            setModal(null);
+            void load();
+          }}
         />
       )}
       {modal === "redirect" && (
         <RedirectModal
           itemId={itemId}
           onClose={() => setModal(null)}
-          onSuccess={() => { setModal(null); load(); }}
+          onSuccess={() => {
+            setModal(null);
+            void load();
+          }}
         />
       )}
     </div>
   );
 }
-
