@@ -2,7 +2,8 @@
 // Jalankan dari folder backend:
 //
 //	go run ./cmd/seed reference   -> data acuan, idempoten, aman di semua environment
-//	go run ./cmd/seed dev         -> data dummy, hanya APP_ENV=development (butuh reference)
+//	go run ./cmd/seed dev         -> data dummy, hanya APP_ENV=development (butuh reference;
+//	                                 unit PSP diambil dari snapshot HC bila belum ada)
 //	go run ./cmd/seed all         -> reference lalu dev (development)
 //
 // Setiap set dijalankan dalam satu transaksi; file diurutkan menurut nama.
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"office.backend/database"
+	"office.backend/internal/organisasi"
 	"office.backend/internal/platform/config"
 	"office.backend/internal/platform/db"
 )
@@ -90,6 +92,9 @@ SELECT (SELECT COUNT(*) FROM users),
 	if levels == 0 {
 		return fmt.Errorf("data acuan belum ada, jalankan dulu: go run ./cmd/seed reference")
 	}
+	if err := syncUnitsIfEmpty(ctx, conn); err != nil {
+		return err
+	}
 
 	password := os.Getenv("SEED_PASSWORD")
 	if len(password) < minSeedPasswordLength {
@@ -103,6 +108,39 @@ SELECT (SELECT COUNT(*) FROM users),
 		return err
 	}
 	fmt.Println("Seed dev selesai. Semua user dummy memakai password dari SEED_PASSWORD di .env.")
+	return nil
+}
+
+// hcSnapshot adalah snapshot unit HC (folder data/ diabaikan git; dibagikan lewat jalur internal).
+const hcSnapshot = "data/hc/organization.json"
+
+// syncUnitsIfEmpty mengisi unit PSP dari snapshot HC bila belum ada, supaya seed dev (jabatan dan
+// user dummy di unit asli) bisa langsung jalan. Sama dengan "go run ./cmd/sync-hc".
+func syncUnitsIfEmpty(ctx context.Context, conn *sql.DB) error {
+	var n int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM units WHERE company_code = 'PSP'").Scan(&n); err != nil {
+		return fmt.Errorf("memeriksa unit PSP: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	raw, err := os.ReadFile(hcSnapshot)
+	if err != nil {
+		return fmt.Errorf("unit PSP belum ada dan snapshot HC tidak ditemukan (%s); minta file lewat jalur internal atau jalankan go run ./cmd/sync-hc -api: %w", hcSnapshot, err)
+	}
+	units, err := organisasi.ParseHCUnits(raw)
+	if err != nil {
+		return err
+	}
+	var res organisasi.SyncResult
+	err = db.WithTx(ctx, conn, func(tx db.DBTX) error {
+		res, err = organisasi.NewRepository(tx).SyncHCUnits(ctx, "PSP", units)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("sinkronisasi unit HC: %w", err)
+	}
+	fmt.Printf("  unit PSP dari snapshot HC: %d unit ditambah\n", res.Added)
 	return nil
 }
 

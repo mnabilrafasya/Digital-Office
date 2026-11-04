@@ -8,15 +8,15 @@ import (
 	"fmt"
 )
 
-// NextNumber mengambil nomor urut berikutnya untuk unit pengirim surat pada tahun tertentu,
-// beserta kode unit dan format nomor perusahaan. Rentang nomor unit-tahun dikunci (UPDLOCK,
+// NextNumber mengambil nomor urut berikutnya untuk perusahaan surat pada tahun tertentu, beserta
+// kode unit pengirim dan format nomor perusahaan. Rentang nomor perusahaan-tahun dikunci (UPDLOCK,
 // HOLDLOCK) sampai transaksi selesai, jadi dua surat yang terbit bersamaan tidak mendapat nomor
 // yang sama. Wajib dipanggil di dalam transaksi.
 func (r *Repository) NextNumber(ctx context.Context, letterID int64, year int) (int, string, string, error) {
 	const q = `
 SELECT un.code, ISNULL(c.letter_number_format, ''),
        ISNULL((SELECT MAX(x.number_seq) FROM letters x WITH (UPDLOCK, HOLDLOCK)
-               WHERE x.sender_unit_id = l.sender_unit_id AND x.number_year = @year
+               WHERE x.company_code = l.company_code AND x.number_year = @year
                  AND x.number_seq IS NOT NULL), 0) + 1
 FROM letters l
 JOIN units un     ON un.id = l.sender_unit_id

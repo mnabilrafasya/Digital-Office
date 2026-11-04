@@ -29,7 +29,7 @@ type letterCore struct {
 // lastMoveSQL adalah waktu perpindahan terakhir surat l: aksi alur terakhir selain READ/SAVE, atau
 // waktu surat dibuat bila belum pernah berpindah.
 const lastMoveSQL = `COALESCE((SELECT MAX(x.created_at) FROM letter_actions x
-          WHERE x.letter_id = l.id AND x.action NOT IN ('READ', 'SAVE') AND x.deleted_at IS NULL), l.created_at)`
+          WHERE x.letter_id = l.id AND x.action NOT IN ('READ', 'SAVE')), l.created_at)`
 
 // holderStepSQL adalah step reviewer milik pemegang surat l (NULL bila pemegangnya bukan reviewer).
 const holderStepSQL = `(SELECT TOP 1 lp.step_order FROM letter_participants lp
@@ -86,7 +86,7 @@ func (r *Repository) involvement(ctx context.Context, letterID, userID int64) (p
 SELECT CASE WHEN EXISTS (SELECT 1 FROM letter_participants
                          WHERE letter_id = @letterId AND user_id = @userId AND deleted_at IS NULL) THEN 1 ELSE 0 END,
        CASE WHEN EXISTS (SELECT 1 FROM inbox_items
-                         WHERE letter_id = @letterId AND user_id = @userId AND deleted_at IS NULL) THEN 1 ELSE 0 END`
+                         WHERE letter_id = @letterId AND user_id = @userId) THEN 1 ELSE 0 END`
 	err = r.q.QueryRowContext(ctx, q, sql.Named("letterId", letterID), sql.Named("userId", userID)).Scan(&participant, &recipient)
 	if err != nil {
 		return false, false, fmt.Errorf("memeriksa akses pelacakan: %w", err)
@@ -115,7 +115,7 @@ JOIN users u           ON u.id = a.actor_id
 JOIN positions p       ON p.id = u.position_id
 LEFT JOIN users t      ON t.id = a.target_user_id
 LEFT JOIN positions tp ON tp.id = t.position_id
-WHERE a.letter_id = @letterId AND a.deleted_at IS NULL
+WHERE a.letter_id = @letterId
 ORDER BY a.id`
 	rows, err := r.q.QueryContext(ctx, q, sql.Named("letterId", letterID))
 	if err != nil {
@@ -166,7 +166,7 @@ FROM inbox_items i
 JOIN users u                 ON u.id = i.user_id
 JOIN positions p             ON p.id = u.position_id
 LEFT JOIN letter_forwards fw ON fw.id = i.forward_id
-WHERE i.letter_id = @letterId AND i.deleted_at IS NULL
+WHERE i.letter_id = @letterId
 ORDER BY i.id`
 	rows, err := r.q.QueryContext(ctx, q, sql.Named("letterId", letterID))
 	if err != nil {

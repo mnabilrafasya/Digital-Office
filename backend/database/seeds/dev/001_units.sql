@@ -1,37 +1,19 @@
 -- 001_units.sql
--- DATA DUMMY DEVELOPMENT: unit kerja (Direktorat -> Kompartemen/Departemen -> Bagian).
--- Hanya dijalankan oleh "go run ./cmd/seed dev" saat APP_ENV=development.
+-- DATA DUMMY DEVELOPMENT: unit kerja.
+-- Unit PSP berasal dari HC (go run ./cmd/sync-hc) dan wajib sudah ada; di sini hanya unit PKG
+-- (Petrokimia Gresik, fiktif) untuk uji pemisahan data antar perusahaan.
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
--- Level 1: Direktorat (tanpa induk)
+IF NOT EXISTS (SELECT 1 FROM units WHERE company_code = 'PSP' AND is_active = 1)
+    THROW 50100, N'Unit PSP belum ada: jalankan "go run ./cmd/sync-hc" dulu, lalu ulangi seed dev', 1;
+
 INSERT INTO units (company_code, parent_id, unit_type, code, name) VALUES
-    ('PSP', NULL, 'DIREKTORAT', 'DU',  N'Direktorat Utama'),
-    ('PSP', NULL, 'DIREKTORAT', 'DKU', N'Direktorat Keuangan dan Umum'),
-    ('PSP', NULL, 'DIREKTORAT', 'DOP', N'Direktorat Operasi dan Produksi'),
     ('PKG', NULL, 'DIREKTORAT', 'DKU', N'Direktorat Keuangan dan Umum');
 
--- Level 2: Kompartemen / Departemen
 INSERT INTO units (company_code, parent_id, unit_type, code, name)
-SELECT v.company_code, p.id, v.unit_type, v.code, v.name
-FROM (VALUES
-    ('PSP', 'DU',  'KOMPARTEMEN', 'SP',  N'Kompartemen Sekretariat Perusahaan'),
-    ('PSP', 'DKU', 'KOMPARTEMEN', 'TI',  N'Kompartemen Teknologi Informasi'),
-    ('PSP', 'DKU', 'DEPARTEMEN',  'SDM', N'Departemen Sumber Daya Manusia'),
-    ('PSP', 'DKU', 'DEPARTEMEN',  'AK',  N'Departemen Akuntansi dan Keuangan'),
-    ('PSP', 'DOP', 'KOMPARTEMEN', 'PRD', N'Kompartemen Produksi'),
-    ('PKG', 'DKU', 'DEPARTEMEN',  'TI',  N'Departemen Teknologi Informasi')
-) AS v (company_code, parent_code, unit_type, code, name)
-JOIN units p ON p.company_code = v.company_code AND p.code = v.parent_code;
+SELECT 'PKG', p.id, 'DEPARTEMEN', 'TI', N'Departemen Teknologi Informasi'
+FROM units p
+WHERE p.company_code = 'PKG' AND p.code = 'DKU';
 
--- Level 3: Bagian
-INSERT INTO units (company_code, parent_id, unit_type, code, name)
-SELECT v.company_code, p.id, v.unit_type, v.code, v.name
-FROM (VALUES
-    ('PSP', 'TI',  'BAGIAN', 'PA',  N'Bagian Pengembangan Aplikasi'),
-    ('PSP', 'TI',  'BAGIAN', 'IKT', N'Bagian Infrastruktur dan Keamanan TI'),
-    ('PSP', 'PRD', 'BAGIAN', 'OP',  N'Bagian Operasi Pabrik')
-) AS v (company_code, parent_code, unit_type, code, name)
-JOIN units p ON p.company_code = v.company_code AND p.code = v.parent_code;
-
-IF (SELECT COUNT(*) FROM units) <> 13 THROW 50101, N'Seed dev gagal: jumlah units harus 13', 1;
+IF (SELECT COUNT(*) FROM units WHERE company_code = 'PKG') <> 2 THROW 50101, N'Seed dev gagal: jumlah unit PKG harus 2', 1;

@@ -37,7 +37,7 @@ type Filter struct {
 func (f Filter) where(withStatus bool) (string, []any) {
 	var sb strings.Builder
 	sb.WriteString(`
-WHERE i.user_id = @userId AND i.deleted_at IS NULL
+WHERE i.user_id = @userId
   AND l.company_code = @companyCode AND l.deleted_at IS NULL`)
 	args := []any{sql.Named("userId", f.UserID), sql.Named("companyCode", f.CompanyCode)}
 	if withStatus && len(f.Statuses) > 0 {
@@ -185,7 +185,7 @@ func (r *Repository) HasItem(ctx context.Context, letterID, userID int64) (bool,
 	const q = `
 SELECT CASE WHEN EXISTS (
     SELECT 1 FROM inbox_items
-    WHERE letter_id = @letterId AND user_id = @userId AND deleted_at IS NULL) THEN 1 ELSE 0 END`
+    WHERE letter_id = @letterId AND user_id = @userId) THEN 1 ELSE 0 END`
 	var found bool
 	if err := r.q.QueryRowContext(ctx, q, sql.Named("letterId", letterID), sql.Named("userId", userID)).Scan(&found); err != nil {
 		return false, fmt.Errorf("memeriksa inbox: %w", err)

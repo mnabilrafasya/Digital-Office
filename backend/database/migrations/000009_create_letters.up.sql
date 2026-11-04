@@ -82,8 +82,8 @@ CREATE TABLE letters (
 
 -- Nomor surat unik selamanya (tidak difilter deleted_at)
 CREATE UNIQUE INDEX uq_letters_letter_number ON letters (letter_number) WHERE letter_number IS NOT NULL;
--- Nomor urut unik per unit per tahun
-CREATE UNIQUE INDEX uq_letters_unit_year_seq ON letters (sender_unit_id, number_year, number_seq) WHERE number_seq IS NOT NULL;
+-- Nomor urut unik per perusahaan per tahun
+CREATE UNIQUE INDEX uq_letters_company_year_seq ON letters (company_code, number_year, number_seq) WHERE number_seq IS NOT NULL;
 -- Daftar tugas (reviewer/approver), daftar surat drafter, dan daftar per perusahaan
 CREATE INDEX ix_letters_assignee_status ON letters (current_assignee_id, status) WHERE deleted_at IS NULL;
 CREATE INDEX ix_letters_drafter_status  ON letters (drafter_id, status)          WHERE deleted_at IS NULL;

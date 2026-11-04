@@ -1,5 +1,6 @@
 -- 000005_create_units.up.sql
--- Unit kerja bertingkat (Direktorat -> Kompartemen/Departemen -> Bagian) per perusahaan.
+-- Unit kerja bertingkat (Direktorat -> Kompartemen -> Departemen -> Bagian) per perusahaan.
+-- Unit PSP diisi dari HC lewat "go run ./cmd/sync-hc": code = UID unit di HC (kunci sinkronisasi).
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 
@@ -8,7 +9,7 @@ CREATE TABLE units (
     company_code  VARCHAR(20)    NOT NULL,
     parent_id     BIGINT         NULL,
     unit_type     VARCHAR(30)    NOT NULL,
-    code          VARCHAR(20)    NOT NULL,
+    code          VARCHAR(36)    NOT NULL,
     name          NVARCHAR(150)  NOT NULL,
     is_active     BIT            NOT NULL CONSTRAINT df_units_is_active  DEFAULT 1,
     created_at    DATETIMEOFFSET NOT NULL CONSTRAINT df_units_created_at DEFAULT SYSDATETIMEOFFSET(),

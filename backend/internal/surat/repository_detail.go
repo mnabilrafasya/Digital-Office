@@ -57,7 +57,7 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        a.id, a.name, ap.name, ISNULL(l.forwarded_by_id, 0),
        sb.id, sb.name, sbp.name,
        (SELECT TOP 1 ra.note FROM letter_actions ra
-        WHERE ra.letter_id = l.id AND ra.action = 'RETURN' AND ra.deleted_at IS NULL
+        WHERE ra.letter_id = l.id AND ra.action = 'RETURN'
         ORDER BY ra.id DESC),
        l.current_version_number, l.created_at, l.updated_at
 FROM letters l
