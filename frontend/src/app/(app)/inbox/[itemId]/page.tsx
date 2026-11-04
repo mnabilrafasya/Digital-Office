@@ -33,6 +33,7 @@ import type { LetterDetail } from "@/lib/api/letter-detail";
 import { getLetterAttachmentDownloadUrl } from "@/lib/api/letter-document";
 import { DisposisiModal } from "@/components/inbox/disposisi-modal";
 import { RedirectModal } from "@/components/inbox/redirect-modal";
+import { LetterTrackingPanel } from "@/components/review/letter-tracking-panel";
 import { cn } from "@/lib/utils";
 
 // ─── Helper ──────────────────────────────────
@@ -430,6 +431,9 @@ export default function InboxDetailPage() {
               Belum ada penerusan dari item ini.
             </div>
           )}
+
+          {/* Pelacakan Cabang Distribusi Penerima */}
+          <LetterTrackingPanel letterId={item.letter.id} />
         </div>
 
         {/* ─ Kolom Kanan ─ */}

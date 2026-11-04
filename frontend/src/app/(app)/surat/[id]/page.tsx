@@ -36,6 +36,7 @@ import { LetterSteps } from "@/components/review/letter-steps";
 import { ReviewModals } from "@/components/review/review-modals";
 import { ReviewDocumentViewer } from "@/components/review/document-viewer";
 import { ApproverPanel } from "@/components/review/approver-panel";
+import { LetterTrackingPanel } from "@/components/review/letter-tracking-panel";
 import { cn } from "@/lib/utils";
 
 // ─── Helper kecil ────────────────────────────
@@ -457,6 +458,9 @@ export default function SuratDetailPage() {
               Tidak ada berkas lampiran.
             </div>
           )}
+
+          {/* Lacak Posisi, Pohon Distribusi, Riwayat Versi Naskah (.docx), & Audit Surat */}
+          <LetterTrackingPanel letterId={letter.id} showVersions />
         </div>
 
         {/* ─ Kolom Kanan ─ */}
