@@ -25,6 +25,14 @@ export interface UnitItem {
   headPositionName: string | null;
 }
 
+export interface RecipientAliasItem {
+  levelId: string;
+  code: string;
+  name?: string;
+  label: string;
+  memberCount: number;
+}
+
 export interface CandidateItem {
   id: string;
   name: string;
@@ -69,11 +77,15 @@ export async function fetchLookups(
   return get<LookupItem[]>(`/lookups?category=${category}`);
 }
 
-// ─── Units ───────────────────────────────────
+// ─── Units & Recipient Aliases ───────────────
 
 export async function fetchUnits(q?: string): Promise<UnitItem[]> {
   const search = q ? `?q=${encodeURIComponent(q)}` : "";
   return get<UnitItem[]>(`/units${search}`);
+}
+
+export async function fetchRecipientAliases(): Promise<RecipientAliasItem[]> {
+  return get<RecipientAliasItem[]>("/recipients/aliases");
 }
 
 // ─── Candidates (Reviewer / Approver) ────────

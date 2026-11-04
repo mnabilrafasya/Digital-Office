@@ -19,3 +19,4 @@ Perintah tambahan:
 | `go run ./cmd/sync-hc` | Memperbarui unit PSP dari snapshot HC |
 | `go run ./cmd/sync-hc -api` | Memperbarui unit PSP langsung dari API HC (butuh VPN dan token di `.env`) |
 | `go test ./...` | Menjalankan semua test |
+| `go run ./cmd/seed reference` | 

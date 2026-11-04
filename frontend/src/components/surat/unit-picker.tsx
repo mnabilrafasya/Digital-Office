@@ -2,13 +2,18 @@
 
 // ─────────────────────────────────────────────
 // components/surat/unit-picker.tsx
-// Picker tujuan surat / tembusan — unit dari backend
-// GET /api/v1/units?q=... (dengan debounce)
+// Picker tujuan surat / tembusan — unit & alias level dari backend
+// GET /api/v1/units?q=... & GET /api/v1/recipients/aliases
 // ─────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from "react";
-import { Search, X, Plus, Building2, Loader2 } from "lucide-react";
-import { fetchUnits, type UnitItem } from "@/lib/api/form";
+import { Search, X, Plus, Building2, Users, Loader2 } from "lucide-react";
+import {
+  fetchUnits,
+  fetchRecipientAliases,
+  type UnitItem,
+  type RecipientAliasItem,
+} from "@/lib/api/form";
 import { cn } from "@/lib/utils";
 
 interface UnitEntry {
@@ -21,7 +26,7 @@ interface UnitPickerProps {
   value: UnitEntry[];
   onChange: (entries: UnitEntry[]) => void;
   error?: string;
-  /** Unit yang tidak boleh dipilih (unit yang sudah ada di Tujuan tidak bisa di Tembusan) */
+  /** Unit/alias yang tidak boleh dipilih (yang sudah ada di Tujuan tidak bisa di Tembusan) */
   excludeIds?: string[];
 }
 
@@ -35,13 +40,22 @@ export function UnitPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [units, setUnits] = useState<UnitItem[]>([]);
+  const [aliases, setAliases] = useState<RecipientAliasItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedIds = new Set(value.map((u) => u.id));
 
-  // Fetch dari backend saat panel terbuka atau query berubah
+  // Fetch alias level sekali saat panel pertama kali dibuka
+  useEffect(() => {
+    if (!open || aliases.length > 0) return;
+    fetchRecipientAliases()
+      .then((data) => setAliases(data))
+      .catch(() => {});
+  }, [open, aliases.length]);
+
+  // Fetch unit dari backend saat panel terbuka atau query berubah
   useEffect(() => {
     if (!open) return;
 
@@ -55,20 +69,32 @@ export function UnitPicker({
           setFetchError(e instanceof Error ? e.message : "Gagal memuat unit.");
         })
         .finally(() => setLoading(false));
-    }, 300); // debounce 300ms
+    }, 300);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [open, query]);
 
-  // Filter lokal: sembunyikan yang sudah dipilih dan yang di-exclude
-  const filtered = units.filter(
-    (u) => !selectedIds.has(u.id) && !excludeIds.includes(u.id),
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredAliases = aliases.filter((a) => {
+    const aliasId = `alias-${a.levelId}`;
+    if (selectedIds.has(aliasId) || excludeIds.includes(aliasId)) return false;
+    if (!normalizedQuery) return true;
+    return (
+      a.label.toLowerCase().includes(normalizedQuery) ||
+      a.code.toLowerCase().includes(normalizedQuery)
+    );
+  });
+
+  // Filter lokal: sembunyikan unit yang sudah dipilih dan yang di-exclude
+  const filteredUnits = units.filter(
+    (u) => !selectedIds.has(u.id) && !excludeIds.includes(u.id)
   );
 
-  function addUnit(unit: UnitItem) {
-    onChange([...value, { id: unit.id, name: unit.name }]);
+  function addEntry(entry: UnitEntry) {
+    onChange([...value, entry]);
     setQuery("");
     setOpen(false);
   }
@@ -79,26 +105,29 @@ export function UnitPicker({
 
   return (
     <div className="space-y-2">
-      {/* Chip unit yang dipilih */}
+      {/* Chip unit / alias yang dipilih */}
       {value.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {value.map((unit) => (
-            <span
-              key={unit.id}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
-            >
-              <Building2 size={11} />
-              {unit.name}
-              <button
-                type="button"
-                onClick={() => removeUnit(unit.id)}
-                className="text-primary/60 hover:text-status-danger-text transition-colors ml-0.5"
-                aria-label={`Hapus ${unit.name}`}
+          {value.map((unit) => {
+            const isAlias = unit.id.startsWith("alias-");
+            return (
+              <span
+                key={unit.id}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
               >
-                <X size={11} />
-              </button>
-            </span>
-          ))}
+                {isAlias ? <Users size={11} /> : <Building2 size={11} />}
+                {unit.name}
+                <button
+                  type="button"
+                  onClick={() => removeUnit(unit.id)}
+                  className="text-primary/60 hover:text-status-danger-text transition-colors ml-0.5"
+                  aria-label={`Hapus ${unit.name}`}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 
@@ -109,7 +138,7 @@ export function UnitPicker({
         className={cn(
           "flex items-center gap-1.5 text-sm text-primary hover:text-primary-dark",
           "border border-dashed border-primary/40 hover:border-primary",
-          "px-3 py-2 rounded-lg w-full justify-center transition-colors",
+          "px-3 py-2 rounded-lg w-full justify-center transition-colors"
         )}
       >
         <Plus size={14} />
@@ -124,7 +153,7 @@ export function UnitPicker({
             <input
               autoFocus
               type="text"
-              placeholder="Cari nama unit..."
+              placeholder="Cari nama unit atau alias jabatan (mis. Seluruh VP)..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="flex-1 text-sm outline-none bg-transparent text-text placeholder-text-muted"
@@ -150,35 +179,66 @@ export function UnitPicker({
               <li className="px-4 py-6 text-center text-status-danger-text text-sm">
                 {fetchError}
               </li>
-            ) : filtered.length === 0 ? (
+            ) : filteredAliases.length === 0 && filteredUnits.length === 0 ? (
               <li className="px-4 py-6 text-center text-text-muted text-sm">
-                {query ? "Unit tidak ditemukan." : "Tidak ada unit tersedia."}
+                {query ? "Unit atau alias tidak ditemukan." : "Tidak ada unit tersedia."}
               </li>
             ) : (
-              filtered.map((unit) => (
-                <li key={unit.id}>
-                  <button
-                    type="button"
-                    onClick={() => addUnit(unit)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-start gap-2"
-                  >
-                    <Building2 size={13} className="text-text-muted shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-sm text-text">{unit.name}</div>
-                      {unit.headPositionName && (
-                        <div className="text-xs text-text-muted">{unit.headPositionName}</div>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              ))
+              <>
+                {filteredAliases.map((alias) => (
+                  <li key={`alias-${alias.levelId}`}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        addEntry({
+                          id: `alias-${alias.levelId}`,
+                          name: alias.label,
+                        })
+                      }
+                      className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-start gap-2 bg-primary/[0.02]"
+                    >
+                      <Users size={13} className="text-primary shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-sm font-medium text-text">
+                          {alias.label}
+                        </div>
+                        <div className="text-xs text-text-muted">
+                          Alias Jabatan &bull; {alias.memberCount} pimpinan unit aktif
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+                {filteredUnits.map((unit) => (
+                  <li key={unit.id}>
+                    <button
+                      type="button"
+                      onClick={() => addEntry({ id: unit.id, name: unit.name })}
+                      className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-start gap-2"
+                    >
+                      <Building2 size={13} className="text-text-muted shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-sm text-text">{unit.name}</div>
+                        {unit.headPositionName && (
+                          <div className="text-xs text-text-muted">
+                            {unit.headPositionName}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </>
             )}
           </ul>
 
           <div className="px-3 py-2 border-t border-border flex justify-end">
             <button
               type="button"
-              onClick={() => { setOpen(false); setQuery(""); }}
+              onClick={() => {
+                setOpen(false);
+                setQuery("");
+              }}
               className="text-xs text-text-muted hover:text-text"
             >
               Tutup
@@ -188,9 +248,7 @@ export function UnitPicker({
       )}
 
       {/* Error validasi */}
-      {error && (
-        <p className="text-status-danger-text text-xs mt-1">{error}</p>
-      )}
+      {error && <p className="text-status-danger-text text-xs mt-1">{error}</p>}
     </div>
   );
 }

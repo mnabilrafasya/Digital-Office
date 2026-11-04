@@ -8,7 +8,6 @@
 // ─────────────────────────────────────────────
 
 import { fetchLookups } from "./form";
-import type { BuatSuratFormValues } from "@/lib/schemas";
 import type { LetterDetail } from "./letter-detail";
 
 const API = "/api/v1";
@@ -64,10 +63,25 @@ export interface FormInputValues {
   title?: string | null;
   summary?: string | null;
   specialNote?: string | null;
-  reviewers?: Array<{ employeeId?: string; [key: string]: any }> | null;
-  approvers?: Array<{ employeeId?: string; [key: string]: any }> | null;
-  toUnits?: Array<{ id?: string; [key: string]: any }> | null;
-  ccUnits?: Array<{ id?: string; [key: string]: any }> | null;
+  reviewers?: Array<{ employeeId?: string; [key: string]: unknown }> | null;
+  approvers?: Array<{ employeeId?: string; [key: string]: unknown }> | null;
+  toUnits?: Array<{ id?: string; [key: string]: unknown }> | null;
+  ccUnits?: Array<{ id?: string; [key: string]: unknown }> | null;
+}
+
+function mapRecipientInput(
+  entry?: { id?: string; [key: string]: unknown } | null
+): { unitId: string } | { aliasLevelId: string } | null {
+  if (!entry || !entry.id) return null;
+  const rawId = String(entry.id).trim();
+  const aliasMatch = /^alias-(\d+)$/.exec(rawId);
+  if (aliasMatch) {
+    return { aliasLevelId: aliasMatch[1] };
+  }
+  if (/^\d+$/.test(rawId)) {
+    return { unitId: rawId };
+  }
+  return null;
 }
 
 /** Mengonversi nilai form BuatSuratFormValues ke payload LetterInput backend */
@@ -99,12 +113,16 @@ export async function formValuesToLetterInput(values: FormInputValues) {
       : undefined;
 
   const toRecipients = (values.toUnits ?? [])
-    .filter((u) => u && u.id && /^\d+$/.test(String(u.id).trim()))
-    .map((u) => ({ unitId: String(u.id).trim() }));
+    .map(mapRecipientInput)
+    .filter(
+      (r): r is { unitId: string } | { aliasLevelId: string } => r !== null
+    );
 
   const ccRecipients = (values.ccUnits ?? [])
-    .filter((u) => u && u.id && /^\d+$/.test(String(u.id).trim()))
-    .map((u) => ({ unitId: String(u.id).trim() }));
+    .map(mapRecipientInput)
+    .filter(
+      (r): r is { unitId: string } | { aliasLevelId: string } => r !== null
+    );
 
   return {
     letterTypeId:

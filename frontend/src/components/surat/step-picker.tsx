@@ -6,6 +6,8 @@
 // - Tampilan user/icon dibuat menyamping (seperti unit-picker)
 // - Dibatasi maksimal 10 orang
 // - Membaca "Kode Alias" / role: 'R' (Reviewer) & 'A' (Approver)
+// - Sesuai aturan backend terbaru: pejabat yang berwenang (PIMPINAN)
+//   diperbolehkan menjadi Reviewer sekaligus Approver pada surat yang sama.
 // ─────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from "react";
@@ -15,7 +17,6 @@ import {
   Plus,
   User,
   CheckCircle2,
-  AlertTriangle,
   Loader2,
   SlidersHorizontal,
   ChevronDown,
@@ -33,7 +34,7 @@ interface StepPickerProps {
   value: StepEntry[];
   onChange: (entries: StepEntry[]) => void;
   error?: string;
-  /** ID pegawai yang sudah dipilih di role lain (warning duplikat lintas role) */
+  /** ID pegawai yang sudah dipilih di role lain (info lintas peran, tidak memblokir) */
   otherRoleIds?: string[];
 }
 
@@ -45,7 +46,6 @@ export function StepPicker({
   error,
   otherRoleIds = [],
 }: StepPickerProps) {
-  // FE membuat kondisi: Jika dapat 'R' tampilkan view Reviewer, jika dapat 'A' tampilkan view Approver
   const rawCode = (kodeAlias || role || "R").toUpperCase();
   const isApprover = rawCode === "A" || rawCode === "APPROVER";
   const roleLabel = isApprover ? "Approver" : "Reviewer";
@@ -100,13 +100,6 @@ export function StepPicker({
   });
 
   function addCandidate(candidate: CandidateItem) {
-    if (otherRoleIds.includes(candidate.id)) {
-      alert(
-        `Pegawai ini sudah dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}. Seseorang tidak boleh menjadi Reviewer sekaligus Approver.`
-      );
-      return;
-    }
-
     const entry: StepEntry = {
       id: generateId(),
       employeeId: candidate.id,
@@ -129,7 +122,7 @@ export function StepPicker({
     onChange(value.filter((e) => e.id !== entryId));
   }
 
-  const duplicateIds = value
+  const alsoInOtherRoleIds = value
     .filter((e) => otherRoleIds.includes(e.employeeId))
     .map((e) => e.employeeId);
 
@@ -139,39 +132,35 @@ export function StepPicker({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-2 items-center">
           {value.map((entry, idx) => {
-            const isDuplicate = duplicateIds.includes(entry.employeeId);
+            const isAlsoInOtherRole = alsoInOtherRoleIds.includes(entry.employeeId);
             return (
               <span
                 key={entry.id}
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors",
-                  isDuplicate
-                    ? "bg-status-danger-bg text-status-danger-text border border-status-danger-text/60 font-semibold"
-                    : isApprover
-                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                      : "bg-primary/10 text-primary border border-primary/20"
+                  isApprover
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                    : "bg-primary/10 text-primary border border-primary/20"
                 )}
                 title={
-                  isDuplicate
-                    ? `Perhatian: ${entry.employeeName} juga dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}`
+                  isAlsoInOtherRole
+                    ? `${entry.employeeName} • ${entry.jabatan} • ${entry.unitName} (Juga dipilih sebagai ${isApprover ? "Reviewer" : "Approver"})`
                     : `${entry.employeeName} • ${entry.jabatan} • ${entry.unitName}`
                 }
               >
                 {/* User / Approver Icon & Kode Tag */}
                 {isApprover ? (
-                  <CheckCircle2 size={12} className={cn("shrink-0", isDuplicate ? "text-status-danger-text" : "text-emerald-600")} />
+                  <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />
                 ) : (
-                  <User size={12} className={cn("shrink-0", isDuplicate ? "text-status-danger-text" : "text-primary")} />
+                  <User size={12} className="shrink-0 text-primary" />
                 )}
 
                 <span
                   className={cn(
                     "px-1.5 py-0.2 rounded-full text-[10px] font-bold leading-none shrink-0",
-                    isDuplicate
-                      ? "bg-status-danger-text text-white"
-                      : isApprover
-                        ? "bg-emerald-200 text-emerald-900"
-                        : "bg-primary/20 text-primary"
+                    isApprover
+                      ? "bg-emerald-200 text-emerald-900"
+                      : "bg-primary/20 text-primary"
                   )}
                 >
                   {isApprover ? `A${idx + 1}` : `R${idx + 1}`}
@@ -180,12 +169,6 @@ export function StepPicker({
                 <span className="truncate max-w-40 sm:max-w-50 font-medium">
                   {entry.employeeName}
                 </span>
-
-                {isDuplicate && (
-                  <span title={`Konflik: Juga dipilih di role lain`} className="text-status-danger-text shrink-0">
-                    <AlertTriangle size={12} />
-                  </span>
-                )}
 
                 <button
                   type="button"
@@ -198,17 +181,6 @@ export function StepPicker({
               </span>
             );
           })}
-        </div>
-      )}
-
-      {/* Banner peringatan jika terdapat duplikat antar role */}
-      {duplicateIds.length > 0 && (
-        <div className="p-2.5 rounded-lg bg-status-danger-bg border border-status-danger-text/30 flex items-start gap-2 text-xs text-status-danger-text">
-          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-          <span>
-            <strong>Konflik Peran:</strong> Pegawai yang ditandai merah di atas sudah dipilih sebagai {isApprover ? "Reviewer" : "Approver"}.
-            Satu orang tidak boleh menjadi Reviewer sekaligus Approver. Silakan hapus salah satunya.
-          </span>
         </div>
       )}
 
@@ -276,7 +248,7 @@ export function StepPicker({
                     : "bg-surface border-border text-text hover:border-text-muted/50"
                 )}
               >
-                <option value="">🏢 Semua Unit {availableUnits.length > 0 ? `(${availableUnits.length})` : ""}</option>
+                <option value="">Semua Unit {availableUnits.length > 0 ? `(${availableUnits.length})` : ""}</option>
                 {availableUnits.map((u) => (
                   <option key={u} value={u}>
                     {u}
@@ -299,7 +271,7 @@ export function StepPicker({
                     : "bg-surface border-border text-text hover:border-text-muted/50"
                 )}
               >
-                <option value="">👔 Semua Posisi {availablePositions.length > 0 ? `(${availablePositions.length})` : ""}</option>
+                <option value="">Semua Posisi {availablePositions.length > 0 ? `(${availablePositions.length})` : ""}</option>
                 {availablePositions.map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -348,19 +320,8 @@ export function StepPicker({
                   <li key={c.id}>
                     <button
                       type="button"
-                      disabled={isAlreadyInOtherRole}
                       onClick={() => addCandidate(c)}
-                      className={cn(
-                        "w-full text-left px-4 py-2.5 transition-colors flex items-center gap-2",
-                        isAlreadyInOtherRole
-                          ? "opacity-50 cursor-not-allowed bg-panel/30"
-                          : "hover:bg-panel cursor-pointer"
-                      )}
-                      title={
-                        isAlreadyInOtherRole
-                          ? `Pegawai ini sudah dipilih sebagai ${isApprover ? "Reviewer" : "Approver"}`
-                          : undefined
-                      }
+                      className="w-full text-left px-4 py-2.5 transition-colors flex items-center gap-2 hover:bg-panel cursor-pointer"
                     >
                       {isApprover ? (
                         <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
@@ -371,8 +332,8 @@ export function StepPicker({
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-text truncate">{c.name}</span>
                           {isAlreadyInOtherRole && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-status-danger-bg text-status-danger-text border border-status-danger-text/20">
-                              Sudah jadi {isApprover ? "Reviewer" : "Approver"}
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-status-info-bg text-status-info-text border border-status-info-text/20">
+                              Juga jadi {isApprover ? "Reviewer" : "Approver"}
                             </span>
                           )}
                         </div>
