@@ -84,12 +84,24 @@ func newRouter(d routerDeps) http.Handler {
 					r.Get("/versions", d.Surat.Versions)
 					r.Get("/document", d.Surat.Document)
 					r.Put("/document", d.Surat.SaveDocument)
+					r.Post("/attachments", d.Surat.AddAttachment)
+					r.Get("/attachments/{attachmentId}", d.Surat.Attachment)
+					r.Delete("/attachments/{attachmentId}", d.Surat.RemoveAttachment)
 					r.Post("/submit", d.Surat.Submit)
 					r.Post("/approve", d.Surat.Approve)
 					r.Post("/return", d.Surat.Return)
 					r.Get("/tracking", d.Audit.Tracking)
 					r.With(auth.RequirePermission(auth.AuditView)).Get("/audit", d.Audit.LetterLogs)
 				})
+			})
+
+			// Template naskah: semua user perusahaan boleh memakai; membuat dan mengganti butuh
+			// TEMPLATE_CREATE (dimiliki semua role)
+			r.Route("/templates", func(r chi.Router) {
+				r.Get("/", d.Surat.Templates)
+				r.With(auth.RequirePermission(auth.TemplateCreate)).Post("/", d.Surat.CreateTemplate)
+				r.Get("/{templateId}/file", d.Surat.TemplateFile)
+				r.With(auth.RequirePermission(auth.TemplateCreate)).Put("/{templateId}", d.Surat.UpdateTemplate)
 			})
 
 			// Audit log dan pantauan surat hanya untuk pemegang AUDIT_VIEW

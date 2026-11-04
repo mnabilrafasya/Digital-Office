@@ -91,6 +91,9 @@ func (s *Service) present(d *LetterDetail, user *auth.CurrentUser) {
 	if d.Approval != nil {
 		d.Approval.ApprovedAt = d.Approval.ApprovedAt.In(s.loc)
 	}
+	for i := range d.Attachments {
+		d.Attachments[i].UploadedAt = d.Attachments[i].UploadedAt.In(s.loc)
+	}
 }
 
 // detailState menyusun state workflow dari detail surat.

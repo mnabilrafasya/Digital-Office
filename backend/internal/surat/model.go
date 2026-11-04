@@ -232,17 +232,42 @@ func (r LetterRecipient) MarshalJSON() ([]byte, error) {
 	}{"UNIT", r.Unit, r.ResolvedHead})
 }
 
-// Attachment adalah lampiran surat (diisi mulai Tahap 5).
+// Attachment adalah lampiran surat. Daftarnya disimpan sebagai JSON di letters.attachments
+// dengan bentuk yang sama; ID sekaligus nama objek di bucket documents.
 type Attachment struct {
 	ID          string    `json:"id"`
 	FileName    string    `json:"fileName"`
 	Size        int64     `json:"size"`
 	ContentType string    `json:"contentType"`
+	Checksum    string    `json:"checksum"` // SHA-256 (heksadesimal)
 	UploadedAt  time.Time `json:"uploadedAt"`
-	UploadedBy  struct {
-		ID   int64  `json:"id,string"`
-		Name string `json:"name"`
-	} `json:"uploadedBy"`
+	UploadedBy  UserRef   `json:"uploadedBy"`
+}
+
+// UserRef adalah ringkasan user tanpa jabatan (jabatan bisa berubah, nama disalin saat kejadian).
+type UserRef struct {
+	ID   int64  `json:"id,string"`
+	Name string `json:"name"`
+}
+
+// Template adalah template naskah surat (.docx di bucket templates).
+type Template struct {
+	ID          int64      `json:"id,string"`
+	Name        string     `json:"name"`
+	Description *string    `json:"description"`
+	LetterType  *LookupRef `json:"letterType"` // null = berlaku untuk semua jenis surat
+	FileURL     string     `json:"fileUrl"`
+	CreatedBy   UserRef    `json:"createdBy"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+	ObjectKey   string     `json:"-"`
+}
+
+// TemplateData adalah isi template yang disimpan, sudah divalidasi.
+type TemplateData struct {
+	Name         string
+	Description  *string
+	LetterTypeID *int64
 }
 
 // LetterListItem adalah satu baris di daftar surat.

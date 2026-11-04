@@ -40,6 +40,10 @@ type Store interface {
 	FindVersion(ctx context.Context, letterID int64, number int) (*DocumentVersion, error)
 	LatestVersion(ctx context.Context, letterID int64, versionType string) (*DocumentVersion, error)
 
+	// Lampiran (daftar di letters.attachments)
+	Attachments(ctx context.Context, letterID int64) ([]Attachment, error)
+	SaveAttachments(ctx context.Context, letterID int64, items []Attachment) (rowVersion []byte, err error)
+
 	// Terbit
 	NextNumber(ctx context.Context, letterID int64, year int) (seq int, unitCode, format string, err error)
 	Publish(ctx context.Context, letterID int64, p Publication) error
@@ -73,15 +77,29 @@ type Lookups interface {
 	LookupCategories(ctx context.Context, companyCode string, ids []int64) (map[int64]string, error)
 }
 
-// Templates memeriksa template surat yang dirujuk draf.
+// Templates membaca template surat: daftar, satu template, dan pemeriksaan template yang dirujuk draf.
 type Templates interface {
 	TemplateLetterType(ctx context.Context, companyCode string, templateID int64) (*int64, error)
+	ListTemplates(ctx context.Context, companyCode string, letterTypeID *int64) ([]Template, error)
+	FindTemplate(ctx context.Context, companyCode string, id int64) (*Template, error)
+	TemplateNameTaken(ctx context.Context, companyCode, name string, exceptID int64) (bool, error)
 }
 
-// DocumentFiles menyimpan dan membaca file naskah surat (dipenuhi platform/storage).
+// TemplateWriter mengubah template surat di dalam transaksi.
+type TemplateWriter interface {
+	LockTemplate(ctx context.Context, companyCode string, id int64) (*Template, error)
+	InsertTemplate(ctx context.Context, companyCode string, d TemplateData, objectKey string, createdBy int64) (int64, error)
+	UpdateTemplate(ctx context.Context, id int64, d TemplateData, objectKey string) error
+}
+
+// DocumentFiles menyimpan dan membaca file surat (naskah, lampiran) dan file template
+// (dipenuhi platform/storage).
 type DocumentFiles interface {
 	PutDocument(ctx context.Context, objectKey string, data []byte, contentType string) error
 	OpenDocument(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
+	RemoveDocument(ctx context.Context, objectKey string) error
+	PutTemplate(ctx context.Context, objectKey string, data []byte, contentType string) error
+	OpenTemplate(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
 }
 
 // PDFMaker membuat PDF resmi: .docx diubah ke PDF (LibreOffice) lalu QR ditempel di halaman
@@ -96,18 +114,19 @@ type AuditStore interface {
 	Record(ctx context.Context, e audit.Entry) error
 }
 
-// Repos adalah repository yang dibutuhkan Service. Letters, Audit, dan Inbox dibuat di atas
-// koneksi atau transaksi; Directory, Lookups, dan Templates hanya membaca di luar transaksi.
-// Files adalah penyimpanan file naskah (MinIO); PDF adalah pembuat PDF resmi (Gotenberg).
+// Repos adalah repository yang dibutuhkan Service. Letters, Audit, Inbox, dan TemplateWriter
+// dibuat di atas koneksi atau transaksi; Directory, Lookups, dan Templates hanya membaca di luar
+// transaksi. Files adalah penyimpanan file (MinIO); PDF adalah pembuat PDF resmi (Gotenberg).
 type Repos struct {
-	Letters   func(q db.DBTX) Store
-	Audit     func(q db.DBTX) AuditStore
-	Inbox     func(q db.DBTX) InboxStore
-	Directory Directory
-	Lookups   Lookups
-	Templates Templates
-	Files     DocumentFiles
-	PDF       PDFMaker
+	Letters        func(q db.DBTX) Store
+	Audit          func(q db.DBTX) AuditStore
+	Inbox          func(q db.DBTX) InboxStore
+	TemplateWriter func(q db.DBTX) TemplateWriter
+	Directory      Directory
+	Lookups        Lookups
+	Templates      Templates
+	Files          DocumentFiles
+	PDF            PDFMaker
 }
 
 // Service mengelola surat: draf, alur persetujuan, daftar, dan riwayat. Semua surat

@@ -193,23 +193,34 @@ func documentEditorRole(l *LetterLock, reviewers []int64, userID int64) string {
 // parseDocument memvalidasi file naskah: .docx (arsip ZIP), tidak kosong, maksimal
 // MaxDocumentBytes. Mengembalikan nama file tanpa path.
 func parseDocument(fileName string, data []byte) (string, error) {
-	name := path.Base(strings.ReplaceAll(strings.TrimSpace(fileName), "\\", "/"))
-	if name == "." || name == "/" {
-		name = ""
-	}
+	return parseDocx(fileName, data, "naskah")
+}
+
+// parseDocx memvalidasi file .docx (naskah atau template); label dipakai di pesan error.
+func parseDocx(fileName string, data []byte, label string) (string, error) {
+	name := baseFileName(fileName)
 	if !strings.EqualFold(path.Ext(name), ".docx") {
-		return "", apperr.Invalid("Naskah wajib berupa file .docx")
+		return "", apperr.Invalid("File " + label + " wajib berupa file .docx")
 	}
 	if _, err := optionalText(&name, maxFileNameLength, "Nama file"); err != nil {
 		return "", err
 	}
 	switch {
 	case len(data) == 0:
-		return "", apperr.Invalid("File naskah kosong")
+		return "", apperr.Invalid("File " + label + " kosong")
 	case len(data) > MaxDocumentBytes:
-		return "", apperr.Invalid(fmt.Sprintf("Ukuran naskah maksimal %d MB", MaxDocumentBytes>>20))
+		return "", apperr.Invalid(fmt.Sprintf("Ukuran %s maksimal %d MB", label, MaxDocumentBytes>>20))
 	case !bytes.HasPrefix(data, zipSignature):
-		return "", apperr.Invalid("File bukan dokumen .docx yang valid")
+		return "", apperr.Invalid("File " + label + " bukan dokumen .docx yang valid")
 	}
 	return name, nil
+}
+
+// baseFileName mengambil nama file tanpa folder (browser lama mengirim path lengkap).
+func baseFileName(fileName string) string {
+	name := path.Base(strings.ReplaceAll(strings.TrimSpace(fileName), "\\", "/"))
+	if name == "." || name == "/" {
+		return ""
+	}
+	return name
 }

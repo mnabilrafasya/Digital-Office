@@ -26,7 +26,6 @@ func (r *Repository) FindDetail(ctx context.Context, companyCode, uuid string) (
 	if d.Recipients, err = r.findRecipients(ctx, d.InternalID); err != nil {
 		return nil, err
 	}
-	d.Attachments = []Attachment{}
 	d.AllowedActions = []string{}
 	return d, nil
 }
@@ -59,7 +58,7 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        (SELECT TOP 1 ra.note FROM letter_actions ra
         WHERE ra.letter_id = l.id AND ra.action = 'RETURN'
         ORDER BY ra.id DESC),
-       l.current_version_number, l.created_at, l.updated_at
+       l.current_version_number, l.created_at, l.updated_at, l.attachments
 FROM letters l
 JOIN units su               ON su.id = l.sender_unit_id
 JOIN users d                ON d.id = l.drafter_id
@@ -83,6 +82,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		assigneeName, assigneePos        sql.NullString
 		signerID                         sql.NullInt64
 		signerName, signerPos            sql.NullString
+		attachments                      sql.NullString
 	)
 	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode)).Scan(
 		&d.InternalID, &d.ID, &d.RowVersion, &d.Status,
@@ -94,13 +94,16 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		&d.Drafter.ID, &d.Drafter.Name, &d.Drafter.PositionName,
 		&assigneeID, &assigneeName, &assigneePos, &d.ForwardedByID,
 		&signerID, &signerName, &signerPos, &d.LastReturnNote,
-		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt,
+		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt, &attachments,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, db.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("memuat surat: %w", err)
+	}
+	if d.Attachments, err = decodeAttachments(attachments); err != nil {
+		return nil, err
 	}
 
 	d.ID = strings.ToLower(d.ID)

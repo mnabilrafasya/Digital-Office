@@ -16,6 +16,9 @@ var referenceFS embed.FS
 //go:embed seeds/dev/*.sql
 var devFS embed.FS
 
+//go:embed seeds/templates/*.docx
+var templatesFS embed.FS
+
 var (
 	// Migrations berisi file NNNNNN_nama.up.sql / .down.sql untuk golang-migrate.
 	Migrations = mustSub(migrationsFS, "migrations")
@@ -23,6 +26,8 @@ var (
 	ReferenceSeeds = mustSub(referenceFS, "seeds/reference")
 	// DevSeeds berisi data dummy, hanya untuk APP_ENV=development.
 	DevSeeds = mustSub(devFS, "seeds/dev")
+	// TemplateSeeds berisi file .docx template naskah bawaan (diunggah ke MinIO oleh cmd/seed).
+	TemplateSeeds = mustSub(templatesFS, "seeds/templates")
 )
 
 // mustSub hanya gagal bila nama folder salah ketik (kesalahan programmer, terdeteksi saat start).

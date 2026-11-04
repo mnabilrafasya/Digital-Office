@@ -2,6 +2,7 @@ package surat
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"mime"
@@ -15,36 +16,22 @@ import (
 	"office.backend/internal/platform/middleware"
 )
 
-// multipartOverhead adalah ruang tambahan body multipart di luar isi file (boundary, header).
-const multipartOverhead = 1 << 20
+// Batas request multipart.
+const (
+	multipartOverhead = 1 << 20  // ruang tambahan di luar isi file (boundary, header, field teks)
+	multipartMemory   = 32 << 20 // bagian request yang disimpan di memori; sisanya file sementara
+)
 
 // SaveDocument menangani PUT /api/v1/letters/{letterId}/document (multipart/form-data, field
 // "file" berisi .docx). Response 201 berisi versi baru dan ETag surat yang baru.
 func (h *Handler) SaveDocument(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, MaxDocumentBytes+multipartOverhead)
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			httpx.Validation(w, "Ukuran naskah maksimal 10 MB")
-			return
-		}
-		httpx.Validation(w, "Kirim naskah sebagai multipart/form-data dengan field file")
+	data, fileName, ok := readUpload(w, r, MaxDocumentBytes, "naskah", true)
+	if !ok {
 		return
 	}
-	defer file.Close()
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	data, err := io.ReadAll(io.LimitReader(file, MaxDocumentBytes+1))
-	if err != nil {
-		httpx.Validation(w, "File naskah tidak bisa dibaca")
-		return
-	}
-
 	v, rowVer, err := h.letters.SaveDocument(r.Context(), auth.CurrentUserFrom(r.Context()), DocumentInput{
 		LetterID: chi.URLParam(r, "letterId"),
-		FileName: header.Filename,
+		FileName: fileName,
 		Data:     data,
 		ClientIP: middleware.ClientIPFrom(r.Context()),
 	})
@@ -82,14 +69,63 @@ func (h *Handler) Document(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	defer f.Body.Close()
+	sendFile(w, f, "naskah")
+}
 
+// readUpload membaca request multipart/form-data: field "file" (maksimal maxBytes) dan field teks
+// lain (dibaca pemanggil lewat formValue). required=false: field file boleh tidak dikirim (data
+// nil). ok=false berarti response error sudah ditulis.
+func readUpload(w http.ResponseWriter, r *http.Request, maxBytes int, label string, required bool) (data []byte, fileName string, ok bool) {
+	invalid := "Kirim " + label + " sebagai multipart/form-data dengan field file"
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes)+multipartOverhead)
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpx.Validation(w, fmt.Sprintf("Ukuran %s maksimal %d MB", label, maxBytes>>20))
+			return nil, "", false
+		}
+		httpx.Validation(w, invalid)
+		return nil, "", false
+	}
+	defer r.MultipartForm.RemoveAll() // field teks tetap bisa dibaca; yang dihapus hanya file sementara
+
+	file, header, err := r.FormFile("file")
+	if errors.Is(err, http.ErrMissingFile) && !required {
+		return nil, "", true
+	}
+	if err != nil {
+		httpx.Validation(w, invalid)
+		return nil, "", false
+	}
+	defer file.Close()
+	if data, err = io.ReadAll(io.LimitReader(file, int64(maxBytes)+1)); err != nil {
+		httpx.Validation(w, "File "+label+" tidak bisa dibaca")
+		return nil, "", false
+	}
+	return data, header.Filename, true
+}
+
+// formValue membaca field teks multipart; nil bila field tidak dikirim. Dipanggil setelah readUpload.
+func formValue(r *http.Request, key string) *string {
+	if r.MultipartForm == nil {
+		return nil
+	}
+	v, ok := r.MultipartForm.Value[key]
+	if !ok || len(v) == 0 {
+		return nil
+	}
+	return &v[0]
+}
+
+// sendFile mengirim file sebagai unduhan dan menutup Body-nya. what dipakai di log.
+func sendFile(w http.ResponseWriter, f *DocumentFile, what string) {
+	defer f.Body.Close()
 	w.Header().Set("Content-Type", f.ContentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(f.Size, 10))
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": f.Name}))
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, f.Body); err != nil {
-		log.Printf("mengirim naskah: %v", err) // header sudah terkirim, tidak bisa membalas error
+		log.Printf("mengirim %s: %v", what, err) // header sudah terkirim, tidak bisa membalas error
 	}
 }

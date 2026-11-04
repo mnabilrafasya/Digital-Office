@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
+	"strings"
 	"time"
 
 	"office.backend/internal/audit"
@@ -36,6 +38,19 @@ type fakeLetterStore struct {
 	filter      *LetterFilter
 	published   *Publication
 	versions    []DocumentVersion
+	attachments []Attachment
+}
+
+func (f *fakeLetterStore) Attachments(context.Context, int64) ([]Attachment, error) {
+	return slices.Clone(f.attachments), nil
+}
+
+func (f *fakeLetterStore) SaveAttachments(_ context.Context, _ int64, items []Attachment) ([]byte, error) {
+	f.attachments = slices.Clone(items)
+	if f.detail != nil {
+		f.detail.Attachments = slices.Clone(items)
+	}
+	return testRowVersion, nil
 }
 
 func (f *fakeLetterStore) AddVersion(_ context.Context, v NewVersion) (int, []byte, error) {
@@ -151,6 +166,65 @@ type fakeRefs struct {
 	emptyAliases  []string
 	unitHeads     map[int64]int64   // unit -> pimpinan
 	aliasMembers  map[int64][]int64 // level -> anggota
+	templates     map[int64]*Template
+}
+
+// fakeRefs juga menjadi penyimpan template (baca dan tulis).
+
+func (f *fakeRefs) ListTemplates(context.Context, string, *int64) ([]Template, error) {
+	out := []Template{}
+	for _, t := range f.templates {
+		out = append(out, *t)
+	}
+	return out, nil
+}
+
+func (f *fakeRefs) FindTemplate(_ context.Context, _ string, id int64) (*Template, error) {
+	t, ok := f.templates[id]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	c := *t
+	return &c, nil
+}
+
+func (f *fakeRefs) LockTemplate(ctx context.Context, companyCode string, id int64) (*Template, error) {
+	return f.FindTemplate(ctx, companyCode, id)
+}
+
+func (f *fakeRefs) TemplateNameTaken(_ context.Context, _, name string, exceptID int64) (bool, error) {
+	for id, t := range f.templates {
+		if id != exceptID && strings.EqualFold(t.Name, name) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (f *fakeRefs) InsertTemplate(_ context.Context, _ string, d TemplateData, objectKey string, createdBy int64) (int64, error) {
+	if f.templates == nil {
+		f.templates = map[int64]*Template{}
+	}
+	id := int64(len(f.templates) + 1)
+	f.templates[id] = &Template{ID: id, Name: d.Name, Description: d.Description, CreatedBy: UserRef{ID: createdBy},
+		ObjectKey: objectKey, LetterType: lookupOf(d.LetterTypeID)}
+	return id, nil
+}
+
+func (f *fakeRefs) UpdateTemplate(_ context.Context, id int64, d TemplateData, objectKey string) error {
+	t := f.templates[id]
+	t.Name, t.Description, t.LetterType = d.Name, d.Description, lookupOf(d.LetterTypeID)
+	if objectKey != "" {
+		t.ObjectKey = objectKey
+	}
+	return nil
+}
+
+func lookupOf(id *int64) *LookupRef {
+	if id == nil {
+		return nil
+	}
+	return &LookupRef{ID: *id}
 }
 
 func (f *fakeRefs) UnitHeadIDs(context.Context, string, []int64) (map[int64]int64, error) {
@@ -233,8 +307,21 @@ func (f *fakeInbox) DeliverDirect(_ context.Context, _ int64, to, cc []int64) er
 	return nil
 }
 
-// fakeFiles menyimpan file naskah di memori.
+// fakeFiles menyimpan file di memori; template dibedakan dengan awalan "template/".
 type fakeFiles struct{ objects map[string][]byte }
+
+func (f *fakeFiles) RemoveDocument(_ context.Context, key string) error {
+	delete(f.objects, key)
+	return nil
+}
+
+func (f *fakeFiles) PutTemplate(ctx context.Context, key string, data []byte, contentType string) error {
+	return f.PutDocument(ctx, "template/"+key, data, contentType)
+}
+
+func (f *fakeFiles) OpenTemplate(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	return f.OpenDocument(ctx, "template/"+key)
+}
 
 func (f *fakeFiles) PutDocument(_ context.Context, key string, data []byte, _ string) error {
 	if f.objects == nil {
@@ -294,13 +381,14 @@ func newTestLetterServiceWithAudit(store *fakeLetterStore, refs *fakeRefs) (*Ser
 func newTestLetterServiceFull(store *fakeLetterStore, refs *fakeRefs) (*Service, *fakeAudit, *fakeInbox) {
 	audit, inbox := &fakeAudit{}, &fakeInbox{}
 	return NewService(fakeTx{}, nil, Repos{
-		Letters:   func(db.DBTX) Store { return store },
-		Audit:     func(db.DBTX) AuditStore { return audit },
-		Inbox:     func(db.DBTX) InboxStore { return inbox },
-		Directory: refs,
-		Lookups:   refs,
-		Templates: refs,
-		Files:     &fakeFiles{},
-		PDF:       &fakePDF{},
+		Letters:        func(db.DBTX) Store { return store },
+		Audit:          func(db.DBTX) AuditStore { return audit },
+		Inbox:          func(db.DBTX) InboxStore { return inbox },
+		TemplateWriter: func(db.DBTX) TemplateWriter { return refs },
+		Directory:      refs,
+		Lookups:        refs,
+		Templates:      refs,
+		Files:          &fakeFiles{},
+		PDF:            &fakePDF{},
 	}, time.UTC), audit, inbox
 }

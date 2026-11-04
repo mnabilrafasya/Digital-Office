@@ -4,7 +4,8 @@
 //	go run ./cmd/seed reference   -> data acuan, idempoten, aman di semua environment
 //	go run ./cmd/seed dev         -> data dummy, hanya APP_ENV=development (butuh reference;
 //	                                 unit PSP diambil dari snapshot HC bila belum ada)
-//	go run ./cmd/seed all         -> reference lalu dev (development)
+//	go run ./cmd/seed all         -> reference, dev, lalu templates (development)
+//	go run ./cmd/seed templates   -> template naskah bawaan ke MinIO, idempoten (butuh user admin)
 //
 // Setiap set dijalankan dalam satu transaksi; file diurutkan menurut nama.
 package main
@@ -33,7 +34,7 @@ const (
 )
 
 // summaryTables adalah tabel yang jumlah barisnya dicetak di akhir (daftar tetap, bukan input).
-var summaryTables = []string{"companies", "roles", "permissions", "lookups", "units", "positions", "users"}
+var summaryTables = []string{"companies", "roles", "permissions", "lookups", "units", "positions", "users", "letter_templates"}
 
 func main() {
 	log.SetFlags(0)
@@ -41,7 +42,7 @@ func main() {
 		usage()
 	}
 	cmd := os.Args[1]
-	if cmd != "reference" && cmd != "dev" && cmd != "all" {
+	if cmd != "reference" && cmd != "dev" && cmd != "all" && cmd != "templates" {
 		usage()
 	}
 
@@ -71,6 +72,11 @@ func main() {
 	if cmd == "dev" || cmd == "all" {
 		if err := runDev(ctx, conn); err != nil {
 			log.Fatalf("Seed dev gagal, semua perubahan dibatalkan: %v", err)
+		}
+	}
+	if cmd == "all" || cmd == "templates" {
+		if err := seedTemplates(ctx, conn, cfg); err != nil {
+			log.Fatalf("Seed template gagal: %v", err)
 		}
 	}
 	printSummary(ctx, conn)
@@ -173,10 +179,10 @@ func printSummary(ctx context.Context, conn *sql.DB) {
 		var n int
 		// Nama tabel berasal dari daftar konstanta di atas, bukan dari input
 		if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+t).Scan(&n); err != nil {
-			fmt.Printf("  %-12s (gagal dihitung: %v)\n", t, err)
+			fmt.Printf("  %-17s (gagal dihitung: %v)\n", t, err)
 			continue
 		}
-		fmt.Printf("  %-12s %d\n", t, n)
+		fmt.Printf("  %-17s %d\n", t, n)
 	}
 }
 
@@ -184,6 +190,7 @@ func usage() {
 	fmt.Println(`Pemakaian (dari folder backend):
   go run ./cmd/seed reference   data acuan (idempoten, aman di semua environment)
   go run ./cmd/seed dev         data dummy (hanya APP_ENV=development, butuh reference)
-  go run ./cmd/seed all         reference lalu dev (development)`)
+  go run ./cmd/seed all         reference, dev, lalu templates (development)
+  go run ./cmd/seed templates   template naskah bawaan ke MinIO (idempoten, butuh user admin)`)
 	os.Exit(1)
 }
