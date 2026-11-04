@@ -6,7 +6,7 @@
 // Dropdown diisi dari backend (lookups & /api/v1/templates)
 // ─────────────────────────────────────────────
 
-import { CheckCircle2, Info, Loader2 } from "lucide-react";
+import { CheckCircle2, Info, Loader2, Settings2 } from "lucide-react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { useEffect, useState } from "react";
 import type { BuatSuratFormValues } from "@/lib/schemas";
@@ -19,6 +19,7 @@ import { fetchLookups, type LookupItem } from "@/lib/api/form";
 import { cn } from "@/lib/utils";
 import { ClassificationCombobox } from "./classification-combobox";
 import { FieldError, FieldLabel, inputClass } from "./form-primitives";
+import { TemplateManagerModal } from "./template-manager-modal";
 
 // ─── Hook: ambil lookups dari backend ────────
 
@@ -85,6 +86,7 @@ export function BasicFields() {
   const urgencies   = useLookups("URGENCY");
   const [retryLT, setRetryLT] = useState(0);
   const [retryUG, setRetryUG] = useState(0);
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
 
   // Daftar template naskah dari backend (/api/v1/templates)
   const [templates, setTemplates] = useState<LetterTemplateDefinition[]>(() =>
@@ -187,9 +189,23 @@ export function BasicFields() {
         <FieldError message={errors.letterTypeId?.message} />
       </div>
 
-      {/* Template Surat — terhubung dengan GET /api/v1/templates (MinIO) */}
+      {/* Template Surat — terhubung dengan GET/POST/PUT /api/v1/templates (MinIO) */}
       <div>
-        <FieldLabel label="Template Surat" htmlFor="templateId" />
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <label
+            htmlFor="templateId"
+            className="block text-xs font-semibold text-text"
+          >
+            Template Surat
+          </label>
+          <button
+            type="button"
+            onClick={() => setManageTemplatesOpen(true)}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+          >
+            <Settings2 size={12} /> Kelola / Unggah (.docx)
+          </button>
+        </div>
         <Controller
           name="templateId"
           control={control}
@@ -207,6 +223,22 @@ export function BasicFields() {
             </select>
           )}
         />
+        {manageTemplatesOpen && (
+          <TemplateManagerModal
+            templates={templates}
+            letterTypes={letterTypes.items}
+            onClose={() => setManageTemplatesOpen(false)}
+            onUpdated={(fresh, selectedId) => {
+              setTemplates(fresh);
+              if (selectedId) {
+                setValue("templateId", selectedId, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                });
+              }
+            }}
+          />
+        )}
       </div>
 
       {/* Klasifikasi Arsip */}
