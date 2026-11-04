@@ -91,7 +91,7 @@ FROM letters l
 WHERE l.id = @letterId
   AND NOT EXISTS (
         SELECT 1 FROM letter_actions a
-        WHERE a.letter_id = l.id AND a.actor_id = @userId AND a.action = 'READ' AND a.deleted_at IS NULL
+        WHERE a.letter_id = l.id AND a.actor_id = @userId AND a.action = 'READ'
           AND a.id > ISNULL((SELECT MAX(t.id) FROM letter_actions t
                              WHERE t.letter_id = l.id AND t.action NOT IN ('READ', 'SAVE')), 0))`
 	if _, err := r.q.ExecContext(ctx, insert,
@@ -112,7 +112,7 @@ JOIN users u           ON u.id = a.actor_id
 JOIN positions p       ON p.id = u.position_id
 LEFT JOIN users t      ON t.id = a.target_user_id
 LEFT JOIN positions tp ON tp.id = t.position_id
-WHERE a.letter_id = @letterId AND a.deleted_at IS NULL
+WHERE a.letter_id = @letterId
 ORDER BY a.id`
 
 	rows, err := r.q.QueryContext(ctx, q, sql.Named("letterId", letterID))

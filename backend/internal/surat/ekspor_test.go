@@ -16,11 +16,11 @@ import (
 	"office.backend/internal/platform/db"
 )
 
-// sentLetter menyiapkan surat terbit (nomor 015/TI/PSP/X/2026, disetujui Agus) yang naskah
+// sentLetter menyiapkan surat terbit (nomor 015/PSP/X/2026, disetujui Agus) yang naskah
 // .docx-nya sudah tersimpan sebagai versi 1, beserta service dengan pembuat PDF palsu.
 func sentLetter(withDraft bool) (*Service, *fakeLetterStore, *fakePDF, *fakeInbox, *fakeAudit) {
 	store := letterAt(StatusSent, 0, 4)
-	store.detail.LetterNumber = ptr("015/TI/PSP/X/2026")
+	store.detail.LetterNumber = ptr("015/PSP/X/2026")
 	store.detail.Approval = &Approval{ApprovedAt: time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC),
 		ApprovedBy: PersonRef{ID: 3, Name: "Agus", PositionName: "SVP"}}
 	files, pdf, inbox, audit := &fakeFiles{}, &fakePDF{}, &fakeInbox{}, &fakeAudit{}
@@ -50,8 +50,8 @@ func TestFinalPDFCreatedOnceAndReused(t *testing.T) {
 		}
 		got, _ := io.ReadAll(f.Body)
 		if !bytes.HasPrefix(got, []byte("%PDF:PK")) || !bytes.HasSuffix(got, []byte("+QR")) ||
-			!bytes.Contains(got, []byte("Nomor: 015/TI/PSP/X/2026")) || bytes.Contains(got, []byte("Nomor: ###NoSurat###")) ||
-			f.ContentType != PDFContentType || f.Name != "015-TI-PSP-X-2026.pdf" {
+			!bytes.Contains(got, []byte("Nomor: 015/PSP/X/2026")) || bytes.Contains(got, []byte("Nomor: ###NoSurat###")) ||
+			f.ContentType != PDFContentType || f.Name != "015-PSP-X-2026.pdf" {
 			t.Errorf("user %d: unduhan salah: %q %+v", u.ID, got, f)
 		}
 	}
@@ -91,7 +91,7 @@ func makeDocx(documentXML string) []byte {
 }
 
 func TestFillLetterNumber(t *testing.T) {
-	out, err := fillLetterNumber(makeDocx("<w:t>No ###NoSurat###, lagi ###NoSurat###</w:t>"), "015/TI/PSP/X/2026 & <A>")
+	out, err := fillLetterNumber(makeDocx("<w:t>No ###NoSurat###, lagi ###NoSurat###</w:t>"), "015/PSP/X/2026 & <A>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestFillLetterNumber(t *testing.T) {
 		data, _ := io.ReadAll(rc)
 		files[f.Name] = string(data)
 	}
-	if want := "<w:t>No 015/TI/PSP/X/2026 &amp; &lt;A&gt;, lagi 015/TI/PSP/X/2026 &amp; &lt;A&gt;</w:t>"; files["word/document.xml"] != want {
+	if want := "<w:t>No 015/PSP/X/2026 &amp; &lt;A&gt;, lagi 015/PSP/X/2026 &amp; &lt;A&gt;</w:t>"; files["word/document.xml"] != want {
 		t.Errorf("document.xml = %q, want %q", files["word/document.xml"], want)
 	}
 	if files["word/styles.xml"] != "<w:t>###NoSurat###</w:t>" || len(files) != 3 {

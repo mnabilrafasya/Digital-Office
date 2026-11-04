@@ -20,8 +20,8 @@ func TestFormatLetterNumber(t *testing.T) {
 		at     time.Time
 		want   string
 	}{
-		{"{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}", 15, oct, "015/TI/PSP/X/2026"},
-		{"", 1, time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC), "001/TI/PSP/I/2027"}, // format default
+		{"{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}", 15, oct, "015/TI/PSP/X/2026"}, // {UNIT} tetap didukung
+		{"", 1, time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC), "001/PSP/I/2027"},  // format default (tanpa unit)
 		{"{COMP}-{YYYY}-{SEQ}", 1234, oct, "PSP-2026-1234"},
 	}
 	for _, tt := range tests {
@@ -47,7 +47,7 @@ func TestApproverPublishesLetter(t *testing.T) {
 	}
 	p := store.published
 	if p == nil || p.SignerID != 3 || p.Seq != 15 || p.Year != p.ApprovedAt.Year() ||
-		!strings.HasPrefix(p.Number, "015/TI/PSP/") || p.UnitHeads[7] != 50 || p.UnitHeads[9] != 51 {
+		!strings.HasPrefix(p.Number, "015/PSP/") || p.UnitHeads[7] != 50 || p.UnitHeads[9] != 51 {
 		t.Errorf("publikasi salah: %+v", p)
 	}
 	if !slices.Equal(inbox.to, []int64{50, 52}) || !slices.Equal(inbox.cc, []int64{51}) {
@@ -106,13 +106,13 @@ func TestRecipientCanOpenSentLetter(t *testing.T) {
 func TestApprovalQRText(t *testing.T) {
 	wib := time.FixedZone("WIB", 7*3600)
 	d := &LetterDetail{
-		LetterNumber: ptr("015/TI/PSP/X/2026"),
+		LetterNumber: ptr("015/PSP/X/2026"),
 		Approval: &Approval{
 			ApprovedAt: time.Date(2026, 10, 29, 14, 5, 12, 0, wib),
 			ApprovedBy: PersonRef{Name: "Agus Setiawan", PositionName: "SVP Teknologi Informasi"},
 		},
 	}
-	want := "Persetujuan Surat - Digital Office\nNomor: 015/TI/PSP/X/2026\nDisetujui oleh: Agus Setiawan\n" +
+	want := "Persetujuan Surat - Digital Office\nNomor: 015/PSP/X/2026\nDisetujui oleh: Agus Setiawan\n" +
 		"Jabatan: SVP Teknologi Informasi\nWaktu: 29-10-2026 14:05:12 WIB"
 	if got := approvalQRText(d); got != want {
 		t.Errorf("approvalQRText =\n%s\nwant\n%s", got, want)
@@ -128,7 +128,7 @@ func TestApprovalQRRequiresApproval(t *testing.T) {
 	}
 
 	store.detail.Status = StatusSent
-	store.detail.LetterNumber = ptr("015/TI/PSP/X/2026")
+	store.detail.LetterNumber = ptr("015/PSP/X/2026")
 	store.detail.Approval = &Approval{ApprovedAt: time.Now(), ApprovedBy: PersonRef{ID: 3, Name: "Agus"}}
 	png, err := svc.ApprovalQR(context.Background(), andiUser, testLetterID)
 	if err != nil || !strings.HasPrefix(string(png), "\x89PNG") {

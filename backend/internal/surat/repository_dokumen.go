@@ -75,7 +75,7 @@ JOIN positions p ON p.id = u.position_id`
 // Versions mengambil semua versi naskah surat, terbaru lebih dulu.
 func (r *Repository) Versions(ctx context.Context, letterID int64) ([]DocumentVersion, error) {
 	rows, err := r.q.QueryContext(ctx, versionColumns+`
-WHERE v.letter_id = @letterId AND v.deleted_at IS NULL
+WHERE v.letter_id = @letterId
 ORDER BY v.version_number DESC`, sql.Named("letterId", letterID))
 	if err != nil {
 		return nil, fmt.Errorf("mengambil versi naskah: %w", err)
@@ -99,14 +99,14 @@ ORDER BY v.version_number DESC`, sql.Named("letterId", letterID))
 // FindVersion mengambil satu versi naskah berdasarkan nomornya.
 func (r *Repository) FindVersion(ctx context.Context, letterID int64, number int) (*DocumentVersion, error) {
 	return r.findVersion(ctx, versionColumns+`
-WHERE v.letter_id = @letterId AND v.version_number = @number AND v.deleted_at IS NULL`,
+WHERE v.letter_id = @letterId AND v.version_number = @number`,
 		sql.Named("letterId", letterID), sql.Named("number", number))
 }
 
 // LatestVersion mengambil versi terbaru dengan jenis tertentu (DRAFT atau FINAL).
 func (r *Repository) LatestVersion(ctx context.Context, letterID int64, versionType string) (*DocumentVersion, error) {
 	return r.findVersion(ctx, versionColumns+`
-WHERE v.letter_id = @letterId AND v.version_type = @type AND v.deleted_at IS NULL
+WHERE v.letter_id = @letterId AND v.version_type = @type
 ORDER BY v.version_number DESC
 OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY`,
 		sql.Named("letterId", letterID), sql.Named("type", versionType))

@@ -1,5 +1,5 @@
 -- 000010_create_letter_versions.up.sql
--- Riwayat dokumen surat. Tidak boleh di-soft delete (dijaga di Go).
+-- Versi naskah surat (.docx DRAFT, PDF FINAL). Hanya ditambah, tidak pernah diubah atau dihapus.
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 
@@ -16,8 +16,6 @@ CREATE TABLE letter_versions (
     created_by                BIGINT           NOT NULL,
     created_by_role           VARCHAR(20)      NOT NULL,
     created_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_letter_versions_created_at DEFAULT SYSDATETIMEOFFSET(),
-    updated_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_letter_versions_updated_at DEFAULT SYSDATETIMEOFFSET(),
-    deleted_at                DATETIMEOFFSET NULL,
     CONSTRAINT pk_letter_versions PRIMARY KEY (id),
     CONSTRAINT fk_letter_versions_letter     FOREIGN KEY (letter_id)  REFERENCES letters (id),
     CONSTRAINT fk_letter_versions_created_by FOREIGN KEY (created_by) REFERENCES users (id),

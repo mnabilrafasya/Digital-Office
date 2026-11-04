@@ -26,7 +26,7 @@ func (r *Repository) LockItem(ctx context.Context, companyCode string, userID, i
 SELECT i.id, i.letter_id, CONVERT(char(36), l.uuid), i.status
 FROM inbox_items i WITH (UPDLOCK, ROWLOCK)
 JOIN letters l ON l.id = i.letter_id
-WHERE i.id = @itemId AND i.user_id = @userId AND i.deleted_at IS NULL
+WHERE i.id = @itemId AND i.user_id = @userId
   AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 	var it ItemLock
 	err := r.q.QueryRowContext(ctx, q, sql.Named("itemId", itemID), sql.Named("userId", userID),
@@ -46,7 +46,7 @@ func (r *Repository) MarkRead(ctx context.Context, itemID int64) error {
 	const q = `
 UPDATE inbox_items
 SET status = 'READ', read_at = SYSDATETIMEOFFSET(), updated_at = SYSDATETIMEOFFSET()
-WHERE id = @id AND status = 'UNREAD' AND deleted_at IS NULL`
+WHERE id = @id AND status = 'UNREAD'`
 	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", itemID)); err != nil {
 		return fmt.Errorf("menandai inbox dibaca: %w", err)
 	}
@@ -116,7 +116,7 @@ func (r *Repository) SetForwarded(ctx context.Context, itemID int64, status stri
 	const q = `
 UPDATE inbox_items
 SET status = @status, read_at = ISNULL(read_at, SYSDATETIMEOFFSET()), updated_at = SYSDATETIMEOFFSET()
-WHERE id = @id AND deleted_at IS NULL`
+WHERE id = @id`
 	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", itemID), sql.Named("status", status)); err != nil {
 		return fmt.Errorf("mengubah status inbox: %w", err)
 	}
@@ -133,10 +133,10 @@ FROM letter_forwards fw
 LEFT JOIN users tu       ON tu.id = fw.target_user_id
 LEFT JOIN positions tp   ON tp.id = tu.position_id
 LEFT JOIN units un       ON un.id = fw.target_unit_id
-LEFT JOIN inbox_items ri ON ri.forward_id = fw.id AND ri.deleted_at IS NULL
+LEFT JOIN inbox_items ri ON ri.forward_id = fw.id
 LEFT JOIN users ru       ON ru.id = ri.user_id
 LEFT JOIN positions rp   ON rp.id = ru.position_id
-WHERE fw.source_inbox_item_id = @itemId AND fw.deleted_at IS NULL
+WHERE fw.source_inbox_item_id = @itemId
 ORDER BY fw.id`
 	rows, err := r.q.QueryContext(ctx, q, sql.Named("itemId", itemID))
 	if err != nil {
