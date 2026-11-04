@@ -1,5 +1,5 @@
 -- 000014_create_letter_forwards.up.sql
--- Penerusan surat (disposisi/pengalihan). Tidak boleh di-soft delete (dijaga di Go).
+-- Penerusan surat (disposisi/pengalihan). Hanya ditambah, tidak pernah diubah atau dihapus.
 -- FK source_inbox_item_id -> inbox_items ditambahkan di migration 000015,
 -- karena inbox_items dan letter_forwards saling merujuk.
 SET XACT_ABORT ON;
@@ -18,8 +18,6 @@ CREATE TABLE letter_forwards (
     target_unit_id            BIGINT           NULL,
     note                      NVARCHAR(MAX)    NULL,
     created_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_letter_forwards_created_at DEFAULT SYSDATETIMEOFFSET(),
-    updated_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_letter_forwards_updated_at DEFAULT SYSDATETIMEOFFSET(),
-    deleted_at                DATETIMEOFFSET NULL,
     CONSTRAINT pk_letter_forwards PRIMARY KEY (id),
     CONSTRAINT fk_letter_forwards_letter      FOREIGN KEY (letter_id)      REFERENCES letters (id),
     CONSTRAINT fk_letter_forwards_from_user   FOREIGN KEY (from_user_id)   REFERENCES users (id),

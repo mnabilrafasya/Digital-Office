@@ -1,5 +1,5 @@
 -- 000013_create_letter_actions.up.sql
--- Riwayat alur surat (tracing). Tidak boleh di-soft delete (dijaga di Go).
+-- Riwayat alur surat. Hanya ditambah, tidak pernah diubah atau dihapus.
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 
@@ -15,8 +15,6 @@ CREATE TABLE letter_actions (
     note                      NVARCHAR(MAX)    NULL,
     version_number            INT              NULL,
     created_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_letter_actions_created_at DEFAULT SYSDATETIMEOFFSET(),
-    updated_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_letter_actions_updated_at DEFAULT SYSDATETIMEOFFSET(),
-    deleted_at                DATETIMEOFFSET NULL,
     CONSTRAINT pk_letter_actions PRIMARY KEY (id),
     CONSTRAINT fk_letter_actions_letter FOREIGN KEY (letter_id)      REFERENCES letters (id),
     CONSTRAINT fk_letter_actions_actor  FOREIGN KEY (actor_id)       REFERENCES users (id),

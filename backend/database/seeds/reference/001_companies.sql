@@ -7,8 +7,8 @@ SET XACT_ABORT ON;
 
 MERGE companies WITH (HOLDLOCK) AS t
 USING (VALUES
-    ('PSP', N'PT Pupuk Sriwidjaja Palembang', N'Palembang', '{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}'),
-    ('PKG', N'PT Petrokimia Gresik',          N'Gresik',    '{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}')
+    ('PSP', N'PT Pupuk Sriwidjaja Palembang', N'Palembang', '{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}'),
+    ('PKG', N'PT Petrokimia Gresik',          N'Gresik',    '{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}')
 ) AS s (code, name, city, letter_number_format)
     ON t.code = s.code
 WHEN MATCHED AND (t.name <> s.name OR ISNULL(t.city, N'') <> ISNULL(s.city, N'')) THEN

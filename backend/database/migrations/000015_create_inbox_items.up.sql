@@ -1,5 +1,5 @@
 -- 000015_create_inbox_items.up.sql
--- Inbox: 1 baris = 1 surat di inbox 1 orang. Tidak boleh di-soft delete (dijaga di Go).
+-- Inbox: 1 baris = 1 surat di inbox 1 orang. Statusnya berubah, tetapi tidak pernah dihapus.
 -- recipient_type mencatat asal penerimaan langsung (TO/CC); penerusan tidak memilikinya.
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
@@ -15,7 +15,6 @@ CREATE TABLE inbox_items (
     read_at                   DATETIMEOFFSET   NULL,
     created_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_inbox_items_created_at DEFAULT SYSDATETIMEOFFSET(),
     updated_at                DATETIMEOFFSET NOT NULL CONSTRAINT df_inbox_items_updated_at DEFAULT SYSDATETIMEOFFSET(),
-    deleted_at                DATETIMEOFFSET NULL,
     CONSTRAINT pk_inbox_items PRIMARY KEY (id),
     CONSTRAINT fk_inbox_items_letter  FOREIGN KEY (letter_id)  REFERENCES letters (id),
     CONSTRAINT fk_inbox_items_user    FOREIGN KEY (user_id)    REFERENCES users (id),

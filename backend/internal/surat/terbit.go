@@ -14,13 +14,13 @@ import (
 // diberi nomor, tanggal (waktu disetujui), dan penandatangan, lalu masuk inbox penerima.
 
 // defaultNumberFormat dipakai bila perusahaan belum mengatur companies.letter_number_format.
-const defaultNumberFormat = "{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}"
+const defaultNumberFormat = "{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}"
 
 var romanMonths = [...]string{"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"}
 
-// FormatLetterNumber mengisi format nomor surat. Token: {SEQ} (nomor urut per unit per tahun,
-// minimal 3 digit), {UNIT} (kode unit pengirim), {COMP} (kode perusahaan), {MM_ROMAN} (bulan
-// romawi), {YYYY} (tahun). Contoh: 015/TI/PSP/X/2026.
+// FormatLetterNumber mengisi format nomor surat. Token: {SEQ} (nomor urut per perusahaan per tahun,
+// minimal 3 digit), {COMP} (kode perusahaan), {MM_ROMAN} (bulan romawi), {YYYY} (tahun), dan
+// {UNIT} (kode unit pengirim, opsional). Contoh format default: 015/PSP/X/2026.
 func FormatLetterNumber(format string, seq int, unitCode, companyCode string, at time.Time) string {
 	if format == "" {
 		format = defaultNumberFormat

@@ -44,6 +44,9 @@ type Config struct {
 
 	GotenbergURL string // layanan LibreOffice (Gotenberg) untuk membuat PDF resmi
 
+	HCOrganizationURL string // API HC PUSRI daftar unit (hanya untuk cmd/sync-hc), rahasia: hanya di .env
+	HCToken           string
+
 	JWTSecret string
 	JWTTTL    time.Duration
 
@@ -75,6 +78,9 @@ func Load() (*Config, error) {
 		MinioSecretKey: os.Getenv("MINIO_ROOT_PASSWORD"),
 
 		GotenbergURL: getEnv("GOTENBERG_URL", "http://localhost:3001"),
+
+		HCOrganizationURL: os.Getenv("PUSRI_HC_ORGANIZATION_URL"),
+		HCToken:           os.Getenv("PUSRI_API_TOKEN"),
 
 		JWTSecret: os.Getenv("JWT_SECRET"),
 
