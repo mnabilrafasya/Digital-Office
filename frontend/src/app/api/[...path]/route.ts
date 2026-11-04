@@ -18,6 +18,9 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8080";
 // Header yang ikut diteruskan dari backend ke browser
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
+  "content-disposition",
+  "content-length",
+  "cache-control",
   "etag",
   "location",
   "retry-after",

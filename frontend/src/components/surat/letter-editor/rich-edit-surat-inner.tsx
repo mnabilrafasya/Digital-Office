@@ -1,84 +1,93 @@
 "use client";
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// ---------------------------------------------/surat/letter-editor/rich-edit-surat-inner.tsx
-// --------------------------------------------- DevExpress RichEdit untuk Section 3 Buat Surat.
-// Di-load murni di sisi browser (ssr: false).
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// components/surat/letter-editor/rich-edit-surat-inner.tsx
+// Editor naskah dinas berbasis DevExpress RichEdit (Section 3 Buat Surat).
+// Terhubung dengan:
+// - File template .docx fisik di `frontend/public/templates/*.docx` & generator dinamis
+// - Server dokumen MinIO: GET & PUT /api/v1/letters/{id}/document (.docx per versi)
 
 import { useRef, useEffect, useCallback, useState } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
-import {
-  Upload,
-  Save,
-  FileText,
-  Printer,
-  RefreshCw,
-  Maximize2,
-  Minimize2,
-  Sparkles,
-  Info,
-  CheckCircle2,
-  Loader2,
-} from "lucide-react";
-
-import { cn } from "@/lib/utils";
-import {
-  WordZoomControl,
-  useWordZoomInteractivity,
-} from "@/components/ui/word-zoom-control";
+import { Info } from "lucide-react";
 
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
 
-import type { RichEdit, Options, DocumentFormat } from "devexpress-richedit";
+import type { RichEdit, DocumentFormat } from "devexpress-richedit";
 import type { BuatSuratFormValues } from "@/lib/schemas";
 import {
-  LETTER_TEMPLATE_LIST,
-  getTemplateById,
+  resolveTemplateDocxBlob,
+  applyTemplateContextToEditor,
   type LetterTemplateContext,
 } from "@/lib/templates/letter-templates";
+import { fetchLetterDocumentBlob } from "@/lib/api/letter-document";
+import { useWordZoomInteractivity } from "@/components/ui/word-zoom-control";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RichEditModule = typeof import("devexpress-richedit") & {
-  license?: (key: string) => void;
-};
+import { useSelectOnFocus } from "./use-select-on-focus";
+import {
+  createWordEditorOptions,
+  type RichEditModule,
+} from "./word-editor-config";
+import { LetterEditorToolbar } from "./letter-editor-toolbar";
 
 const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
+const DEFAULT_EDITOR_HEIGHT = "980px";
+const FULLSCREEN_EDITOR_HEIGHT = "calc(100vh - 110px)";
 
-interface RichEditSuratInnerProps {
+export interface LetterEditorHandle {
+  /** Mengekspor naskah yang sedang dibuka di editor menjadi File .docx */
+  exportDocxFile: () => Promise<{ file: File; fileName: string } | null>;
+}
+
+export interface RichEditSuratInnerProps {
+  letterId?: string | null;
+  serverVersionNumber?: number | null;
+  editorHandleRef?: React.MutableRefObject<LetterEditorHandle | null>;
   onDocumentChange?: () => void;
+  onQuickSaveDraft?: () => void;
 }
 
 export default function RichEditSuratInner({
+  letterId,
+  serverVersionNumber,
+  editorHandleRef,
   onDocumentChange,
+  onQuickSaveDraft,
 }: RichEditSuratInnerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<RichEdit | null>(null);
   const moduleRef = useRef<RichEditModule | null>(null);
   const docFmtRef = useRef<typeof DocumentFormat | null>(null);
-  // true saat dokumen dimuat lewat kode (template/buka file) supaya tidak dihitung "diketik user"
+
   const isLoadingDocRef = useRef(false);
-  // true bila user sudah mengetik/mengubah isi naskah sejak pemuatan terakhir
   const userEditedRef = useRef(false);
+  const loadedServerDocKeyRef = useRef<string | null>(null);
 
   const [isReady, setIsReady] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(
-    "Naskah_Dinas_Draf.docx",
-  );
+  const [fileName, setFileName] = useState<string>("Naskah_Dinas_Draf.docx");
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [appliedTemplateId, setAppliedTemplateId] =
-    useState<string>("tmpl-dinas-standar");
-  const [statusNotification, setStatusNotification] = useState<string | null>(
-    null,
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string>(
+    "tmpl-dinas-standar"
   );
+  const [statusNotification, setStatusNotification] = useState<string | null>(
+    null
+  );
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const zoomLevelRef = useRef<number>(1);
-  zoomLevelRef.current = zoomLevel;
+
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  const showToast = useCallback((msg: string) => {
+    setStatusNotification(msg);
+    setTimeout(() => setStatusNotification(null), 3000);
+  }, []);
 
   const applyZoom = useCallback((level: number) => {
     const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
@@ -90,6 +99,8 @@ export default function RichEditSuratInner({
     }
   }, []);
 
+  useSelectOnFocus(containerRef, isReady, onQuickSaveDraft);
+
   const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
     wrapperRef,
     containerRef,
@@ -97,6 +108,41 @@ export default function RichEditSuratInner({
     onZoomChange: applyZoom,
     isReady,
   });
+
+  // Ekspos fungsi ekspor .docx ke induk halaman Buat Surat (untuk diunggah ke MinIO saat Simpan Draft / Submit)
+  const fileNameRef = useRef(fileName);
+  useEffect(() => {
+    fileNameRef.current = fileName;
+  }, [fileName]);
+
+  useEffect(() => {
+    if (!editorHandleRef) return;
+    editorHandleRef.current = {
+      exportDocxFile: () =>
+        new Promise((resolve) => {
+          const editor = instanceRef.current;
+          const docFmt = docFmtRef.current;
+          if (!editor || !docFmt) {
+            resolve(null);
+            return;
+          }
+          try {
+            editor.exportToFile((file: File) => {
+              setHasUnsavedChanges(false);
+              resolve({
+                file,
+                fileName: fileNameRef.current || "Naskah_Dinas.docx",
+              });
+            }, docFmt.OpenXml);
+          } catch {
+            resolve(null);
+          }
+        }),
+    };
+    return () => {
+      editorHandleRef.current = null;
+    };
+  }, [editorHandleRef, isReady]);
 
   // Ambil state form dari Buat Surat
   const { control, setValue } = useFormContext<BuatSuratFormValues>();
@@ -107,7 +153,6 @@ export default function RichEditSuratInner({
   const formToUnits = useWatch({ control, name: "toUnits" });
   const formApprovers = useWatch({ control, name: "approvers" });
 
-  // Context dinamis dari form untuk dimasukkan ke template naskah
   const getTemplateContext = useCallback((): LetterTemplateContext => {
     return {
       title: formTitle,
@@ -123,17 +168,26 @@ export default function RichEditSuratInner({
     };
   }, [formTitle, formSifat, formKecepatan, formToUnits, formApprovers]);
 
-  // Mengganti template / sinkron form menimpa seluruh isi naskah: minta konfirmasi bila sudah diketik.
+  const getTemplateContextRef = useRef(getTemplateContext);
+  useEffect(() => {
+    getTemplateContextRef.current = getTemplateContext;
+  }, [getTemplateContext]);
+
+  const keyDownHandlerRef = useRef(handleDevExpressKeyDown);
+  useEffect(() => {
+    keyDownHandlerRef.current = handleDevExpressKeyDown;
+  }, [handleDevExpressKeyDown]);
+
   const confirmOverwrite = useCallback(() => {
     if (!userEditedRef.current) return true;
     return window.confirm(
-      "Isi naskah yang sudah Anda ketik akan diganti dengan template. Lanjutkan?",
+      "Isi naskah yang sudah Anda ketik akan diganti dengan template. Lanjutkan?"
     );
   }, []);
 
-  // â”€â”€â”€ Memuat template ke DevExpress RichEdit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Memuat template .docx ke dalam DevExpress RichEdit
   const loadTemplateIntoEditor = useCallback(
-    (templateId: string, showToast = true) => {
+    (templateId: string, notify = true, syncFormFields = false) => {
       const editor = instanceRef.current;
       const docFmt = docFmtRef.current;
       if (!editor || !docFmt) return;
@@ -145,69 +199,58 @@ export default function RichEditSuratInner({
           isLoadingDocRef.current = false;
         }, 500);
 
-      try {
-        if (templateId === "tmpl-kosong") {
-          editor.newDocument();
-          releaseLoading();
-          setAppliedTemplateId(templateId);
-          setFileName("Dokumen_Kosong.docx");
-          if (showToast) {
-            setStatusNotification("Dokumen kosong baru dibuka");
-            setTimeout(() => setStatusNotification(null), 3000);
-          }
-          editor.zoomLevel = zoomLevelRef.current;
-          editor.adjust();
-          editor.focus();
-          onDocumentChange?.();
-          return;
-        }
-
-        const tpl = getTemplateById(templateId);
-        const ctx = getTemplateContext();
-        const html = tpl.generateHtml(ctx);
-
-        // --------------------------------------------- openDocument menerima Blob/File untuk format HTML
-        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-
-        editor.openDocument(
-          blob,
-          `${tpl.name}.html`,
-          docFmt.Html,
-          (success) => {
-            releaseLoading();
-            if (success) {
-              setAppliedTemplateId(templateId);
-              setFileName(`${tpl.name}.docx`);
-              if (showToast) {
-                setStatusNotification(`Template "${tpl.name}" berhasil dimuat`);
-                setTimeout(() => setStatusNotification(null), 3000);
+      resolveTemplateDocxBlob(templateId)
+        .then(({ blob, template: tpl }) => {
+          editor.openDocument(
+            blob,
+            `${tpl.name}.docx`,
+            docFmt.OpenXml,
+            (success) => {
+              if (success) {
+                if (syncFormFields) {
+                  applyTemplateContextToEditor(
+                    editor,
+                    getTemplateContextRef.current()
+                  );
+                }
+                releaseLoading();
+                setAppliedTemplateId(templateId);
+                setFileName(`${tpl.name}.docx`);
+                setHasUnsavedChanges(true);
+                if (notify) {
+                  showToast(
+                    syncFormFields
+                      ? `Data form disinkronkan ke "${tpl.name}"`
+                      : `Template "${tpl.name}" berhasil dimuat`
+                  );
+                }
+                editor.zoomLevel = zoomLevelRef.current;
+                editor.adjust();
+                editor.focus();
+                onDocumentChange?.();
+              } else {
+                releaseLoading();
               }
-              editor.zoomLevel = zoomLevelRef.current;
-              editor.adjust();
-              editor.focus();
-              onDocumentChange?.();
-            } else {
-              console.warn(
-                "[LetterEditor] openDocument callback mengembalikan false",
-              );
             }
-          },
-        );
-      } catch (err) {
-        isLoadingDocRef.current = false;
-        console.error("[LetterEditor] Gagal memuat template:", err);
-      }
+          );
+        })
+        .catch((err) => {
+          isLoadingDocRef.current = false;
+          console.error("[LetterEditor] Gagal memuat template .docx:", err);
+        });
     },
-    [getTemplateContext, onDocumentChange],
+    [onDocumentChange, showToast]
   );
 
-  // â”€â”€â”€ Inisialisasi DevExpress RichEdit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Inisialisasi DevExpress RichEdit sekali saat mount
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
+
     (async () => {
       try {
         const mod = (await import("devexpress-richedit")) as RichEditModule;
+        if (disposed || !containerRef.current) return;
         moduleRef.current = mod;
         docFmtRef.current = mod.DocumentFormat;
 
@@ -215,81 +258,30 @@ export default function RichEditSuratInner({
           mod.license(LICENSE_KEY);
         }
 
-        const options: Options = mod.createOptions();
-        options.width = "100%";
-        options.height = "100%";
-        options.readOnly = false;
-        options.ribbon.visible = true;
-        options.view = {
-          zoomLevel: 0.5,
-        };
-        // Cetak & Simpan PDF berbasis browser (ClientHtml):
-        // Memakai seluruh font sistem operasi & browser tanpa batasan whitelist TTF
-        options.printing = {
-          mode: mod.PrintMode?.Html ?? 1,
-          closePrintDialogWithHtmlPreview: true,
-        };
-        options.events.documentChanged = () => {
-          if (!isLoadingDocRef.current) userEditedRef.current = true;
-        };
-        options.events.keyDown = (_s, args) => {
-          handleDevExpressKeyDown(_s, args);
-        };
+        const options = createWordEditorOptions({
+          mod,
+          readOnly: false,
+          showRibbon: true,
+          initialZoom: 1,
+          height: DEFAULT_EDITOR_HEIGHT,
+          onDocumentChanged: () => {
+            if (!isLoadingDocRef.current) {
+              userEditedRef.current = true;
+              setHasUnsavedChanges(true);
+            }
+          },
+          onKeyDown: (s, args) => keyDownHandlerRef.current(s, args),
+        });
 
-        if (disposed) return;
-
-        const editor = mod.create(containerRef.current!, options);
+        const editor = mod.create(containerRef.current, options);
         instanceRef.current = editor;
         setIsReady(true);
-
-        // Setelah siap, muat template default (Surat Dinas Standar)
-        setTimeout(() => {
-          if (!disposed && instanceRef.current && mod.DocumentFormat) {
-            isLoadingDocRef.current = true;
-            const releaseLoading = () =>
-              setTimeout(() => {
-                isLoadingDocRef.current = false;
-              }, 500);
-            const initialTplId = formTemplateId || "tmpl-dinas-standar";
-            if (initialTplId === "tmpl-kosong") {
-              instanceRef.current.newDocument();
-              releaseLoading();
-              setAppliedTemplateId(initialTplId);
-              instanceRef.current.zoomLevel = zoomLevelRef.current;
-              instanceRef.current.adjust();
-              instanceRef.current.focus();
-            } else {
-              const tpl = getTemplateById(initialTplId);
-              const ctx = getTemplateContext();
-              const html = tpl.generateHtml(ctx);
-              const blob = new Blob([html], {
-                type: "text/html;charset=utf-8",
-              });
-              instanceRef.current.openDocument(
-                blob,
-                `${tpl.name}.html`,
-                mod.DocumentFormat.Html,
-                (success) => {
-                  releaseLoading();
-                  if (success) {
-                    instanceRef.current?.focus();
-                    if (instanceRef.current) {
-                      instanceRef.current.zoomLevel = zoomLevelRef.current;
-                      instanceRef.current.adjust();
-                    }
-                  }
-                },
-              );
-              setAppliedTemplateId(initialTplId);
-            }
-          }
-        }, 150);
       } catch (err) {
         console.error("[LetterEditor] Inisialisasi gagal:", err);
         setErrorMsg(
           err instanceof Error
             ? err.message
-            : "Gagal memuat DevExpress RichEdit. Pastikan dependensi devexpress-richedit terinstall.",
+            : "Gagal memuat DevExpress RichEdit."
         );
       }
     })();
@@ -300,30 +292,86 @@ export default function RichEditSuratInner({
       instanceRef.current = null;
       setIsReady(false);
     };
-  }, []); // Mount sekali
+  }, []);
 
-  // Resize / adjust editor saat toggle fullscreen
+  // Muat naskah awal: jika draf sudah punya versi .docx di server, ambil dari GET /letters/{id}/document;
+  // jika belum, muat template .docx dari frontend/public/templates/.
   useEffect(() => {
-    if (instanceRef.current) {
-      const timer = setTimeout(() => {
-        if (instanceRef.current) {
-          instanceRef.current.zoomLevel = zoomLevelRef.current;
-          instanceRef.current.adjust();
-        }
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [isFullscreen]);
+    const editor = instanceRef.current;
+    const docFmt = docFmtRef.current;
+    if (!isReady || !editor || !docFmt) return;
 
-  // Jika user memilih template di Section 1 (formTemplateId berubah)
+    const serverKey =
+      letterId && serverVersionNumber && serverVersionNumber > 0
+        ? `${letterId}:v${serverVersionNumber}`
+        : null;
+
+    if (serverKey && loadedServerDocKeyRef.current !== serverKey) {
+      loadedServerDocKeyRef.current = serverKey;
+      isLoadingDocRef.current = true;
+      fetchLetterDocumentBlob(letterId!)
+        .then((res) => {
+          if (!res || !instanceRef.current) {
+            loadTemplateIntoEditor(
+              formTemplateId || "tmpl-dinas-standar",
+              false,
+              false
+            );
+            return;
+          }
+          instanceRef.current.openDocument(
+            res.blob,
+            res.fileName,
+            docFmt.OpenXml,
+            (success) => {
+              setTimeout(() => {
+                isLoadingDocRef.current = false;
+              }, 500);
+              if (success && instanceRef.current) {
+                setFileName(res.fileName);
+                setHasUnsavedChanges(false);
+                userEditedRef.current = true;
+                instanceRef.current.zoomLevel = zoomLevelRef.current;
+                instanceRef.current.adjust();
+              }
+            }
+          );
+        })
+        .catch(() => {
+          isLoadingDocRef.current = false;
+          loadTemplateIntoEditor(
+            formTemplateId || "tmpl-dinas-standar",
+            false,
+            false
+          );
+        });
+      return;
+    }
+
+    if (!loadedServerDocKeyRef.current) {
+      loadedServerDocKeyRef.current = "initial-template";
+      loadTemplateIntoEditor(
+        formTemplateId || "tmpl-dinas-standar",
+        false,
+        false
+      );
+    }
+  }, [
+    isReady,
+    letterId,
+    serverVersionNumber,
+    formTemplateId,
+    loadTemplateIntoEditor,
+  ]);
+
+  // Jika user memilih template di Section 1
   useEffect(() => {
     if (isReady && formTemplateId && formTemplateId !== appliedTemplateId) {
       if (!confirmOverwrite()) {
-        // batal: kembalikan pilihan template di form ke template yang sedang dipakai
         setValue("templateId", appliedTemplateId);
         return;
       }
-      loadTemplateIntoEditor(formTemplateId, false);
+      loadTemplateIntoEditor(formTemplateId, false, false);
     }
   }, [
     formTemplateId,
@@ -334,109 +382,88 @@ export default function RichEditSuratInner({
     setValue,
   ]);
 
-  // â”€â”€â”€ Sinkronkan data form ke naskah surat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const handleSyncFormData = useCallback(() => {
-    if (!confirmOverwrite()) return;
-    loadTemplateIntoEditor(appliedTemplateId, true);
-  }, [appliedTemplateId, loadTemplateIntoEditor, confirmOverwrite]);
+  // Adjust editor & perbarui tinggi eksplisit saat toggle fullscreen
+  useEffect(() => {
+    const targetHeight = isFullscreen
+      ? FULLSCREEN_EDITOR_HEIGHT
+      : DEFAULT_EDITOR_HEIGHT;
+    if (containerRef.current) {
+      containerRef.current.style.height = targetHeight;
+      containerRef.current.style.minHeight = targetHeight;
+    }
+    if (!instanceRef.current) return;
+    const t = setTimeout(() => {
+      if (instanceRef.current) {
+        instanceRef.current.zoomLevel = zoomLevelRef.current;
+        instanceRef.current.adjust();
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [isFullscreen]);
 
-  // â”€â”€â”€ Buka file DOCX dari komputer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleOpenDocx = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".docx,.rtf,.txt";
-
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file || !instanceRef.current || !docFmtRef.current) return;
+      const editor = instanceRef.current;
+      const docFmt = docFmtRef.current;
+      if (!file || !editor || !docFmt) return;
 
-      try {
-        const buffer = await file.arrayBuffer();
-        const ext = file.name.split(".").pop()?.toLowerCase();
-        const fmt: DocumentFormat =
-          ext === "rtf"
-            ? docFmtRef.current.Rtf
-            : ext === "txt"
-              ? docFmtRef.current.PlainText
-              : docFmtRef.current.OpenXml;
+      const buffer = await file.arrayBuffer();
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const fmt =
+        ext === "rtf"
+          ? docFmt.Rtf
+          : ext === "txt"
+            ? docFmt.PlainText
+            : docFmt.OpenXml;
 
-        isLoadingDocRef.current = true;
-        userEditedRef.current = false;
-        instanceRef.current.openDocument(buffer, file.name, fmt, (success) => {
-          setTimeout(() => {
-            isLoadingDocRef.current = false;
-          }, 500);
-          if (success) {
-            setFileName(file.name);
-            setStatusNotification(`File "${file.name}" berhasil dibuka`);
-            setTimeout(() => setStatusNotification(null), 3000);
-            if (instanceRef.current) {
-              instanceRef.current.zoomLevel = zoomLevelRef.current;
-              instanceRef.current.adjust();
-              instanceRef.current.focus();
-            }
-            onDocumentChange?.();
-          }
-        });
-      } catch (err) {
-        console.error("[LetterEditor] Gagal membuka file:", err);
-        alert(
-          "Gagal membuka file: " +
-            (err instanceof Error ? err.message : String(err)),
-        );
-      }
+      isLoadingDocRef.current = true;
+      editor.openDocument(buffer, file.name, fmt, (success) => {
+        setTimeout(() => {
+          isLoadingDocRef.current = false;
+        }, 500);
+        if (success) {
+          userEditedRef.current = true;
+          setHasUnsavedChanges(true);
+          setFileName(file.name.replace(/\.(rtf|txt)$/i, ".docx"));
+          showToast(`File "${file.name}" berhasil dibuka`);
+          editor.zoomLevel = zoomLevelRef.current;
+          editor.adjust();
+          editor.focus();
+          onDocumentChange?.();
+        }
+      });
     };
-
     input.click();
-  }, [onDocumentChange]);
+  }, [onDocumentChange, showToast]);
 
-  // â”€â”€â”€ Simpan / unduh sebagai DOCX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const handleSaveDocx = useCallback(() => {
-    if (!instanceRef.current || !docFmtRef.current) return;
+  const handleDownloadDocx = useCallback(() => {
+    const editor = instanceRef.current;
+    const docFmt = docFmtRef.current;
+    if (!editor || !docFmt) return;
     setIsSaving(true);
-
-    try {
-      instanceRef.current.exportToFile((file: File) => {
-        const url = URL.createObjectURL(file);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName || "Naskah_Dinas.docx";
-        a.click();
-        URL.revokeObjectURL(url);
-        setIsSaving(false);
-        setStatusNotification(`Dokumen berhasil diunduh sebagai ${a.download}`);
-        setTimeout(() => setStatusNotification(null), 3000);
-      }, docFmtRef.current.OpenXml);
-    } catch (err) {
-      console.error("[LetterEditor] Gagal menyimpan file:", err);
-      alert(
-        "Gagal menyimpan dokumen: " +
-          (err instanceof Error ? err.message : String(err)),
-      );
+    editor.exportToFile((file: File) => {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName || "Naskah_Dinas.docx";
+      a.click();
+      URL.revokeObjectURL(url);
       setIsSaving(false);
-    }
-  }, [fileName]);
+      showToast(`Dokumen diunduh sebagai ${a.download}`);
+    }, docFmt.OpenXml);
+  }, [fileName, showToast]);
 
-  // ─── Cetak / Simpan PDF lewat Browser (Mode Html) ────────────────
-  // --------------------------------------------- engine cetak browser (mendukung seluruh font sistem & A4 presisi)
   const handlePrintPdf = useCallback(() => {
     const editor = instanceRef.current;
     const mod = moduleRef.current;
     if (!editor) return;
-
-    try {
-      const mode = mod?.PrintMode?.Html ?? 1;
-      editor.printDocument(mode);
-    } catch (err) {
-      console.error("[LetterEditor] Gagal membuka dialog cetak:", err);
-      alert(
-        "Gagal membuka dialog cetak/PDF: " +
-          (err instanceof Error ? err.message : String(err)),
-      );
-    }
+    editor.printDocument(mod?.PrintMode?.Html ?? 1);
   }, []);
 
-  // â”€â”€â”€ Error State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center p-8 bg-panel/50 border border-border rounded-xl text-center">
@@ -453,143 +480,49 @@ export default function RichEditSuratInner({
 
   const containerClasses = isFullscreen
     ? "fixed inset-0 z-[45] isolate bg-surface flex flex-col p-4 shadow-2xl"
-    : // isolate + z-0: z-index internal DevExpress (hingga ribuan) terkurung di sini,
-      // jadi tidak menimpa action bar (z-20) dan dialog konfirmasi (z-50).
-      "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
+    : "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
+
+  const activeHeight = isFullscreen
+    ? FULLSCREEN_EDITOR_HEIGHT
+    : DEFAULT_EDITOR_HEIGHT;
 
   return (
     <div ref={wrapperRef} className={containerClasses}>
-      {/* â”€â”€ Toolbar Atas: Template, Aksi Dokumen, Fullscreen â”€â”€ */}
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-panel border-b border-border flex-wrap shrink-0">
-        {/* Pilihan Template Tata Naskah */}
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-text whitespace-nowrap">
-            <Sparkles size={14} className="text-primary" />
-            Template Naskah:
-          </span>
-          <select
-            value={appliedTemplateId}
-            onChange={(e) => {
-              const newTplId = e.target.value;
-              if (!confirmOverwrite()) return; // select tetap di template lama
-              loadTemplateIntoEditor(newTplId, true);
-              setValue("templateId", newTplId, { shouldDirty: true });
-            }}
-            className="text-xs py-1.5 px-2.5 rounded-lg border border-border bg-surface text-text font-medium focus:outline-none focus:ring-1 focus:ring-primary shadow-sm"
-          >
-            {LETTER_TEMPLATE_LIST.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>
-                {tpl.name}
-              </option>
-            ))}
-          </select>
+      <LetterEditorToolbar
+        appliedTemplateId={appliedTemplateId}
+        onSelectTemplate={(newId) => {
+          if (!confirmOverwrite()) return;
+          loadTemplateIntoEditor(newId, true, false);
+          setValue("templateId", newId, { shouldDirty: true });
+        }}
+        onSyncFormData={() => {
+          if (!confirmOverwrite()) return;
+          loadTemplateIntoEditor(appliedTemplateId, true, true);
+        }}
+        zoomLevel={zoomLevel}
+        onZoomChange={applyZoom}
+        statusNotification={statusNotification}
+        isReady={isReady}
+        isSaving={isSaving}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={() => setIsFullscreen((v) => !v)}
+        onOpenDocx={handleOpenDocx}
+        onDownloadDocx={handleDownloadDocx}
+        onPrintPdf={handlePrintPdf}
+        serverVersionNumber={serverVersionNumber}
+        hasUnsavedDocumentChanges={hasUnsavedChanges}
+      />
 
-          {/* Tombol Sinkronkan Data dari Section 1 */}
-          <button
-            type="button"
-            onClick={handleSyncFormData}
-            title="Perbarui naskah dengan data terbaru dari Section 1 (Perihal, Sifat, Penerima, Penandatangan)"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm"
-          >
-            <RefreshCw size={12} className="text-text-muted" />
-            Sinkronkan Form
-          </button>
-
-          {/* Kontrol Zoom Gaya Microsoft Word */}
-          <WordZoomControl
-            zoomLevel={zoomLevel}
-            onZoomChange={applyZoom}
-            className="ml-1"
-          />
-        </div>
-
-        {/* Status Notifikasi Toast Kecil */}
-        {statusNotification && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
-            <CheckCircle2 size={13} />
-            <span>{statusNotification}</span>
-          </div>
-        )}
-
-        {/* Aksi File & Fullscreen */}
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={handleOpenDocx}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm"
-            title="Buka dokumen Word (.docx) dari komputer"
-          >
-            <Upload size={13} className="text-primary" />
-            Buka .docx
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSaveDocx}
-            disabled={!isReady || isSaving}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary-dark transition-colors shadow-sm disabled:opacity-50"
-            title="Unduh naskah saat ini sebagai file Microsoft Word (.docx)"
-          >
-            <Save size={13} />
-            {isSaving ? "Menyimpan..." : "Unduh .docx"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrintPdf}
-            disabled={!isReady}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface hover:bg-bg transition-colors text-text shadow-sm disabled:opacity-50"
-            title="Cetak naskah langsung ke printer atau simpan sebagai PDF (Save as PDF)"
-          >
-            <Printer size={13} className="text-primary" />
-            Cetak / Simpan PDF
-          </button>
-
-          {/* Toggle Fullscreen */}
-          <button
-            type="button"
-            onClick={() => setIsFullscreen((prev) => !prev)}
-            className="p-1.5 rounded-lg border border-border bg-surface hover:bg-bg text-text-muted hover:text-text transition-colors shadow-sm"
-            title={
-              isFullscreen ? "Keluar Fullscreen" : "Layar Penuh (Fullscreen)"
-            }
-          >
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
-        </div>
-      </div>
-
-      {/* â”€â”€ Info Bar / Petunjuk Variabel â”€â”€ */}
-      <div className="flex items-center justify-between px-4 py-1.5 bg-surface border-b border-border/60 text-[11px] text-text-muted shrink-0 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <FileText size={12} className="text-text-muted" />
-          <span>
-            Variabel otomatis:{" "}
-            <code className="bg-panel px-1 py-0.5 rounded font-mono text-[10px]">
-              ###NoSurat###
-            </code>{" "}
-            akan diisi nomor otomatis saat surat disetujui Approver.
-          </span>
-        </div>
-        <span className="text-amber-700">
-          Isi naskah belum tersimpan di server. &quot;Simpan Draft&quot; hanya
-          menyimpan data form; unduh .docx bila perlu menyimpan naskah.
-        </span>
-      </div>
-
-      {/* ── Container DevExpress RichEdit ── */}
       <div
         ref={containerRef}
         style={{
-          // 980px memberikan ruang yang cukup bagi ribbon + 1 lembar A4 penuh dari kop surat sampai tanda tangan
-          height: isFullscreen ? "calc(100vh - 100px)" : "980px",
+          height: activeHeight,
+          minHeight: activeHeight,
           width: "100%",
-          minHeight: "1200px",
         }}
         className="w-full bg-white relative"
       />
 
-      {/* Floating feedback saat zoom via shortcut keyboard / wheel */}
       {feedbackPercent !== null && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-neutral-900/90 text-white text-xs px-3.5 py-1.5 rounded-full font-medium shadow-lg flex items-center gap-1.5 animate-in fade-in duration-150">
           <span>Zoom: {feedbackPercent}%</span>

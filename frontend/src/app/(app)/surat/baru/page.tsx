@@ -13,7 +13,7 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { BUAT_SURAT_DEFAULTS, buatSuratSchema, type BuatSuratFormValues } from "@/lib/schemas";
 import type { LetterAttachment, StepEntry } from "@/lib/types";
-import { generateId } from "@/lib/utils";
+
 
 import {
   saveDraft,
@@ -21,14 +21,15 @@ import {
   getDraftLetter,
 } from "@/lib/api/letter-draft";
 import { listLetters } from "@/lib/api/letters";
-import type { RecipientUnit } from "@/lib/api/letter-detail";
+
 
 import { ActionBar } from "@/components/surat/action-bar";
 import { BuatSuratHeader } from "@/components/surat/buat-surat-header";
 import { ConfirmDialogs, type DialogType } from "@/components/surat/confirm-dialogs";
 import { DetailSection } from "@/components/surat/detail-section";
 import { SectionCard } from "@/components/surat/form-primitives";
-import { LetterEditorSection } from "@/components/surat/letter-editor";
+import { LetterEditorSection, type LetterEditorHandle } from "@/components/surat/letter-editor";
+import { uploadLetterDocument } from "@/lib/api/letter-document";
 import { LampiranSection } from "@/components/surat/lampiran-section";
 import { Loader2 } from "lucide-react";
 
@@ -71,6 +72,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
   const [draftId, setDraftId] = useState<string | null>(draftQueryId || null);
   const [draftEtag, setDraftEtag] = useState<string | null>(null);
+  const [serverVersionNumber, setServerVersionNumber] = useState<number>(0);
+  const editorHandleRef = useRef<LetterEditorHandle | null>(null);
 
   const [attachments, setAttachments] = useState<LetterAttachment[]>([]);
   const [savedAttachmentsSignature, setSavedAttachmentsSignature] = useState<string>("[]");
@@ -88,9 +91,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
   // Refs untuk mencegah race condition pada penyimpanan
   const draftIdRef = useRef<string | null>(draftId);
-  draftIdRef.current = draftId;
   const draftEtagRef = useRef<string | null>(draftEtag);
-  draftEtagRef.current = draftEtag;
+  useEffect(() => { draftIdRef.current = draftId; }, [draftId]);
+  useEffect(() => { draftEtagRef.current = draftEtag; }, [draftEtag]);
   const loadedDraftIdRef = useRef<string | null>(null);
 
   // Status perubahan yang belum disimpan (dirty state)
@@ -112,6 +115,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
         setDraftId(detail.id);
         setDraftEtag(etag);
+        setServerVersionNumber(detail.currentVersion ?? 0);
         draftIdRef.current = detail.id;
         draftEtagRef.current = etag;
         loadedDraftIdRef.current = detail.id;
@@ -144,8 +148,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
             if (r.type === "UNIT" && r.unit) {
               return { id: String(r.unit.id), name: r.unit.name };
             }
-            if (r.type === "ALIAS" && (r as any).alias) {
-              return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+            if (r.type === "ALIAS" && r.alias) {
+              return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
             }
             return null;
           })
@@ -156,8 +160,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
             if (r.type === "UNIT" && r.unit) {
               return { id: String(r.unit.id), name: r.unit.name };
             }
-            if (r.type === "ALIAS" && (r as any).alias) {
-              return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+            if (r.type === "ALIAS" && r.alias) {
+              return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
             }
             return null;
           })
@@ -225,6 +229,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
       setDraftId(detail.id);
       setDraftEtag(etag);
+      setServerVersionNumber(detail.currentVersion ?? 0);
       draftIdRef.current = detail.id;
       draftEtagRef.current = etag;
       loadedDraftIdRef.current = detail.id;
@@ -256,8 +261,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           if (r.type === "UNIT" && r.unit) {
             return { id: String(r.unit.id), name: r.unit.name };
           }
-          if (r.type === "ALIAS" && (r as any).alias) {
-            return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+          if (r.type === "ALIAS" && r.alias) {
+            return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
           }
           return null;
         })
@@ -268,8 +273,8 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           if (r.type === "UNIT" && r.unit) {
             return { id: String(r.unit.id), name: r.unit.name };
           }
-          if (r.type === "ALIAS" && (r as any).alias) {
-            return { id: `alias-${(r as any).alias.levelId}`, name: (r as any).alias.label };
+          if (r.type === "ALIAS" && r.alias) {
+            return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
           }
           return null;
         })
@@ -318,10 +323,19 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     setSaveFailed(false);
     try {
       const res = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
+      let latestEtag = res.etag;
+      if (editorHandleRef.current) {
+        const exported = await editorHandleRef.current.exportDocxFile();
+        if (exported) {
+          const uploaded = await uploadLetterDocument(res.id, exported.file, exported.fileName);
+          if (uploaded.etag) latestEtag = uploaded.etag;
+          setServerVersionNumber(uploaded.version.versionNumber);
+        }
+      }
       setDraftId(res.id);
-      setDraftEtag(res.etag);
+      setDraftEtag(latestEtag);
       draftIdRef.current = res.id;
-      draftEtagRef.current = res.etag;
+      draftEtagRef.current = latestEtag;
       loadedDraftIdRef.current = res.id;
       setLastSaved(new Date());
       setSavedAttachmentsSignature(JSON.stringify(attachments));
@@ -347,12 +361,21 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     setIsSubmitting(true);
 
     try {
-      // 1. Simpan perubahan draf terlebih dahulu ke database SQL Server
+      // 1. Simpan perubahan draf & unggah versi terbaru naskah .docx ke server
       const saved = await saveDraft(values, draftIdRef.current, draftEtagRef.current);
+      let latestEtag = saved.etag;
+      if (editorHandleRef.current) {
+        const exported = await editorHandleRef.current.exportDocxFile();
+        if (exported) {
+          const uploaded = await uploadLetterDocument(saved.id, exported.file, exported.fileName);
+          if (uploaded.etag) latestEtag = uploaded.etag;
+          setServerVersionNumber(uploaded.version.versionNumber);
+        }
+      }
       setDraftId(saved.id);
-      setDraftEtag(saved.etag);
+      setDraftEtag(latestEtag);
       draftIdRef.current = saved.id;
-      draftEtagRef.current = saved.etag;
+      draftEtagRef.current = latestEtag;
       loadedDraftIdRef.current = saved.id;
       setLastSaved(new Date());
       setSavedAttachmentsSignature(JSON.stringify(attachments));
@@ -405,7 +428,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           </SectionCard>
 
           <SectionCard number={3} title="Isi Surat & Tata Naskah Digital">
-            <LetterEditorSection />
+            <LetterEditorSection letterId={draftId} serverVersionNumber={serverVersionNumber} editorHandleRef={editorHandleRef} onQuickSaveDraft={handleDirectSaveDraft} />
           </SectionCard>
         </div>
 

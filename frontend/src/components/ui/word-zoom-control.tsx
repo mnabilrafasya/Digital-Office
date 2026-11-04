@@ -296,7 +296,7 @@ export function useWordZoomInteractivity({
   const [feedbackPercent, setFeedbackPercent] = useState<number | null>(null);
   const feedbackTimerRef = useRef<NodeJS.Timeout | null>(null);
   const zoomLevelRef = useRef(zoomLevel);
-  zoomLevelRef.current = zoomLevel;
+  useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
 
   const showFeedback = useCallback((pct: number) => {
     setFeedbackPercent(pct);

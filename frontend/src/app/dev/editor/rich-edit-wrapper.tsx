@@ -1,19 +1,8 @@
 "use client";
 
-// ─────────────────────────────────────────────
 // app/dev/editor/rich-edit-wrapper.tsx
-// Wrapper DevExpress RichEdit yang sesungguhnya.
-// Diimpor HANYA via dynamic(..., { ssr: false }) — jangan diimpor langsung.
-// ─────────────────────────────────────────────
-// Cara mendapatkan kunci lisensi evaluasi DevExpress:
-//   1. Daftar/masuk ke https://www.devexpress.com/
-//   2. Pergi ke DevExpress Download Manager
-//   3. Salin License Key
-//   4. Buat/edit frontend/.env.local dan tambahkan:
-//        NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY=<kunci_anda>
-//   File .env.local sudah di-.gitignore — jangan commit kunci lisensi.
-//   Tanpa kunci: editor tetap berjalan, muncul watermark "Unlicensed".
-// ─────────────────────────────────────────────
+// Halaman sandbox uji DevExpress RichEdit (/dev/editor).
+// Menggunakan konfigurasi Word yang sama dengan halaman Buat Surat.
 
 import { useRef, useEffect, useCallback, useState } from "react";
 import { Upload, Save, FileText, Info } from "lucide-react";
@@ -21,35 +10,37 @@ import {
   WordZoomControl,
   useWordZoomInteractivity,
 } from "@/components/ui/word-zoom-control";
+import { useSelectOnFocus } from "@/components/surat/letter-editor/use-select-on-focus";
+import {
+  createWordEditorOptions,
+  type RichEditModule,
+} from "@/components/surat/letter-editor/word-editor-config";
+import { resolveTemplateDocxBlob } from "@/lib/templates/letter-templates";
 
-// CSS DevExpress — wajib dimuat agar editor tampil benar
 import "devextreme/dist/css/dx.light.css";
 import "devexpress-richedit/dist/dx.richedit.css";
 
-// Tipe dari paket resmi
-import type { RichEdit, Options, DocumentFormat } from "devexpress-richedit";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RichEditModule = typeof import("devexpress-richedit") & { license?: (key: string) => void };
+import type { RichEdit, DocumentFormat } from "devexpress-richedit";
 
-// ─── Konstanta ──────────────────────────────────────────────────────
 const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
 
-// ─── Komponen ───────────────────────────────────────────────────────
 export default function RichEditWrapper() {
-  const wrapperRef   = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const instanceRef  = useRef<RichEdit | null>(null);
-  const moduleRef    = useRef<RichEditModule | null>(null);
-  const docFmtRef    = useRef<typeof DocumentFormat | null>(null);
+  const instanceRef = useRef<RichEdit | null>(null);
+  const docFmtRef = useRef<typeof DocumentFormat | null>(null);
 
-  const [isReady,  setIsReady]  = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const zoomLevelRef = useRef<number>(1);
-  zoomLevelRef.current = zoomLevel;
+
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+  }, [zoomLevel]);
 
   const applyZoom = useCallback((level: number) => {
     const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
@@ -61,6 +52,8 @@ export default function RichEditWrapper() {
     }
   }, []);
 
+  useSelectOnFocus(containerRef, isReady);
+
   const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
     wrapperRef,
     containerRef,
@@ -69,36 +62,53 @@ export default function RichEditWrapper() {
     isReady,
   });
 
-  // ── Inisialisasi editor ──────────────────────────────────────────
+  const keyDownRef = useRef(handleDevExpressKeyDown);
+  useEffect(() => {
+    keyDownRef.current = handleDevExpressKeyDown;
+  }, [handleDevExpressKeyDown]);
+
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
 
     (async () => {
       try {
-        const mod = await import("devexpress-richedit") as RichEditModule;
-        moduleRef.current = mod;
+        const mod = (await import("devexpress-richedit")) as RichEditModule;
+        if (disposed || !containerRef.current) return;
         docFmtRef.current = mod.DocumentFormat;
 
-        // Daftarkan lisensi bila ada
         if (LICENSE_KEY && mod.license) {
           mod.license(LICENSE_KEY);
         }
 
-        // Opsi default — `createOptions()` mengisi semua nilai wajib termasuk `ribbon` dan `events`
-        const options: Options = mod.createOptions();
-        options.width  = "100%";
-        options.height = "100%";
-        options.ribbon.visible = true;
-        options.events.keyDown = (_s, args) => {
-          handleDevExpressKeyDown(_s, args);
-        };
+        const options = createWordEditorOptions({
+          mod,
+          readOnly: false,
+          showRibbon: true,
+          initialZoom: 1,
+          height: "840px",
+          onKeyDown: (s, args) => keyDownRef.current(s, args),
+        });
 
-        if (disposed) return;
-
-        const editor = mod.create(containerRef.current!, options);
+        const editor = mod.create(containerRef.current, options);
         instanceRef.current = editor;
         setIsReady(true);
+
+        // Muat dokumen kosong A4 standar Word agar margin & penggaris langsung presisi
+        const { blob } = await resolveTemplateDocxBlob("tmpl-kosong");
+        if (!disposed && instanceRef.current) {
+          instanceRef.current.openDocument(
+            blob,
+            "Dokumen_Kosong.docx",
+            mod.DocumentFormat.OpenXml,
+            (success) => {
+              if (success && instanceRef.current) {
+                instanceRef.current.zoomLevel = zoomLevelRef.current;
+                instanceRef.current.adjust();
+              }
+            }
+          );
+        }
       } catch (err) {
         console.error("[DevEditor] Gagal inisialisasi:", err);
         setErrorMsg(
@@ -117,10 +127,9 @@ export default function RichEditWrapper() {
     };
   }, []);
 
-  // ── Buka file DOCX dari komputer ────────────────────────────────
   const handleOpen = useCallback(() => {
     const input = document.createElement("input");
-    input.type   = "file";
+    input.type = "file";
     input.accept = ".docx,.rtf,.txt";
 
     input.onchange = async (e) => {
@@ -128,39 +137,38 @@ export default function RichEditWrapper() {
       if (!file || !instanceRef.current || !docFmtRef.current) return;
 
       try {
-        // openDocument menerima File | Blob | ArrayBuffer | string
-        // Gunakan ArrayBuffer agar format bisa ditentukan manual
         const buffer = await file.arrayBuffer();
-
         const ext = file.name.split(".").pop()?.toLowerCase();
         const fmt: DocumentFormat =
-          ext === "rtf" ? docFmtRef.current.Rtf :
-          ext === "txt" ? docFmtRef.current.PlainText :
-          docFmtRef.current.OpenXml; // DOCX default
+          ext === "rtf"
+            ? docFmtRef.current.Rtf
+            : ext === "txt"
+              ? docFmtRef.current.PlainText
+              : docFmtRef.current.OpenXml;
 
         instanceRef.current.openDocument(buffer, file.name, fmt);
         setFileName(file.name);
       } catch (err) {
         console.error("[DevEditor] Gagal membuka file:", err);
-        alert("Gagal membuka file: " + (err instanceof Error ? err.message : String(err)));
+        alert(
+          "Gagal membuka file: " +
+            (err instanceof Error ? err.message : String(err))
+        );
       }
     };
 
     input.click();
   }, []);
 
-  // ── Simpan / unduh sebagai DOCX ─────────────────────────────────
-  // API: exportToFile(callback: (file: File) => void, format?: DocumentFormat)
   const handleSave = useCallback(() => {
     if (!instanceRef.current || !docFmtRef.current) return;
     setIsSaving(true);
 
     try {
       instanceRef.current.exportToFile((file: File) => {
-        // Buat link unduhan dari File object
         const url = URL.createObjectURL(file);
-        const a   = document.createElement("a");
-        a.href     = url;
+        const a = document.createElement("a");
+        a.href = url;
         a.download = fileName ?? "dokumen.docx";
         a.click();
         URL.revokeObjectURL(url);
@@ -168,12 +176,13 @@ export default function RichEditWrapper() {
       }, docFmtRef.current.OpenXml);
     } catch (err) {
       console.error("[DevEditor] Gagal menyimpan:", err);
-      alert("Gagal menyimpan: " + (err instanceof Error ? err.message : String(err)));
+      alert(
+        "Gagal menyimpan: " + (err instanceof Error ? err.message : String(err))
+      );
       setIsSaving(false);
     }
   }, [fileName]);
 
-  // ── Render: error state ─────────────────────────────────────────
   if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
@@ -184,18 +193,12 @@ export default function RichEditWrapper() {
           <p className="text-sm font-semibold text-text">Editor gagal dimuat</p>
           <p className="text-xs text-text-muted mt-1 max-w-md">{errorMsg}</p>
         </div>
-        <div className="bg-panel border border-border rounded-lg px-4 py-3 text-left text-xs font-mono text-text-muted max-w-md w-full">
-          <p className="font-semibold text-text mb-1">Pastikan sudah install:</p>
-          <p>npm install devextreme devexpress-richedit</p>
-        </div>
       </div>
     );
   }
 
-  // ── Render: normal ──────────────────────────────────────────────
   return (
     <div ref={wrapperRef} className="flex flex-col h-full relative">
-      {/* Toolbar aksi file */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-panel/40 shrink-0 flex-wrap">
         <button
           type="button"
@@ -216,7 +219,6 @@ export default function RichEditWrapper() {
           {isSaving ? "Menyimpan..." : "Simpan sebagai .docx"}
         </button>
 
-        {/* Kontrol Zoom Gaya Microsoft Word */}
         <WordZoomControl
           zoomLevel={zoomLevel}
           onZoomChange={applyZoom}
@@ -229,24 +231,14 @@ export default function RichEditWrapper() {
             {fileName}
           </span>
         )}
-
-        {!LICENSE_KEY && (
-          <span className="ml-auto text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
-            ⚠ Tanpa lisensi — tambahkan{" "}
-            <code className="font-mono">NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY</code>{" "}
-            di <code className="font-mono">.env.local</code>
-          </span>
-        )}
       </div>
 
-      {/* Container editor — flex-1 + minHeight:0 agar tidak overflow */}
       <div
         ref={containerRef}
-        className="flex-1"
-        style={{ minHeight: 0 }}
+        className="w-full bg-white relative"
+        style={{ height: "840px", minHeight: "840px", width: "100%" }}
       />
 
-      {/* Floating feedback saat zoom via shortcut keyboard / wheel */}
       {feedbackPercent !== null && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-neutral-900/90 text-white text-xs px-3.5 py-1.5 rounded-full font-medium shadow-lg flex items-center gap-1.5 animate-in fade-in duration-150">
           <span>Zoom: {feedbackPercent}%</span>

@@ -6,6 +6,27 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+// Bersihkan atribut `fdprocessedid` yang disuntikkan ekstensi browser (McAfee/FDM/Autofill)
+// saat evaluasi modul sebelum React melakukan hydration agar tidak memicu Hydration Mismatch.
+if (typeof document !== "undefined") {
+  document
+    .querySelectorAll("[fdprocessedid]")
+    .forEach((el) => el.removeAttribute("fdprocessedid"));
+  const obs = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.attributeName === "fdprocessedid" && m.target instanceof Element) {
+        m.target.removeAttribute("fdprocessedid");
+      }
+    }
+  });
+  obs.observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ["fdprocessedid"],
+  });
+  setTimeout(() => obs.disconnect(), 3000);
+}
+
 /** Merge Tailwind classes dengan deduplication */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
