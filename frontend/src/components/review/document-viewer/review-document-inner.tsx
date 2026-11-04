@@ -5,7 +5,7 @@
 // - Bila belum disetujui approver & currentVersion > 0: memuat .docx asli dari GET /api/v1/letters/{id}/document
 // - Reviewer yang sedang memegang surat (isActiveReviewer): boleh mengedit & menyimpan versi baru (PUT /document)
 // - Approver dan pembaca lainnya: mode baca (readOnly: true, tanpa ribbon)
-// - Bila belum pernah ada versi diunggah: fallback ke template .docx sesuai jenis surat
+// - Bila belum pernah ada versi diunggah: fallback ke template .docx sesuai template/jenis surat
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
@@ -236,7 +236,7 @@ export default function ReviewDocumentInner({
   }, [isActiveReviewer, defaultHeight]);
 
   // Muat naskah: utamakan .docx dari server (bila currentVersion > 0 dan status != SENT);
-  // fallback ke generator template .docx.
+  // fallback ke template .docx sesuai surat.
   useEffect(() => {
     const editor = editorRef.current;
     const mod = moduleRef.current;
@@ -271,7 +271,13 @@ export default function ReviewDocumentInner({
     };
 
     const loadFallbackTemplate = () => {
-      resolveTemplateDocxBlob(letter.template?.code ?? undefined)
+      resolveTemplateDocxBlob(
+        letter.template?.id ??
+          letter.template?.code ??
+          letter.template?.name ??
+          letter.letterType?.code ??
+          undefined
+      )
         .then(({ blob, template: tpl }) => {
           openBlob(blob, `${tpl.name}.docx`, true);
         })

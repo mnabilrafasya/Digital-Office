@@ -12,6 +12,12 @@ export interface LookupRef {
   name: string;
 }
 
+export interface TemplateRef {
+  id: string;
+  name: string;
+  code?: string;
+}
+
 export interface UnitRef {
   id: string;
   code: string;
@@ -65,6 +71,7 @@ export interface Attachment {
   fileName: string;
   size: number;
   contentType: string;
+  checksum?: string;
   uploadedAt: string;
   uploadedBy: { id: string; name: string };
 }
@@ -78,7 +85,7 @@ export interface LetterDetail {
   summary: string | null;
   specialNote: string | null;
   letterType: LookupRef | null;
-  template?: LookupRef | null;
+  template?: TemplateRef | null;
   classification: LookupRef | null;
   confidentiality: LookupRef | null;
   urgency: LookupRef | null;

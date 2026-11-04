@@ -2,7 +2,7 @@
 
 // components/surat/letter-editor/letter-editor-toolbar.tsx
 // Command bar terpadu gaya Microsoft Word / Office 365 di bagian atas editor naskah:
-// - Grup 1: Pilihan Template Naskah (.docx) & Sinkronkan Data Form
+// - Grup 1: Pilihan Template Naskah (.docx dari /api/v1/templates) & Sinkronkan Data Form
 // - Grup 2: Operasi Berkas terintegrasi (Buka .docx, Unduh .docx, Cetak / PDF)
 // - Grup 3: Chip interaktif salin penanda `###NoSurat###` & indikator versi dokumen (.docx)
 // - Grup 4: Kontrol Zoom ringkas, Panduan Pintasan Keyboard, & Layar Penuh
@@ -24,7 +24,11 @@ import {
 } from "lucide-react";
 
 import { WordZoomControl } from "@/components/ui/word-zoom-control";
-import { LETTER_TEMPLATE_LIST } from "@/lib/templates/letter-templates";
+import {
+  fetchTemplates,
+  getCachedTemplates,
+  type LetterTemplateDefinition,
+} from "@/lib/templates/letter-templates";
 
 export interface LetterEditorToolbarProps {
   appliedTemplateId: string;
@@ -73,7 +77,22 @@ export function LetterEditorToolbar({
 }: LetterEditorToolbarProps) {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [copiedPlaceholder, setCopiedPlaceholder] = useState(false);
+  const [templates, setTemplates] = useState<LetterTemplateDefinition[]>(() =>
+    getCachedTemplates()
+  );
   const shortcutRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTemplates().then((items) => {
+      if (!cancelled) {
+        setTemplates(items);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!showShortcuts) return;
@@ -95,6 +114,11 @@ export function LetterEditorToolbar({
     setTimeout(() => setCopiedPlaceholder(false), 2000);
   };
 
+  const resolvedSelectedId =
+    templates.find(
+      (t) => t.id === appliedTemplateId || t.legacyId === appliedTemplateId
+    )?.id ?? appliedTemplateId;
+
   return (
     <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-panel border-b border-border flex-wrap shrink-0">
       {/* Kiri: Grup Template + Grup Aksi Berkas */}
@@ -106,12 +130,12 @@ export function LetterEditorToolbar({
             <span className="hidden sm:inline">Template:</span>
           </div>
           <select
-            value={appliedTemplateId}
+            value={resolvedSelectedId}
             onChange={(e) => onSelectTemplate(e.target.value)}
             aria-label="Pilih template naskah"
             className="text-xs py-1 pl-1 pr-2 rounded-md bg-transparent text-text font-semibold focus:outline-none cursor-pointer"
           >
-            {LETTER_TEMPLATE_LIST.map((tpl) => (
+            {templates.map((tpl) => (
               <option key={tpl.id} value={tpl.id} className="bg-surface text-text">
                 {tpl.name}
               </option>

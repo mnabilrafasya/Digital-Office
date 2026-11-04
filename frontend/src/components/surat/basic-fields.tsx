@@ -3,14 +3,18 @@
 // ─────────────────────────────────────────────
 // components/surat/basic-fields.tsx
 // Jenis, Template, Klasifikasi, Kecepatan, Sifat, Perihal
-// Dropdown diisi dari backend (lookups, template tetap mock)
+// Dropdown diisi dari backend (lookups & /api/v1/templates)
 // ─────────────────────────────────────────────
 
 import { CheckCircle2, Info, Loader2 } from "lucide-react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { useEffect, useState } from "react";
 import type { BuatSuratFormValues } from "@/lib/schemas";
-import { LETTER_TEMPLATE_LIST } from "@/lib/templates/letter-templates";
+import {
+  fetchTemplates,
+  getCachedTemplates,
+  type LetterTemplateDefinition,
+} from "@/lib/templates/letter-templates";
 import { fetchLookups, type LookupItem } from "@/lib/api/form";
 import { cn } from "@/lib/utils";
 import { ClassificationCombobox } from "./classification-combobox";
@@ -25,15 +29,24 @@ function useLookups(category: Parameters<typeof fetchLookups>[0]) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     fetchLookups(category)
-      .then((data) => { if (!cancelled) setItems(data); })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Gagal memuat data.");
+      .then((data) => {
+        if (!cancelled) {
+          setItems(data);
+          setError(null);
+        }
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Gagal memuat data.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [category]);
 
   return { items, loading, error };
@@ -63,7 +76,7 @@ function SelectError({ message, onRetry }: { message: string; onRetry: () => voi
 
 export function BasicFields() {
   const { control, formState: { errors }, setValue } = useFormContext<BuatSuratFormValues>();
-  const letterTypeId = useWatch({ control, name: "letterTypeId" });
+  const templateId = useWatch({ control, name: "templateId" });
   const sifat = useWatch({ control, name: "sifat" });
   const kecepatan = useWatch({ control, name: "kecepatan" });
 
@@ -73,15 +86,40 @@ export function BasicFields() {
   const [retryLT, setRetryLT] = useState(0);
   const [retryUG, setRetryUG] = useState(0);
 
+  // Daftar template naskah dari backend (/api/v1/templates)
+  const [templates, setTemplates] = useState<LetterTemplateDefinition[]>(() =>
+    getCachedTemplates()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTemplates().then((items) => {
+      if (!cancelled) {
+        setTemplates(items);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Normalisasi ID template warisan (mis. "tmpl-dinas-standar") menjadi ID numerik backend saat daftar selesai dimuat
+  useEffect(() => {
+    if (!templateId) return;
+    const exactMatch = templates.find((t) => t.id === templateId);
+    if (exactMatch) return;
+    const legacyMatch = templates.find((t) => t.legacyId === templateId);
+    if (legacyMatch && legacyMatch.id !== templateId) {
+      setValue("templateId", legacyMatch.id);
+    }
+  }, [templateId, templates, setValue]);
+
   // Saat urgencies selesai muat, set default ke BIASA jika belum dipilih
   useEffect(() => {
     if (urgencies.items.length > 0 && !kecepatan) {
       setValue("kecepatan", "BIASA", { shouldValidate: true });
     }
   }, [urgencies.items, kecepatan, setValue]);
-
-  // Template resmi tata naskah dinas frontend
-  const templates = LETTER_TEMPLATE_LIST;
 
   const sifatOptions: LookupItem[] = [
     { id: "sifat-biasa",    code: "BIASA",    name: "Biasa",    note: "Surat dapat diakses seluruh staf unit terkait.", sortOrder: 1 },
@@ -114,11 +152,24 @@ export function BasicFields() {
                   const selectedLT = letterTypes.items.find((lt) => lt.id === val);
                   if (selectedLT) {
                     const ltName = selectedLT.name.toLowerCase();
-                    const matched = LETTER_TEMPLATE_LIST.find((t) =>
-                      t.letterTypeKeywords.some((kw) => ltName.includes(kw))
-                    );
+                    const ltCode = selectedLT.code.toLowerCase();
+                    const matched =
+                      templates.find(
+                        (t) =>
+                          t.letterType?.id === val ||
+                          t.letterType?.code?.toLowerCase() === ltCode
+                      ) ??
+                      templates.find((t) =>
+                        t.letterTypeKeywords.some(
+                          (kw) => ltName.includes(kw) || ltCode.includes(kw)
+                        )
+                      ) ??
+                      templates[0];
                     if (matched) {
-                      setValue("templateId", matched.id, { shouldValidate: true, shouldDirty: true });
+                      setValue("templateId", matched.id, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
                     }
                   }
                 }}
@@ -136,7 +187,7 @@ export function BasicFields() {
         <FieldError message={errors.letterTypeId?.message} />
       </div>
 
-      {/* Template Surat — tetap mock sampai backend punya endpoint */}
+      {/* Template Surat — terhubung dengan GET /api/v1/templates (MinIO) */}
       <div>
         <FieldLabel label="Template Surat" htmlFor="templateId" />
         <Controller

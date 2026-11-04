@@ -3,7 +3,7 @@
 // components/surat/letter-editor/rich-edit-surat-inner.tsx
 // Editor naskah dinas berbasis DevExpress RichEdit (Section 3 Buat Surat).
 // Terhubung dengan:
-// - File template .docx fisik di `frontend/public/templates/*.docx` & generator dinamis
+// - Template .docx dari backend & MinIO (`GET /api/v1/templates` & `/api/v1/templates/{id}/file`)
 // - Server dokumen MinIO: GET & PUT /api/v1/letters/{id}/document (.docx per versi)
 
 import { useRef, useEffect, useCallback, useState } from "react";
@@ -18,6 +18,7 @@ import type { BuatSuratFormValues } from "@/lib/schemas";
 import {
   resolveTemplateDocxBlob,
   applyTemplateContextToEditor,
+  getTemplateById,
   type LetterTemplateContext,
 } from "@/lib/templates/letter-templates";
 import { fetchLetterDocumentBlob } from "@/lib/api/letter-document";
@@ -214,7 +215,8 @@ export default function RichEditSuratInner({
                   );
                 }
                 releaseLoading();
-                setAppliedTemplateId(templateId);
+                setAppliedTemplateId(tpl.id);
+                setValue("templateId", tpl.id);
                 setFileName(`${tpl.name}.docx`);
                 setHasUnsavedChanges(true);
                 if (notify) {
@@ -239,7 +241,7 @@ export default function RichEditSuratInner({
           console.error("[LetterEditor] Gagal memuat template .docx:", err);
         });
     },
-    [onDocumentChange, showToast]
+    [onDocumentChange, setValue, showToast]
   );
 
   // Inisialisasi DevExpress RichEdit sekali saat mount
@@ -295,7 +297,7 @@ export default function RichEditSuratInner({
   }, []);
 
   // Muat naskah awal: jika draf sudah punya versi .docx di server, ambil dari GET /letters/{id}/document;
-  // jika belum, muat template .docx dari frontend/public/templates/.
+  // jika belum, muat template .docx dari /api/v1/templates/{id}/file (fallback public/templates/).
   useEffect(() => {
     const editor = instanceRef.current;
     const docFmt = docFmtRef.current;
@@ -366,13 +368,19 @@ export default function RichEditSuratInner({
 
   // Jika user memilih template di Section 1
   useEffect(() => {
-    if (isReady && formTemplateId && formTemplateId !== appliedTemplateId) {
-      if (!confirmOverwrite()) {
-        setValue("templateId", appliedTemplateId);
-        return;
-      }
-      loadTemplateIntoEditor(formTemplateId, false, false);
+    if (!isReady || !formTemplateId || formTemplateId === appliedTemplateId) {
+      return;
     }
+    const resolvedFormTpl = getTemplateById(formTemplateId);
+    const resolvedAppliedTpl = getTemplateById(appliedTemplateId);
+    if (resolvedFormTpl.id === resolvedAppliedTpl.id) {
+      return;
+    }
+    if (!confirmOverwrite()) {
+      setValue("templateId", appliedTemplateId);
+      return;
+    }
+    loadTemplateIntoEditor(formTemplateId, false, false);
   }, [
     formTemplateId,
     isReady,

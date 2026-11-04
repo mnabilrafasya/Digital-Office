@@ -1,8 +1,7 @@
 // lib/templates/letter-templates.ts
-// Registri template tata naskah dinas (.docx).
-// - File .docx template fisik disimpan di `frontend/public/templates/*.docx` (selama endpoint
-//   MinIO `/api/v1/templates` di backend belum tersedia). Anda dapat mengganti/mengedit file
-//   .docx di folder `frontend/public/templates/` langsung menggunakan Microsoft Word.
+// Registri & klien API template tata naskah dinas (.docx).
+// - Mengambil daftar dan file .docx template dari backend & MinIO (`/api/v1/templates` dan `/api/v1/templates/{id}/file`).
+// - Menyediakan fallback ke `frontend/public/templates/*.docx` bila diakses tanpa sesi login (misal `/dev/editor`).
 // - Saat tombol "Sinkronkan Form" diklik, placeholder di dalam dokumen .docx yang dimuat
 //   diperbarui secara langsung di editor dengan data form terbaru (Perihal, Sifat, Penerima, Approver).
 
@@ -22,77 +21,357 @@ export interface LetterTemplateContext {
   attachmentsCount?: number;
 }
 
-export interface LetterTemplateDefinition {
+export interface BackendTemplateItem {
   id: string;
   name: string;
-  description: string;
-  /** Path ke file .docx statis di folder frontend/public/templates/ (misal "/templates/surat-dinas-standar.docx") */
+  description: string | null;
+  letterType: { id: string; code: string; name: string } | null;
   fileUrl: string;
+  createdBy: { id: string; name: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LetterTemplateDefinition {
+  id: string;
+  /** ID statis warisan (mis. "tmpl-dinas-standar") untuk pencocokan mundur */
+  legacyId?: string;
+  name: string;
+  description: string;
+  /** URL unduhan file .docx (`/api/v1/templates/{id}/file` atau fallback `/templates/*.docx`) */
+  fileUrl: string;
+  /** Path ke file .docx statis di `frontend/public/templates/` sebagai cadangan */
+  fallbackFileUrl?: string;
+  letterType?: { id: string; code: string; name: string } | null;
   letterTypeKeywords: string[];
 }
 
 export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
   {
     id: "tmpl-dinas-standar",
+    legacyId: "tmpl-dinas-standar",
     name: "Surat Dinas Resmi Standar",
     description:
       "Format surat resmi dengan Kop PT Pupuk Sriwidjaja Palembang, Nomor ###NoSurat###, Yth, TTD & Tembusan.",
     fileUrl: "/templates/surat-dinas-standar.docx",
+    fallbackFileUrl: "/templates/surat-dinas-standar.docx",
     letterTypeKeywords: ["surat", "antar", "keluar", "standar", "korporat"],
   },
   {
     id: "tmpl-nota-dinas",
+    legacyId: "tmpl-nota-dinas",
     name: "Nota Dinas Internal",
     description:
       "Format korespondensi internal (Yth, Dari, Tanggal, Perihal, Pembahasan, TTD Elektronik).",
     fileUrl: "/templates/nota-dinas.docx",
+    fallbackFileUrl: "/templates/nota-dinas.docx",
     letterTypeKeywords: ["nota", "dinas", "internal"],
   },
   {
     id: "tmpl-undangan",
+    legacyId: "tmpl-undangan",
     name: "Surat Undangan Rapat",
     description:
       "Format undangan kegiatan/rapat koordinasi lengkap dengan tabel Hari, Waktu, Tempat, Agenda.",
     fileUrl: "/templates/undangan-rapat.docx",
+    fallbackFileUrl: "/templates/undangan-rapat.docx",
     letterTypeKeywords: ["undangan", "rapat", "acara"],
   },
   {
     id: "tmpl-tugas",
+    legacyId: "tmpl-tugas",
     name: "Surat Perintah Tugas (SPT)",
     description:
       "Format penugasan kedinasan resmi dengan tabel daftar pegawai dan pejabat penandatangan.",
     fileUrl: "/templates/surat-tugas.docx",
+    fallbackFileUrl: "/templates/surat-tugas.docx",
     letterTypeKeywords: ["tugas", "perintah", "spt"],
   },
   {
     id: "tmpl-kosong",
+    legacyId: "tmpl-kosong",
     name: "Dokumen Kosong (Blank)",
     description: "Mulai dari halaman kosong A4 standar Word.",
     fileUrl: "/templates/dokumen-kosong.docx",
+    fallbackFileUrl: "/templates/dokumen-kosong.docx",
     letterTypeKeywords: [],
   },
 ];
 
-export function getTemplateById(id?: string): LetterTemplateDefinition {
-  const found = LETTER_TEMPLATE_LIST.find((t) => t.id === id);
-  return found || LETTER_TEMPLATE_LIST[0];
+let cachedTemplates: LetterTemplateDefinition[] | null = null;
+let inflightTemplatesPromise: Promise<LetterTemplateDefinition[]> | null = null;
+
+function mapBackendTemplateToDefinition(
+  item: BackendTemplateItem
+): LetterTemplateDefinition {
+  const normalizedName = item.name.trim().toLowerCase();
+  const matchedStatic =
+    LETTER_TEMPLATE_LIST.find(
+      (s) => s.name.trim().toLowerCase() === normalizedName
+    ) ??
+    (item.letterType?.code
+      ? LETTER_TEMPLATE_LIST.find((s) =>
+          s.letterTypeKeywords.some(
+            (kw) =>
+              item.letterType!.code.toLowerCase().includes(kw) ||
+              item.letterType!.name.toLowerCase().includes(kw)
+          )
+        )
+      : undefined);
+
+  const extraKeywords = item.letterType
+    ? [
+        item.letterType.code.toLowerCase(),
+        ...item.letterType.name.toLowerCase().split(/\s+/),
+      ]
+    : [];
+
+  return {
+    id: String(item.id),
+    legacyId: matchedStatic?.legacyId ?? matchedStatic?.id,
+    name: item.name,
+    description: item.description ?? matchedStatic?.description ?? "",
+    fileUrl:
+      item.fileUrl || `/api/v1/templates/${encodeURIComponent(item.id)}/file`,
+    fallbackFileUrl: matchedStatic?.fallbackFileUrl ?? matchedStatic?.fileUrl,
+    letterType: item.letterType,
+    letterTypeKeywords: Array.from(
+      new Set([...(matchedStatic?.letterTypeKeywords ?? []), ...extraKeywords])
+    ),
+  };
+}
+
+function sortTemplatesForDisplay(
+  items: LetterTemplateDefinition[]
+): LetterTemplateDefinition[] {
+  const priorityOrder = [
+    "surat dinas resmi standar",
+    "nota dinas internal",
+    "surat undangan rapat",
+    "surat perintah tugas (spt)",
+  ];
+  return [...items].sort((a, b) => {
+    const aLower = a.name.trim().toLowerCase();
+    const bLower = b.name.trim().toLowerCase();
+    const aIsBlank =
+      aLower.includes("dokumen kosong") || a.legacyId === "tmpl-kosong";
+    const bIsBlank =
+      bLower.includes("dokumen kosong") || b.legacyId === "tmpl-kosong";
+    if (aIsBlank && !bIsBlank) return 1;
+    if (!aIsBlank && bIsBlank) return -1;
+
+    const aIdx = priorityOrder.indexOf(aLower);
+    const bIdx = priorityOrder.indexOf(bLower);
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+    return a.name.localeCompare(b.name, "id");
+  });
+}
+
+export function getCachedTemplates(): LetterTemplateDefinition[] {
+  return cachedTemplates ?? LETTER_TEMPLATE_LIST;
 }
 
 /**
- * Mengambil Blob .docx template fisik dari `frontend/public/templates/*.docx`.
+ * Mengambil daftar template aktif dari `GET /api/v1/templates`.
+ * Bila gagal (misal pada halaman dev tanpa sesi login), kembali ke `LETTER_TEMPLATE_LIST`.
+ */
+export async function fetchTemplates(
+  letterTypeId?: string
+): Promise<LetterTemplateDefinition[]> {
+  const cleanTypeId = letterTypeId?.trim();
+  if (!cleanTypeId && cachedTemplates) {
+    return cachedTemplates;
+  }
+  if (!cleanTypeId && inflightTemplatesPromise) {
+    return inflightTemplatesPromise;
+  }
+
+  const query = cleanTypeId
+    ? `?letterTypeId=${encodeURIComponent(cleanTypeId)}`
+    : "";
+
+  const requestPromise = fetch(`/api/v1/templates${query}`, {
+    cache: "no-store",
+    credentials: "include",
+  })
+    .then(async (res) => {
+      if (!res.ok) return cachedTemplates ?? LETTER_TEMPLATE_LIST;
+      const payload = (await res.json()) as { data?: BackendTemplateItem[] };
+      const items = payload.data;
+      if (!Array.isArray(items) || items.length === 0) {
+        return LETTER_TEMPLATE_LIST;
+      }
+      const mapped = sortTemplatesForDisplay(
+        items.map(mapBackendTemplateToDefinition)
+      );
+      if (!cleanTypeId) {
+        cachedTemplates = mapped;
+      }
+      return mapped;
+    })
+    .catch(() => cachedTemplates ?? LETTER_TEMPLATE_LIST)
+    .finally(() => {
+      if (!cleanTypeId) {
+        inflightTemplatesPromise = null;
+      }
+    });
+
+  if (!cleanTypeId) {
+    inflightTemplatesPromise = requestPromise;
+  }
+  return requestPromise;
+}
+
+export interface SaveTemplateInput {
+  name: string;
+  description?: string;
+  letterTypeId?: string;
+  file?: File;
+}
+
+/**
+ * Membuat template naskah baru (`POST /api/v1/templates`, `multipart/form-data`).
+ */
+export async function createTemplate(
+  input: SaveTemplateInput & { file: File }
+): Promise<LetterTemplateDefinition> {
+  const formData = new FormData();
+  formData.append("name", input.name.trim());
+  if (input.description?.trim()) {
+    formData.append("description", input.description.trim());
+  }
+  if (input.letterTypeId?.trim()) {
+    formData.append("letterTypeId", input.letterTypeId.trim());
+  }
+  formData.append("file", input.file, input.file.name);
+
+  const res = await fetch("/api/v1/templates", {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+  const payload = (await res.json().catch(() => null)) as {
+    data?: BackendTemplateItem;
+    error?: { message?: string };
+  } | null;
+
+  if (!res.ok || !payload?.data) {
+    throw new Error(
+      payload?.error?.message ?? `Gagal membuat template (HTTP ${res.status})`
+    );
+  }
+  cachedTemplates = null;
+  return mapBackendTemplateToDefinition(payload.data);
+}
+
+/**
+ * Memperbarui template naskah (`PUT /api/v1/templates/{templateId}`, `multipart/form-data`).
+ */
+export async function updateTemplate(
+  templateId: string,
+  input: SaveTemplateInput
+): Promise<LetterTemplateDefinition> {
+  const formData = new FormData();
+  formData.append("name", input.name.trim());
+  if (input.description?.trim()) {
+    formData.append("description", input.description.trim());
+  }
+  if (input.letterTypeId?.trim()) {
+    formData.append("letterTypeId", input.letterTypeId.trim());
+  }
+  if (input.file) {
+    formData.append("file", input.file, input.file.name);
+  }
+
+  const res = await fetch(
+    `/api/v1/templates/${encodeURIComponent(templateId)}`,
+    {
+      method: "PUT",
+      body: formData,
+      credentials: "include",
+    }
+  );
+  const payload = (await res.json().catch(() => null)) as {
+    data?: BackendTemplateItem;
+    error?: { message?: string };
+  } | null;
+
+  if (!res.ok || !payload?.data) {
+    throw new Error(
+      payload?.error?.message ??
+        `Gagal memperbarui template (HTTP ${res.status})`
+    );
+  }
+  cachedTemplates = null;
+  return mapBackendTemplateToDefinition(payload.data);
+}
+
+export function getTemplateById(
+  id?: string,
+  list: LetterTemplateDefinition[] = getCachedTemplates()
+): LetterTemplateDefinition {
+  const source = list.length > 0 ? list : LETTER_TEMPLATE_LIST;
+  if (!id) return source[0];
+
+  const clean = id.trim();
+  const cleanLower = clean.toLowerCase();
+
+  const found =
+    source.find((t) => t.id === clean || t.legacyId === clean) ??
+    source.find((t) => t.name.trim().toLowerCase() === cleanLower) ??
+    source.find((t) => t.letterType?.code?.toLowerCase() === cleanLower);
+
+  if (found) return found;
+
+  if (/^\d+$/.test(clean)) {
+    return {
+      id: clean,
+      name: `Template #${clean}`,
+      description: "",
+      fileUrl: `/api/v1/templates/${encodeURIComponent(clean)}/file`,
+      fallbackFileUrl: LETTER_TEMPLATE_LIST[0].fileUrl,
+      letterTypeKeywords: [],
+    };
+  }
+
+  return source[0];
+}
+
+/**
+ * Mengambil Blob .docx template dari MinIO (`GET /api/v1/templates/{id}/file`),
+ * dengan fallback ke `frontend/public/templates/*.docx` bila API tidak dapat diakses.
  */
 export async function resolveTemplateDocxBlob(
   templateId?: string
 ): Promise<{ blob: Blob; template: LetterTemplateDefinition }> {
-  const tpl = getTemplateById(templateId);
-  const res = await fetch(tpl.fileUrl, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(
-      `Gagal memuat file template "${tpl.name}" dari ${tpl.fileUrl} (HTTP ${res.status})`
-    );
+  const templates = cachedTemplates ?? (await fetchTemplates());
+  const tpl = getTemplateById(templateId, templates);
+
+  const res = await fetch(tpl.fileUrl, {
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  if (res.ok) {
+    const blob = await res.blob();
+    return { blob, template: tpl };
   }
-  const blob = await res.blob();
-  return { blob, template: tpl };
+
+  if (tpl.fallbackFileUrl && tpl.fallbackFileUrl !== tpl.fileUrl) {
+    const fallbackRes = await fetch(tpl.fallbackFileUrl, {
+      cache: "no-store",
+    });
+    if (fallbackRes.ok) {
+      const blob = await fallbackRes.blob();
+      return { blob, template: tpl };
+    }
+  }
+
+  throw new Error(
+    `Gagal memuat file template "${tpl.name}" dari ${tpl.fileUrl} (HTTP ${res.status})`
+  );
 }
 
 /**
