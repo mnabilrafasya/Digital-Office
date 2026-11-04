@@ -36,6 +36,7 @@ interface NavItem {
   icon: React.ReactNode;
   badge?: number;
   dynamicBadge?: boolean;
+  requiredPermission?: string;
   children?: NavItem[];
 }
 
@@ -78,17 +79,38 @@ const NAV_ITEMS: NavItem[] = [
     label: "Penciptaan Surat",
     icon: <FilePlus size={16} />,
     children: [
-      { label: "Buat Surat Baru",   href: "/surat/baru",     icon: <FilePlus size={14} /> },
-      { label: "Buat SP/ASP",       href: "/surat/sp-asp",   icon: <FileText size={14} /> },
-      { label: "Daftar Surat",      href: "/surat/daftar",   icon: <FileText size={14} /> },
-      { label: "Menunggu Review",   href: "/surat/review",   icon: <ClipboardCheck size={14} /> },
-      { label: "Menunggu Approval", href: "/surat/approval", icon: <CheckSquare size={14} /> },
+      {
+        label: "Buat Surat Baru",
+        href: "/surat/baru",
+        icon: <FilePlus size={14} />,
+        requiredPermission: "LETTER_CREATE",
+      },
+      {
+        label: "Buat SP/ASP",
+        href: "/surat/sp-asp",
+        icon: <FileText size={14} />,
+        requiredPermission: "LETTER_CREATE",
+      },
+      { label: "Daftar Surat", href: "/surat/daftar", icon: <FileText size={14} /> },
+      {
+        label: "Menunggu Review",
+        href: "/surat/review",
+        icon: <ClipboardCheck size={14} />,
+        requiredPermission: "LETTER_REVIEW",
+      },
+      {
+        label: "Menunggu Approval",
+        href: "/surat/approval",
+        icon: <CheckSquare size={14} />,
+        requiredPermission: "LETTER_APPROVE",
+      },
     ],
   },
   {
     label: "Master Data",
     href: "/master-data",
     icon: <Database size={16} />,
+    requiredPermission: "TEMPLATE_CREATE",
   },
   {
     label: "Manajemen Arsip Aktif",
@@ -104,6 +126,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Permission Document",
     href: "/permission",
     icon: <Shield size={16} />,
+    requiredPermission: "AUDIT_VIEW",
   },
   {
     label: "Inbox",
@@ -115,12 +138,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Notifikasi",
     href: "/notifikasi",
     icon: <Bell size={16} />,
-    badge: 3,
   },
   {
     label: "Rekap",
     href: "/rekap",
     icon: <BarChart3 size={16} />,
+    requiredPermission: "AUDIT_VIEW",
   },
   {
     label: "Pencarian",
@@ -129,6 +152,31 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+function filterNavItemsByPermissions(
+  items: NavItem[],
+  permissions?: string[]
+): NavItem[] {
+  if (!permissions) return items;
+  const permSet = new Set(permissions);
+
+  return items.reduce<NavItem[]>((acc, item) => {
+    if (item.requiredPermission && !permSet.has(item.requiredPermission)) {
+      return acc;
+    }
+    if (item.children) {
+      const filteredChildren = filterNavItemsByPermissions(
+        item.children,
+        permissions
+      );
+      if (filteredChildren.length === 0) return acc;
+      acc.push({ ...item, children: filteredChildren });
+      return acc;
+    }
+    acc.push(item);
+    return acc;
+  }, []);
+}
+
 // ─── Nav group ───────────────────────────────
 
 function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
@@ -136,7 +184,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   const isActive = item.href
     ? pathname === item.href || pathname.startsWith(item.href + "/")
     : item.children?.some(
-        (c) => c.href && (pathname === c.href || pathname.startsWith(c.href + "/")),
+        (c) => c.href && (pathname === c.href || pathname.startsWith(c.href + "/"))
       );
 
   const [open, setOpen] = useState(isActive ?? false);
@@ -149,7 +197,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
           className={cn(
             "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors",
             "text-slate-300 hover:text-white hover:bg-white/10",
-            isActive && "text-white bg-white/10",
+            isActive && "text-white bg-white/10"
           )}
         >
           <span className="flex items-center gap-2">
@@ -175,7 +223,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
       className={cn(
         "flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors",
         "text-slate-300 hover:text-white hover:bg-white/10",
-        isActive && "text-white bg-white/15 font-medium",
+        isActive && "text-white bg-white/15 font-medium"
       )}
     >
       <span className="flex items-center gap-2">
@@ -196,7 +244,9 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
 
 // ─── Sidebar ─────────────────────────────────
 
-export function Sidebar() {
+export function Sidebar({ permissions }: { permissions?: string[] }) {
+  const visibleItems = filterNavItemsByPermissions(NAV_ITEMS, permissions);
+
   return (
     <aside className="fixed inset-y-0 left-0 w-56 bg-primary-dark flex flex-col z-30 overflow-hidden">
       {/* Logo */}
@@ -206,8 +256,12 @@ export function Sidebar() {
             <span className="text-white font-black text-sm">D</span>
           </div>
           <div>
-            <div className="text-white font-bold text-sm leading-tight">Digital Office</div>
-            <div className="text-slate-400 text-[10px] leading-tight">Sistem Persuratan</div>
+            <div className="text-white font-bold text-sm leading-tight">
+              Digital Office
+            </div>
+            <div className="text-slate-400 text-[10px] leading-tight">
+              Sistem Persuratan
+            </div>
           </div>
         </div>
       </div>
@@ -215,7 +269,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
         <Suspense fallback={null}>
-          {NAV_ITEMS.map((item) => (
+          {visibleItems.map((item) => (
             <NavGroup key={item.label} item={item} />
           ))}
         </Suspense>
@@ -223,7 +277,9 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 shrink-0">
-        <p className="text-slate-500 text-[10px]">&copy; 2026 PT Pupuk Sriwidjaja Palembang</p>
+        <p className="text-slate-500 text-[10px]">
+          &copy; 2026 PT Pupuk Sriwidjaja Palembang
+        </p>
       </div>
     </aside>
   );

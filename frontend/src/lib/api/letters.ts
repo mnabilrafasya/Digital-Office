@@ -40,7 +40,8 @@ interface BackendListResponse {
 function mapBackendLetter(b: BackendLetterItem): LetterListItem {
   const isDrafterEditable =
     b.status === "DRAFT" || b.status === "RETURNED_TO_DRAFTER";
-  const isReviewable = b.status === "IN_REVIEW";
+  const isReviewable =
+    b.status === "IN_REVIEW" || b.status === "RETURNED_TO_REVIEWER";
   const isApprovable = b.status === "IN_APPROVAL";
 
   const actions: string[] = [];
@@ -126,7 +127,7 @@ export async function listLetters(
       status === "RETURNED_TO_DRAFTER" ? COUNT_GROUPS.RETURNED : status,
     );
   } else if (scope === "review") {
-    queryParams.set("status", "IN_REVIEW");
+    queryParams.set("status", "IN_REVIEW,RETURNED_TO_REVIEWER");
   } else if (scope === "approval") {
     queryParams.set("status", "IN_APPROVAL");
   }

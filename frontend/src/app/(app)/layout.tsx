@@ -23,7 +23,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
           <aside className="fixed inset-y-0 left-0 w-56 bg-primary-dark z-30" />
         }
       >
-        <Sidebar />
+        <Sidebar permissions={user.permissions} />
       </Suspense>
       <Header />
       {/* Main content — offset untuk sidebar (w-56 = 224px) dan header (h-14 = 56px) */}
