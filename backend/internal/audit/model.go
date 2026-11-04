@@ -19,21 +19,26 @@ const SystemActor = "Sistem"
 
 // Jenis data yang dicatat (kolom entity_type).
 const (
-	EntityLetter = "LETTER"
-	EntityAudit  = "AUDIT" // tindakan atas audit log itu sendiri, misalnya ekspor
+	EntityLetter   = "LETTER"
+	EntityTemplate = "TEMPLATE" // template surat
+	EntityAudit    = "AUDIT"    // tindakan atas audit log itu sendiri, misalnya ekspor
 )
 
 // Aksi yang dicatat (kolom action). Transisi alur surat memakai nama aksinya sendiri
 // (SUBMIT, APPROVE, RETURN, SIGN).
 const (
-	ActionCreate      = "CREATE"       // draf surat dibuat
-	ActionSave        = "SAVE"         // naskah .docx disimpan
-	ActionFinalPDF    = "FINAL_PDF"    // PDF resmi ber-QR dibuat
-	ActionDownload    = "DOWNLOAD"     // dokumen surat diunduh
-	ActionView        = "VIEW"         // surat Rahasia dibuka
-	ActionDeliver     = "DELIVER"      // surat terbit dikirim ke inbox penerima
-	ActionInboxRead   = "INBOX_READ"   // surat masuk dibuka pertama kali
-	ActionDisposition = "DISPOSITION"  // surat didisposisikan
-	ActionRedirect    = "REDIRECT"     // surat dialihkan
-	ActionExport      = "AUDIT_EXPORT" // audit log diekspor
+	ActionCreate           = "CREATE"            // draf surat dibuat
+	ActionSave             = "SAVE"              // naskah .docx disimpan
+	ActionAttachmentAdd    = "ATTACHMENT_ADD"    // lampiran surat diunggah
+	ActionAttachmentDelete = "ATTACHMENT_DELETE" // lampiran surat dihapus
+	ActionFinalPDF         = "FINAL_PDF"         // PDF resmi ber-QR dibuat
+	ActionDownload         = "DOWNLOAD"          // dokumen atau lampiran surat diunduh
+	ActionView             = "VIEW"              // surat Rahasia dibuka
+	ActionDeliver          = "DELIVER"           // surat terbit dikirim ke inbox penerima
+	ActionInboxRead        = "INBOX_READ"        // surat masuk dibuka pertama kali
+	ActionDisposition      = "DISPOSITION"       // surat didisposisikan
+	ActionRedirect         = "REDIRECT"          // surat dialihkan
+	ActionTemplateCreate   = "TEMPLATE_CREATE"   // template surat dibuat
+	ActionTemplateUpdate   = "TEMPLATE_UPDATE"   // data atau file template surat diganti
+	ActionExport           = "AUDIT_EXPORT"      // audit log diekspor
 )

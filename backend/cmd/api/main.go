@@ -77,14 +77,15 @@ func run() error {
 
 	// Surat memakai fitur lain lewat interface miliknya sendiri (Directory, Lookups, Templates, Inbox)
 	suratService := surat.NewService(db.NewRunner(conn, deadlockAttempts), conn, surat.Repos{
-		Letters:   func(q db.DBTX) surat.Store { return surat.NewRepository(q) },
-		Audit:     func(q db.DBTX) surat.AuditStore { return audit.NewRepository(q) },
-		Inbox:     func(q db.DBTX) surat.InboxStore { return inbox.NewRepository(q) },
-		Directory: orgRepo,
-		Lookups:   masterRepo,
-		Templates: surat.NewRepository(conn),
-		Files:     files,
-		PDF:       pdf.NewMaker(cfg.GotenbergURL),
+		Letters:        func(q db.DBTX) surat.Store { return surat.NewRepository(q) },
+		Audit:          func(q db.DBTX) surat.AuditStore { return audit.NewRepository(q) },
+		Inbox:          func(q db.DBTX) surat.InboxStore { return inbox.NewRepository(q) },
+		TemplateWriter: func(q db.DBTX) surat.TemplateWriter { return surat.NewRepository(q) },
+		Directory:      orgRepo,
+		Lookups:        masterRepo,
+		Templates:      surat.NewRepository(conn),
+		Files:          files,
+		PDF:            pdf.NewMaker(cfg.GotenbergURL),
 	}, cfg.Location)
 
 	inboxService := inbox.NewService(db.NewRunner(conn, deadlockAttempts), conn, inbox.Repos{
