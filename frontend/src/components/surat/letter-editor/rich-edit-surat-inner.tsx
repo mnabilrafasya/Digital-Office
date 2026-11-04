@@ -3,7 +3,7 @@
 // components/surat/letter-editor/rich-edit-surat-inner.tsx
 // Editor naskah dinas berbasis DevExpress RichEdit (Section 3 Buat Surat).
 // Terhubung dengan:
-// - Template .docx dari backend & MinIO (`GET /api/v1/templates` & `/api/v1/templates/{id}/file`)
+// - API Template .docx di `/api/v1/templates` & `/api/v1/templates/{id}/file` (fallback `frontend/public/templates/*.docx`)
 // - Server dokumen MinIO: GET & PUT /api/v1/letters/{id}/document (.docx per versi)
 
 import { useRef, useEffect, useCallback, useState } from "react";
@@ -94,9 +94,14 @@ export default function RichEditSuratInner({
     const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
     setZoomLevel(clamped);
     zoomLevelRef.current = clamped;
-    if (instanceRef.current) {
-      instanceRef.current.zoomLevel = clamped;
-      instanceRef.current.adjust();
+    const editor = instanceRef.current;
+    if (editor && !editor.isDisposed) {
+      try {
+        editor.zoomLevel = clamped;
+        editor.adjust();
+      } catch {
+        // Abaikan bila instance sedang ditutup
+      }
     }
   }, []);
 
@@ -123,7 +128,7 @@ export default function RichEditSuratInner({
         new Promise((resolve) => {
           const editor = instanceRef.current;
           const docFmt = docFmtRef.current;
-          if (!editor || !docFmt) {
+          if (!editor || editor.isDisposed || !docFmt) {
             resolve(null);
             return;
           }
@@ -191,68 +196,75 @@ export default function RichEditSuratInner({
     (templateId: string, notify = true, syncFormFields = false) => {
       const editor = instanceRef.current;
       const docFmt = docFmtRef.current;
-      if (!editor || !docFmt) return;
+      if (!editor || editor.isDisposed || !docFmt) return;
 
       isLoadingDocRef.current = true;
       userEditedRef.current = false;
-      const releaseLoading = () =>
-        setTimeout(() => {
-          isLoadingDocRef.current = false;
-        }, 500);
 
       resolveTemplateDocxBlob(templateId)
         .then(({ blob, template: tpl }) => {
-          editor.openDocument(
+          const currentEditor = instanceRef.current;
+          if (!currentEditor || currentEditor.isDisposed) return;
+          const docName = `${tpl.name.replace(/\s+/g, "_")}.docx`;
+
+          currentEditor.openDocument(
             blob,
-            `${tpl.name}.docx`,
+            docName,
             docFmt.OpenXml,
             (success) => {
+              const activeEditor = instanceRef.current;
+              if (!activeEditor || activeEditor.isDisposed) return;
               if (success) {
                 if (syncFormFields) {
                   applyTemplateContextToEditor(
-                    editor,
+                    activeEditor,
                     getTemplateContextRef.current()
                   );
                 }
-                releaseLoading();
                 setAppliedTemplateId(tpl.id);
-                setValue("templateId", tpl.id);
-                setFileName(`${tpl.name}.docx`);
-                setHasUnsavedChanges(true);
+                setFileName(docName);
+                setHasUnsavedChanges(false);
                 if (notify) {
-                  showToast(
-                    syncFormFields
-                      ? `Data form disinkronkan ke "${tpl.name}"`
-                      : `Template "${tpl.name}" berhasil dimuat`
-                  );
+                  showToast(`Template "${tpl.name}" diterapkan`);
                 }
-                editor.zoomLevel = zoomLevelRef.current;
-                editor.adjust();
-                editor.focus();
-                onDocumentChange?.();
-              } else {
-                releaseLoading();
+                try {
+                  activeEditor.zoomLevel = zoomLevelRef.current;
+                  activeEditor.adjust();
+                } catch {
+                  // Abaikan
+                }
               }
+              setTimeout(() => {
+                isLoadingDocRef.current = false;
+              }, 500);
             }
           );
         })
         .catch((err) => {
           isLoadingDocRef.current = false;
-          console.error("[LetterEditor] Gagal memuat template .docx:", err);
+          console.error("[LetterEditor] Gagal memuat file .docx template:", err);
+          showToast("Gagal memuat file template .docx");
         });
     },
-    [onDocumentChange, setValue, showToast]
+    [showToast]
   );
 
-  // Inisialisasi DevExpress RichEdit sekali saat mount
+  // Inisialisasi DevExpress RichEdit di dalam elemen host imperatif terpisah
   useEffect(() => {
-    if (!containerRef.current) return;
+    const outerContainer = containerRef.current;
+    if (!outerContainer) return;
     let disposed = false;
+
+    const hostEl = document.createElement("div");
+    hostEl.style.width = "100%";
+    hostEl.style.height = "100%";
+    outerContainer.innerHTML = "";
+    outerContainer.appendChild(hostEl);
 
     (async () => {
       try {
         const mod = (await import("devexpress-richedit")) as RichEditModule;
-        if (disposed || !containerRef.current) return;
+        if (disposed || !hostEl.isConnected) return;
         moduleRef.current = mod;
         docFmtRef.current = mod.DocumentFormat;
 
@@ -275,24 +287,45 @@ export default function RichEditSuratInner({
           onKeyDown: (s, args) => keyDownHandlerRef.current(s, args),
         });
 
-        const editor = mod.create(containerRef.current, options);
+        const editor = mod.create(hostEl, options);
+        if (disposed) {
+          try {
+            if (!editor.isDisposed) editor.dispose();
+          } catch {
+            // Abaikan
+          }
+          return;
+        }
         instanceRef.current = editor;
         setIsReady(true);
       } catch (err) {
         console.error("[LetterEditor] Inisialisasi gagal:", err);
-        setErrorMsg(
-          err instanceof Error
-            ? err.message
-            : "Gagal memuat DevExpress RichEdit."
-        );
+        if (!disposed) {
+          setErrorMsg(
+            err instanceof Error
+              ? err.message
+              : "Gagal memuat DevExpress RichEdit."
+          );
+        }
       }
     })();
 
     return () => {
       disposed = true;
-      instanceRef.current?.dispose?.();
+      const inst = instanceRef.current;
       instanceRef.current = null;
-      setIsReady(false);
+      if (inst) {
+        try {
+          if (!inst.isDisposed) {
+            inst.dispose();
+          }
+        } catch {
+          // Abaikan error internal DevExpress saat iframe sudah terlepas dari DOM
+        }
+      }
+      if (outerContainer) {
+        outerContainer.innerHTML = "";
+      }
     };
   }, []);
 
@@ -301,7 +334,7 @@ export default function RichEditSuratInner({
   useEffect(() => {
     const editor = instanceRef.current;
     const docFmt = docFmtRef.current;
-    if (!isReady || !editor || !docFmt) return;
+    if (!isReady || !editor || editor.isDisposed || !docFmt) return;
 
     const serverKey =
       letterId && serverVersionNumber && serverVersionNumber > 0
@@ -313,7 +346,9 @@ export default function RichEditSuratInner({
       isLoadingDocRef.current = true;
       fetchLetterDocumentBlob(letterId!)
         .then((res) => {
-          if (!res || !instanceRef.current) {
+          const activeEditor = instanceRef.current;
+          if (!activeEditor || activeEditor.isDisposed) return;
+          if (!res) {
             loadTemplateIntoEditor(
               formTemplateId || "tmpl-dinas-standar",
               false,
@@ -321,7 +356,7 @@ export default function RichEditSuratInner({
             );
             return;
           }
-          instanceRef.current.openDocument(
+          activeEditor.openDocument(
             res.blob,
             res.fileName,
             docFmt.OpenXml,
@@ -329,12 +364,17 @@ export default function RichEditSuratInner({
               setTimeout(() => {
                 isLoadingDocRef.current = false;
               }, 500);
-              if (success && instanceRef.current) {
+              const currentEditor = instanceRef.current;
+              if (success && currentEditor && !currentEditor.isDisposed) {
                 setFileName(res.fileName);
                 setHasUnsavedChanges(false);
                 userEditedRef.current = true;
-                instanceRef.current.zoomLevel = zoomLevelRef.current;
-                instanceRef.current.adjust();
+                try {
+                  currentEditor.zoomLevel = zoomLevelRef.current;
+                  currentEditor.adjust();
+                } catch {
+                  // Abaikan
+                }
               }
             }
           );
@@ -399,11 +439,15 @@ export default function RichEditSuratInner({
       containerRef.current.style.height = targetHeight;
       containerRef.current.style.minHeight = targetHeight;
     }
-    if (!instanceRef.current) return;
     const t = setTimeout(() => {
-      if (instanceRef.current) {
-        instanceRef.current.zoomLevel = zoomLevelRef.current;
-        instanceRef.current.adjust();
+      const editor = instanceRef.current;
+      if (editor && !editor.isDisposed) {
+        try {
+          editor.zoomLevel = zoomLevelRef.current;
+          editor.adjust();
+        } catch {
+          // Abaikan
+        }
       }
     }, 150);
     return () => clearTimeout(t);
@@ -417,7 +461,7 @@ export default function RichEditSuratInner({
       const file = (e.target as HTMLInputElement).files?.[0];
       const editor = instanceRef.current;
       const docFmt = docFmtRef.current;
-      if (!file || !editor || !docFmt) return;
+      if (!file || !editor || editor.isDisposed || !docFmt) return;
 
       const buffer = await file.arrayBuffer();
       const ext = file.name.split(".").pop()?.toLowerCase();
@@ -433,14 +477,18 @@ export default function RichEditSuratInner({
         setTimeout(() => {
           isLoadingDocRef.current = false;
         }, 500);
-        if (success) {
+        if (success && !editor.isDisposed) {
           userEditedRef.current = true;
           setHasUnsavedChanges(true);
           setFileName(file.name.replace(/\.(rtf|txt)$/i, ".docx"));
           showToast(`File "${file.name}" berhasil dibuka`);
-          editor.zoomLevel = zoomLevelRef.current;
-          editor.adjust();
-          editor.focus();
+          try {
+            editor.zoomLevel = zoomLevelRef.current;
+            editor.adjust();
+            editor.focus();
+          } catch {
+            // Abaikan
+          }
           onDocumentChange?.();
         }
       });
@@ -451,7 +499,7 @@ export default function RichEditSuratInner({
   const handleDownloadDocx = useCallback(() => {
     const editor = instanceRef.current;
     const docFmt = docFmtRef.current;
-    if (!editor || !docFmt) return;
+    if (!editor || editor.isDisposed || !docFmt) return;
     setIsSaving(true);
     editor.exportToFile((file: File) => {
       const url = URL.createObjectURL(file);
@@ -468,7 +516,7 @@ export default function RichEditSuratInner({
   const handlePrintPdf = useCallback(() => {
     const editor = instanceRef.current;
     const mod = moduleRef.current;
-    if (!editor) return;
+    if (!editor || editor.isDisposed) return;
     editor.printDocument(mod?.PrintMode?.Html ?? 1);
   }, []);
 

@@ -86,12 +86,10 @@ const NAV_ITEMS: NavItem[] = [
         requiredPermission: "LETTER_CREATE",
       },
       {
-        label: "Buat SP/ASP",
-        href: "/surat/sp-asp",
+        label: "Daftar Surat",
+        href: "/surat/daftar",
         icon: <FileText size={14} />,
-        requiredPermission: "LETTER_CREATE",
       },
-      { label: "Daftar Surat", href: "/surat/daftar", icon: <FileText size={14} /> },
       {
         label: "Menunggu Review",
         href: "/surat/review",
@@ -111,16 +109,6 @@ const NAV_ITEMS: NavItem[] = [
     href: "/master-data",
     icon: <Database size={16} />,
     requiredPermission: "TEMPLATE_CREATE",
-  },
-  {
-    label: "Manajemen Arsip Aktif",
-    href: "/arsip/aktif",
-    icon: <Archive size={16} />,
-  },
-  {
-    label: "Manajemen Arsip Inaktif",
-    href: "/arsip/inaktif",
-    icon: <ArchiveX size={16} />,
   },
   {
     label: "Permission Document",
@@ -154,7 +142,7 @@ const NAV_ITEMS: NavItem[] = [
 
 function filterNavItemsByPermissions(
   items: NavItem[],
-  permissions?: string[]
+  permissions?: string[],
 ): NavItem[] {
   if (!permissions) return items;
   const permSet = new Set(permissions);
@@ -166,7 +154,7 @@ function filterNavItemsByPermissions(
     if (item.children) {
       const filteredChildren = filterNavItemsByPermissions(
         item.children,
-        permissions
+        permissions,
       );
       if (filteredChildren.length === 0) return acc;
       acc.push({ ...item, children: filteredChildren });
@@ -184,7 +172,8 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   const isActive = item.href
     ? pathname === item.href || pathname.startsWith(item.href + "/")
     : item.children?.some(
-        (c) => c.href && (pathname === c.href || pathname.startsWith(c.href + "/"))
+        (c) =>
+          c.href && (pathname === c.href || pathname.startsWith(c.href + "/")),
       );
 
   const [open, setOpen] = useState(isActive ?? false);
@@ -197,7 +186,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
           className={cn(
             "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors",
             "text-slate-300 hover:text-white hover:bg-white/10",
-            isActive && "text-white bg-white/10"
+            isActive && "text-white bg-white/10",
           )}
         >
           <span className="flex items-center gap-2">
@@ -223,7 +212,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
       className={cn(
         "flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors",
         "text-slate-300 hover:text-white hover:bg-white/10",
-        isActive && "text-white bg-white/15 font-medium"
+        isActive && "text-white bg-white/15 font-medium",
       )}
     >
       <span className="flex items-center gap-2">

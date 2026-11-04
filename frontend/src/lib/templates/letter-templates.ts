@@ -407,92 +407,103 @@ function replacePlaceholderInSubDoc(
  * ke dalam naskah .docx yang sedang dimuat di DevExpress RichEdit.
  */
 export function applyTemplateContextToEditor(
-  editor: RichEdit,
+  editor: RichEdit | null | undefined,
   ctx: LetterTemplateContext
 ) {
-  const subDoc = editor.document?.subDocuments?.main;
+  if (!editor || editor.isDisposed) return;
+
+  let subDoc: RichEdit["document"]["subDocuments"]["main"] | undefined;
+  try {
+    subDoc = editor.document?.subDocuments?.main;
+  } catch {
+    return;
+  }
   if (!subDoc) return;
 
-  editor.beginUpdate();
   try {
-    if (ctx.title?.trim()) {
-      replacePlaceholderInSubDoc(subDoc, "[Perihal / Hal Surat]", ctx.title);
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "[Perihal / Hal Nota Dinas]",
-        ctx.title
-      );
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "Undangan Rapat Koordinasi",
-        ctx.title
-      );
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "Penugasan Implementasi Sistem",
-        ctx.title
-      );
-    }
+    editor.beginUpdate();
+    try {
+      if (ctx.title?.trim()) {
+        replacePlaceholderInSubDoc(subDoc, "[Perihal / Hal Surat]", ctx.title);
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "[Perihal / Hal Nota Dinas]",
+          ctx.title
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Undangan Rapat Koordinasi",
+          ctx.title
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Penugasan Implementasi Sistem",
+          ctx.title
+        );
+      }
 
-    if (ctx.recipients && ctx.recipients.length > 0) {
-      const recipientText = ctx.recipients.map((r) => r.name).join(", ");
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "Pimpinan Unit Kerja Terkait",
-        recipientText
-      );
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "Pimpinan Unit Terkait",
-        recipientText
-      );
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "Bapak/Ibu Pimpinan Unit Kerja",
-        recipientText
-      );
-    }
+      if (ctx.recipients && ctx.recipients.length > 0) {
+        const recipientText = ctx.recipients.map((r) => r.name).join(", ");
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Pimpinan Unit Kerja Terkait",
+          recipientText
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Pimpinan Unit Terkait",
+          recipientText
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Bapak/Ibu Pimpinan Unit Kerja",
+          recipientText
+        );
+      }
 
-    if (ctx.approver?.name) {
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "[Nama Pejabat Penandatangan]",
-        ctx.approver.name
-      );
-    }
+      if (ctx.approver?.name) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "[Nama Pejabat Penandatangan]",
+          ctx.approver.name
+        );
+      }
 
-    if (ctx.approver?.position) {
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "[Jabatan Pejabat Penandatangan]",
-        ctx.approver.position
-      );
-    }
+      if (ctx.approver?.position) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "[Jabatan Pejabat Penandatangan]",
+          ctx.approver.position
+        );
+      }
 
-    if (ctx.approver?.employeeNumber) {
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "NIP. ..............................",
-        `NIP. ${ctx.approver.employeeNumber}`
-      );
-    }
+      if (ctx.approver?.employeeNumber) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "NIP. ..............................",
+          `NIP. ${ctx.approver.employeeNumber}`
+        );
+      }
 
-    if (ctx.drafter?.position) {
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "Staf Pengembang Sistem / Unit TI",
-        ctx.drafter.position
-      );
-    }
+      if (ctx.drafter?.position) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Staf Pengembang Sistem / Unit TI",
+          ctx.drafter.position
+        );
+      }
 
-    if (ctx.letterNumberPlaceholder) {
-      replacePlaceholderInSubDoc(
-        subDoc,
-        "###NoSurat###",
-        ctx.letterNumberPlaceholder
-      );
+      if (ctx.letterNumberPlaceholder) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "###NoSurat###",
+          ctx.letterNumberPlaceholder
+        );
+      }
+    } finally {
+      editor.endUpdate();
     }
-  } finally {
-    editor.endUpdate();
+  } catch {
+    // Abaikan jika instance RichEdit sudah ditutup saat callback sinkronisasi berjalan
   }
 }

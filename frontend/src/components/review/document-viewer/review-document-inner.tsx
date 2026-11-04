@@ -92,6 +92,7 @@ export default function ReviewDocumentInner({
   const editorRef = useRef<RichEdit | null>(null);
   const moduleRef = useRef<RichEditModule | null>(null);
   const docFmtRef = useRef<typeof DocumentFormat | null>(null);
+  const loadedDocKeyRef = useRef<string | null>(null);
 
   // Sesuai aturan backend (dokumen.go): Reviewer yang sedang memegang surat (IN_REVIEW / RETURNED_TO_REVIEWER)
   // boleh mengedit naskah .docx; Approver hanya membaca.
@@ -104,7 +105,16 @@ export default function ReviewDocumentInner({
       (a) => a.toUpperCase() === "APPROVE" || a.toUpperCase() === "RETURN"
     );
 
+  const isActiveReviewerRef = useRef(isActiveReviewer);
+  useEffect(() => {
+    isActiveReviewerRef.current = isActiveReviewer;
+  }, [isActiveReviewer]);
+
   const defaultHeight = isActiveReviewer ? "880px" : "760px";
+  const defaultHeightRef = useRef(defaultHeight);
+  useEffect(() => {
+    defaultHeightRef.current = defaultHeight;
+  }, [defaultHeight]);
 
   const [isReady, setIsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -123,7 +133,7 @@ export default function ReviewDocumentInner({
   const isLoadingDocRef = useRef(false);
 
   const [zoomLevel, setZoomLevel] = useState<number>(
-    isActiveReviewer ? 1 : 0.75
+    isActiveReviewer ? 1 : 1
   );
   const zoomLevelRef = useRef<number>(zoomLevel);
 
@@ -135,9 +145,14 @@ export default function ReviewDocumentInner({
     const clamped = Math.min(2.0, Math.max(0.5, Math.round(level * 100) / 100));
     setZoomLevel(clamped);
     zoomLevelRef.current = clamped;
-    if (editorRef.current) {
-      editorRef.current.zoomLevel = clamped;
-      editorRef.current.adjust();
+    const editor = editorRef.current;
+    if (editor && !editor.isDisposed) {
+      try {
+        editor.zoomLevel = clamped;
+        editor.adjust();
+      } catch {
+        // Abaikan bila instance sedang ditutup
+      }
     }
   }, []);
 
@@ -157,7 +172,15 @@ export default function ReviewDocumentInner({
   const handleSaveReviewerVersion = useCallback(() => {
     const editor = editorRef.current;
     const docFmt = docFmtRef.current;
-    if (!editor || !docFmt || !isActiveReviewer || isSavingVersion) return;
+    if (
+      !editor ||
+      editor.isDisposed ||
+      !docFmt ||
+      !isActiveReviewer ||
+      isSavingVersion
+    ) {
+      return;
+    }
 
     setIsSavingVersion(true);
     editor.exportToFile(async (file: File) => {
@@ -188,86 +211,152 @@ export default function ReviewDocumentInner({
     isActiveReviewer ? handleSaveReviewerVersion : undefined
   );
 
-  // Inisialisasi DevExpress RichEdit
+  // Inisialisasi DevExpress RichEdit satu kali saat komponen dipasang
+  // Menggunakan elemen host imperatif terpisah di dalam containerRef agar DOM DevExpress
+  // tidak pernah bentrok dengan rekonsiliasi React (mencegah NotFoundError removeChild).
   useEffect(() => {
-    if (!containerRef.current) return;
+    const outerContainer = containerRef.current;
+    if (!outerContainer) return;
     let disposed = false;
+
+    const hostEl = document.createElement("div");
+    hostEl.style.width = "100%";
+    hostEl.style.height = "100%";
+    outerContainer.innerHTML = "";
+    outerContainer.appendChild(hostEl);
 
     (async () => {
       try {
         const mod = (await import("devexpress-richedit")) as RichEditModule;
-        if (disposed || !containerRef.current) return;
+        if (disposed || !hostEl.isConnected) return;
         moduleRef.current = mod;
         docFmtRef.current = mod.DocumentFormat;
         if (LICENSE_KEY && mod.license) mod.license(LICENSE_KEY);
 
+        const initialReviewerMode = isActiveReviewerRef.current;
         const options = createWordEditorOptions({
           mod,
-          readOnly: !isActiveReviewer,
-          showRibbon: isActiveReviewer,
+          readOnly: !initialReviewerMode,
+          showRibbon: initialReviewerMode,
           initialZoom: zoomLevelRef.current,
-          height: defaultHeight,
+          height: defaultHeightRef.current,
           onDocumentChanged: () => {
-            if (!isLoadingDocRef.current && isActiveReviewer) {
+            if (!isLoadingDocRef.current && isActiveReviewerRef.current) {
               setHasEdited(true);
             }
           },
           onKeyDown: (s, args) => keyDownRef.current(s, args),
         });
 
-        editorRef.current = mod.create(containerRef.current, options);
+        const instance = mod.create(hostEl, options);
+        if (disposed) {
+          try {
+            if (!instance.isDisposed) instance.dispose();
+          } catch {
+            // Abaikan
+          }
+          return;
+        }
+        editorRef.current = instance;
         setIsReady(true);
       } catch (err) {
         console.error("[ReviewDocumentViewer] Inisialisasi gagal:", err);
-        setErrorMsg(
-          err instanceof Error
-            ? err.message
-            : "Gagal memuat DevExpress RichEdit."
-        );
+        if (!disposed) {
+          setErrorMsg(
+            err instanceof Error
+              ? err.message
+              : "Gagal memuat DevExpress RichEdit."
+          );
+        }
       }
     })();
 
     return () => {
       disposed = true;
-      editorRef.current?.dispose?.();
+      const inst = editorRef.current;
       editorRef.current = null;
-      setIsReady(false);
+      loadedDocKeyRef.current = null;
+      if (inst) {
+        try {
+          if (!inst.isDisposed) {
+            inst.dispose();
+          }
+        } catch {
+          // Abaikan error internal DevExpress saat iframe sudah terlepas dari DOM
+        }
+      }
+      if (outerContainer) {
+        outerContainer.innerHTML = "";
+      }
     };
-  }, [isActiveReviewer, defaultHeight]);
+  }, []);
+
+  // Ketika status peran berubah (misal Reviewer baru saja klik "Setujui Naskah" -> beralih ke Mode Baca),
+  // perbarui readOnly dan visibilitas Ribbon secara langsung tanpa me-dispose instance RichEdit.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!isReady || !editor || editor.isDisposed) return;
+    try {
+      editor.readOnly = !isActiveReviewer;
+      editor.updateRibbon((r) => {
+        r.visible = isActiveReviewer;
+      });
+      editor.adjust();
+    } catch {
+      // Abaikan bila instance sedang ditutup
+    }
+  }, [isReady, isActiveReviewer]);
 
   // Muat naskah: utamakan .docx dari server (bila currentVersion > 0 dan status != SENT);
   // fallback ke template .docx sesuai surat.
   useEffect(() => {
     const editor = editorRef.current;
     const mod = moduleRef.current;
-    if (!isReady || !editor || !mod) return;
+    if (!isReady || !editor || editor.isDisposed || !mod) return;
+
+    const docKey = `${letter.id}:v${letter.currentVersion ?? 0}:${letter.status === "SENT" ? "SENT" : "DOCX"}`;
+    if (loadedDocKeyRef.current === docKey) {
+      return;
+    }
+    loadedDocKeyRef.current = docKey;
 
     let cancelled = false;
     isLoadingDocRef.current = true;
 
     const openBlob = (blob: Blob, name: string, syncContext = false) => {
-      if (cancelled || !editorRef.current) return;
-      editorRef.current.openDocument(
-        blob,
-        name,
-        mod.DocumentFormat.OpenXml,
-        (success) => {
-          if (success && editorRef.current) {
-            if (syncContext) {
-              applyTemplateContextToEditor(
-                editorRef.current,
-                buildContext(letter)
-              );
+      const currentEditor = editorRef.current;
+      if (cancelled || !currentEditor || currentEditor.isDisposed) return;
+      try {
+        currentEditor.openDocument(
+          blob,
+          name,
+          mod.DocumentFormat.OpenXml,
+          (success) => {
+            const activeEditor = editorRef.current;
+            if (cancelled || !activeEditor || activeEditor.isDisposed) return;
+            try {
+              if (success) {
+                if (syncContext) {
+                  applyTemplateContextToEditor(
+                    activeEditor,
+                    buildContext(letter)
+                  );
+                }
+                setHasEdited(false);
+                activeEditor.zoomLevel = zoomLevelRef.current;
+                activeEditor.adjust();
+              }
+            } catch {
+              // Abaikan bila dokumen sudah ditutup
             }
-            setHasEdited(false);
-            editorRef.current.zoomLevel = zoomLevelRef.current;
-            editorRef.current.adjust();
+            setTimeout(() => {
+              isLoadingDocRef.current = false;
+            }, 500);
           }
-          setTimeout(() => {
-            isLoadingDocRef.current = false;
-          }, 500);
-        }
-      );
+        );
+      } catch {
+        isLoadingDocRef.current = false;
+      }
     };
 
     const loadFallbackTemplate = () => {
@@ -305,7 +394,7 @@ export default function ReviewDocumentInner({
     };
   }, [isReady, letter]);
 
-  // Sesuaikan ukuran saat fullscreen berubah
+  // Sesuaikan ukuran saat fullscreen atau tinggi berubah
   useEffect(() => {
     const targetHeight = isFullscreen ? "calc(100vh - 80px)" : defaultHeight;
     if (containerRef.current) {
@@ -313,9 +402,14 @@ export default function ReviewDocumentInner({
       containerRef.current.style.minHeight = targetHeight;
     }
     const t = setTimeout(() => {
-      if (editorRef.current) {
-        editorRef.current.zoomLevel = zoomLevelRef.current;
-        editorRef.current.adjust();
+      const editor = editorRef.current;
+      if (editor && !editor.isDisposed) {
+        try {
+          editor.zoomLevel = zoomLevelRef.current;
+          editor.adjust();
+        } catch {
+          // Abaikan
+        }
       }
     }, 150);
     return () => clearTimeout(t);
@@ -331,7 +425,7 @@ export default function ReviewDocumentInner({
     }
     const editor = editorRef.current;
     const mod = moduleRef.current;
-    if (!editor || !mod) return;
+    if (!editor || editor.isDisposed || !mod) return;
     editor.exportToFile((file: File) => {
       const url = URL.createObjectURL(file);
       const a = document.createElement("a");
@@ -348,7 +442,7 @@ export default function ReviewDocumentInner({
   function handlePrintPdf() {
     const editor = editorRef.current;
     const mod = moduleRef.current;
-    if (!editor) return;
+    if (!editor || editor.isDisposed) return;
     editor.printDocument(mod?.PrintMode?.Html ?? 1);
   }
 
