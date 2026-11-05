@@ -232,3 +232,84 @@ export function getLetterAttachmentDownloadUrl(
 ): string {
   return `${API}/letters/${encodeURIComponent(letterId)}/attachments/${encodeURIComponent(attachmentId)}`;
 }
+
+/**
+ * Mengunduh naskah terisi (.docx) surat yang sudah terbit (`GET /api/v1/letters/{letterId}/document/filled`):
+ * penanda nomor, tanggal, penerima, penandatangan, dan QR sudah diisi backend. Ditampilkan editor
+ * dalam mode baca dan diekspor menjadi PDF resmi.
+ */
+export async function fetchFilledLetterDocument(
+  letterId: string
+): Promise<{ blob: Blob; fileName: string }> {
+  const res = await fetch(
+    `${API}/letters/${encodeURIComponent(letterId)}/document/filled`,
+    { cache: "no-store", credentials: "include" }
+  );
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ?? `Gagal memuat naskah resmi (HTTP ${res.status})`
+    );
+  }
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  return { blob: await res.blob(), fileName: match?.[1]?.trim() || "Naskah_Resmi.docx" };
+}
+
+/**
+ * Menyimpan PDF resmi hasil ekspor editor (`PUT /api/v1/letters/{letterId}/document/final`).
+ * PDF pertama yang diterima backend dipakai; created=false berarti PDF resmi sudah ada sebelumnya.
+ */
+export async function uploadOfficialPdf(
+  letterId: string,
+  pdf: Blob,
+  fileName: string
+): Promise<{ version: DocumentVersion; created: boolean }> {
+  const form = new FormData();
+  form.append("file", new File([pdf], fileName, { type: "application/pdf" }), fileName);
+  const res = await fetch(
+    `${API}/letters/${encodeURIComponent(letterId)}/document/final`,
+    { method: "PUT", body: form, credentials: "include" }
+  );
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ?? `Gagal menyimpan PDF resmi (HTTP ${res.status})`
+    );
+  }
+  const json = (await res.json()) as { data: DocumentVersion };
+  return { version: json.data, created: res.status === 201 };
+}
+
+/** URL PDF resmi surat terbit: unduhan (tercatat di audit) atau inline untuk dibuka/dicetak. */
+export function officialPdfUrl(letterId: string, inline = false): string {
+  return `${API}/letters/${encodeURIComponent(letterId)}/document${inline ? "?inline=1" : ""}`;
+}
+
+/** Keadaan naskah resmi surat terbit untuk user yang membuka: salinan milik siapa dan apakah PDF-nya sudah ada. */
+export interface OfficialStatus {
+  pdfReady: boolean;
+  /** Jabatan pemilik salinan (penerima langsung); null = salinan induk. */
+  copyFor: string | null;
+}
+
+/** Mengambil status naskah resmi (`GET /api/v1/letters/{letterId}/document/status`). */
+export async function fetchOfficialStatus(letterId: string): Promise<OfficialStatus> {
+  const res = await fetch(
+    `${API}/letters/${encodeURIComponent(letterId)}/document/status`,
+    { cache: "no-store", credentials: "include" }
+  );
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ?? `Gagal memeriksa PDF resmi (HTTP ${res.status})`
+    );
+  }
+  return ((await res.json()) as { data: OfficialStatus }).data;
+}

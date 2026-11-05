@@ -54,7 +54,7 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        su.id, su.code, COALESCE(l.sender_unit_name, su.name),
        d.id, d.name, dp.name,
        a.id, a.name, ap.name, ISNULL(l.forwarded_by_id, 0),
-       sb.id, sb.name, sbp.name,
+       sb.id, sb.name, sbp.name, sb.employee_number,
        (SELECT TOP 1 ra.note FROM letter_actions ra
         WHERE ra.letter_id = l.id AND ra.action = 'RETURN'
         ORDER BY ra.id DESC),
@@ -81,7 +81,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		templateName                     sql.NullString
 		assigneeName, assigneePos        sql.NullString
 		signerID                         sql.NullInt64
-		signerName, signerPos            sql.NullString
+		signerName, signerPos, signerNIK sql.NullString
 		attachments                      sql.NullString
 	)
 	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode)).Scan(
@@ -93,7 +93,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		&d.SenderUnit.ID, &d.SenderUnit.Code, &d.SenderUnit.Name,
 		&d.Drafter.ID, &d.Drafter.Name, &d.Drafter.PositionName,
 		&assigneeID, &assigneeName, &assigneePos, &d.ForwardedByID,
-		&signerID, &signerName, &signerPos, &d.LastReturnNote,
+		&signerID, &signerName, &signerPos, &signerNIK, &d.LastReturnNote,
 		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt, &attachments,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -117,9 +117,10 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 	}
 	if signerID.Valid && d.LetterDate != nil {
 		d.Approval = &Approval{
-			ApprovedAt: *d.LetterDate,
-			ApprovedBy: PersonRef{ID: signerID.Int64, Name: signerName.String, PositionName: signerPos.String},
-			QRURL:      "/api/v1/letters/" + d.ID + "/qr",
+			ApprovedAt:     *d.LetterDate,
+			ApprovedBy:     PersonRef{ID: signerID.Int64, Name: signerName.String, PositionName: signerPos.String},
+			EmployeeNumber: signerNIK.String,
+			QRURL:          "/api/v1/letters/" + d.ID + "/qr",
 		}
 	}
 	return &d, nil

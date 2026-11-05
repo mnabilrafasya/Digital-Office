@@ -65,11 +65,13 @@ type Directory interface {
 	AliasMemberIDs(ctx context.Context, companyCode string, aliasIDs []int64) (map[int64][]int64, error)
 }
 
-// InboxStore memasukkan surat terbit ke inbox penerima, dan mengecek apakah surat ada di inbox
-// seseorang (penerima boleh membuka surat terbit). Dipenuhi repository inbox.
+// InboxStore memasukkan surat terbit ke inbox penerima, mengecek apakah surat ada di inbox
+// seseorang (penerima boleh membuka surat terbit), dan menentukan salinan milik siapa yang dilihat
+// seseorang (salinan.go). Dipenuhi repository inbox.
 type InboxStore interface {
 	DeliverDirect(ctx context.Context, letterID int64, to, cc []int64) error
 	HasItem(ctx context.Context, letterID, userID int64) (bool, error)
+	CopyOwner(ctx context.Context, letterID, userID int64) (ownerID int64, recipientType, positionName string, err error)
 }
 
 // Lookups memeriksa data acuan yang dirujuk surat (dipenuhi repository masterdata).
@@ -98,12 +100,13 @@ type DocumentFiles interface {
 	PutDocument(ctx context.Context, objectKey string, data []byte, contentType string) error
 	OpenDocument(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
 	RemoveDocument(ctx context.Context, objectKey string) error
+	DocumentExists(ctx context.Context, objectKey string) (bool, error)
 	PutTemplate(ctx context.Context, objectKey string, data []byte, contentType string) error
 	OpenTemplate(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
 }
 
-// PDFMaker membuat PDF resmi: .docx diubah ke PDF (LibreOffice) lalu QR ditempel di halaman
-// terakhir. Dipenuhi platform/pdf.
+// PDFMaker mengubah .docx ke PDF (LibreOffice di Gotenberg) dan menempel QR. Tidak dipakai lagi
+// sejak PDF resmi dibuat editor DevExpress (resmi.go); dihapus bersama Gotenberg (masih ditahan).
 type PDFMaker interface {
 	FromOffice(ctx context.Context, fileName string, data []byte) ([]byte, error)
 	StampLastPage(ctx context.Context, pdf, png []byte) ([]byte, error)
@@ -116,7 +119,7 @@ type AuditStore interface {
 
 // Repos adalah repository yang dibutuhkan Service. Letters, Audit, Inbox, dan TemplateWriter
 // dibuat di atas koneksi atau transaksi; Directory, Lookups, dan Templates hanya membaca di luar
-// transaksi. Files adalah penyimpanan file (MinIO); PDF adalah pembuat PDF resmi (Gotenberg).
+// transaksi. Files adalah penyimpanan file (MinIO); PDF tidak dipakai lagi (lihat PDFMaker).
 type Repos struct {
 	Letters        func(q db.DBTX) Store
 	Audit          func(q db.DBTX) AuditStore

@@ -39,7 +39,7 @@ func (h *Handler) Attachment(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	sendFile(w, f, "lampiran")
+	sendFile(w, f, "attachment", "lampiran")
 }
 
 // RemoveAttachment menangani DELETE /api/v1/letters/{letterId}/attachments/{attachmentId}.

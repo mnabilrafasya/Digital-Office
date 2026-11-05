@@ -106,3 +106,9 @@ func (m *Maker) StampLastPage(ctx context.Context, pdf, png []byte) ([]byte, err
 	}
 	return out.Bytes(), nil
 }
+
+// PageCount memeriksa bahwa data adalah PDF yang strukturnya valid dan mengembalikan jumlah
+// halamannya (dipakai untuk memvalidasi PDF resmi yang dibuat editor di front-end).
+func PageCount(ctx context.Context, data []byte) (int, error) {
+	return api.PageCount(ctx, bytes.NewReader(data), model.NewDefaultConfiguration())
+}

@@ -1,19 +1,12 @@
 package surat
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
-
-	"github.com/google/uuid"
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
@@ -26,17 +19,27 @@ import (
 //	belum disetujui approver   .docx (versi DRAFT terbaru, atau ?version=N)   drafter dan peserta
 //	sudah terbit (SENT)        PDF resmi ber-QR (versi FINAL)                 drafter, peserta, penerima inbox
 //
-// PDF resmi dibuat sekali, saat pertama kali diunduh: penanda ###NoSurat### di .docx terakhir
-// diisi nomor surat, lalu .docx diubah ke PDF oleh
-// LibreOffice (Gotenberg), QR persetujuan ditempel di pojok kanan bawah halaman terakhir, lalu
-// disimpan sebagai versi FINAL. Unduhan berikutnya memakai file yang sama persis.
+// PDF resmi dibuat oleh editor DevExpress di front-end dari naskah terisi, supaya sama persis dengan
+// tampilan di layar, lalu disimpan sekali sebagai versi FINAL (lihat resmi.go). Unduhan berikutnya
+// memakai file yang sama persis.
 
 // PDFContentType adalah tipe file PDF resmi.
 const PDFContentType = "application/pdf"
 
-// OpenDocument membuka naskah surat untuk diunduh (version 0 = versi terbaru). Pemanggil wajib
-// menutup Body.
+// OpenDocument membuka naskah surat untuk diunduh (version 0 = versi terbaru); unduhannya dicatat
+// di audit. Pemanggil wajib menutup Body.
 func (s *Service) OpenDocument(ctx context.Context, user *auth.CurrentUser, letterID string, version int) (*DocumentFile, error) {
+	return s.openDocument(ctx, user, letterID, version, true)
+}
+
+// ViewDocument sama dengan OpenDocument, tetapi untuk ditampilkan di layar (misalnya PDF resmi di
+// halaman detail surat), sehingga tidak dicatat sebagai DOWNLOAD. Pembukaan surat Rahasia sudah
+// dicatat saat detailnya dibuka (VIEW).
+func (s *Service) ViewDocument(ctx context.Context, user *auth.CurrentUser, letterID string, version int) (*DocumentFile, error) {
+	return s.openDocument(ctx, user, letterID, version, false)
+}
+
+func (s *Service) openDocument(ctx context.Context, user *auth.CurrentUser, letterID string, version int, recordDownload bool) (*DocumentFile, error) {
 	id, ok := parseLetterID(letterID)
 	if !ok {
 		return nil, ErrLetterNotFound
@@ -47,13 +50,17 @@ func (s *Service) OpenDocument(ctx context.Context, user *auth.CurrentUser, lett
 	}
 	var (
 		v           *DocumentVersion
+		c           officialCopy // salinan yang diunduh (surat terbit)
 		contentType = DocxContentType
 	)
 	if d.Status == StatusSent {
 		if version != 0 {
 			return nil, &apperr.InvalidStateError{Message: "Surat sudah disetujui. Yang bisa diunduh hanya PDF resmi ber-QR."}
 		}
-		if v, err = s.finalPDF(ctx, user, d); err != nil {
+		if c, err = s.copyFor(ctx, d, user); err != nil {
+			return nil, err
+		}
+		if v, err = s.officialPDF(ctx, d, c); err != nil {
 			return nil, err
 		}
 		contentType = PDFContentType
@@ -67,8 +74,11 @@ func (s *Service) OpenDocument(ctx context.Context, user *auth.CurrentUser, lett
 	if err != nil {
 		return nil, err
 	}
+	if !recordDownload {
+		return f, nil
+	}
 	err = s.audit.Record(ctx, letterEntry(user, d.InternalID, d.ID, audit.ActionDownload,
-		downloadSnapshot{VersionNumber: v.VersionNumber, Type: v.Type}))
+		downloadSnapshot{VersionNumber: v.VersionNumber, Type: v.Type, CopyFor: c.OwnerID}))
 	if err != nil {
 		f.Body.Close()
 		return nil, err
@@ -79,7 +89,8 @@ func (s *Service) OpenDocument(ctx context.Context, user *auth.CurrentUser, lett
 // downloadSnapshot adalah isi audit_logs.snapshot saat dokumen surat diunduh.
 type downloadSnapshot struct {
 	VersionNumber int    `json:"versionNumber"`
-	Type          string `json:"type"` // DRAFT (.docx) atau FINAL (PDF resmi)
+	Type          string `json:"type"`              // DRAFT (.docx) atau FINAL (PDF resmi)
+	CopyFor       int64  `json:"copyFor,omitempty"` // pemilik salinan penerima yang diunduh
 }
 
 // draftVersion mengambil versi naskah .docx (version 0 = terbaru).
@@ -102,97 +113,29 @@ func (s *Service) draftVersion(ctx context.Context, letterID int64, version int)
 	return v, err
 }
 
-// finalPDF mengambil versi PDF resmi surat terbit, membuatnya lebih dulu bila belum ada.
-func (s *Service) finalPDF(ctx context.Context, user *auth.CurrentUser, d *LetterDetail) (*DocumentVersion, error) {
-	v, err := s.reader.LatestVersion(ctx, d.InternalID, VersionFinal)
+// finalVersion mengambil PDF resmi surat terbit. Belum ada berarti belum disiapkan front-end
+// (lihat resmi.go).
+func (s *Service) finalVersion(ctx context.Context, letterID int64) (*DocumentVersion, error) {
+	v, err := s.reader.LatestVersion(ctx, letterID, VersionFinal)
 	if errors.Is(err, db.ErrNotFound) {
-		return s.createFinalPDF(ctx, user, d)
+		return nil, errFinalPDFNotReady
 	}
 	return v, err
 }
 
-// finalPDFSnapshot adalah isi audit_logs.snapshot saat PDF resmi dibuat (oleh sistem).
-type finalPDFSnapshot struct {
-	VersionNumber int    `json:"versionNumber"`
-	Checksum      string `json:"checksum"`
-	RequestedBy   int64  `json:"requestedBy"` // user yang unduhannya memicu pembuatan PDF
-}
-
-// createFinalPDF membuat dan menyimpan PDF resmi. Baris surat dikunci selama pembuatan, jadi dua
-// unduhan pertama yang bersamaan tidak membuat dua PDF: yang kedua menunggu lalu memakai hasil
-// yang pertama.
-func (s *Service) createFinalPDF(ctx context.Context, user *auth.CurrentUser, d *LetterDetail) (*DocumentVersion, error) {
-	if d.Approval == nil || d.LetterNumber == nil { // tidak terjadi untuk SENT (dijaga CHECK)
-		return nil, fmt.Errorf("surat %s berstatus SENT tanpa data persetujuan", d.ID)
+// officialPDF mengambil PDF resmi salinan c (belum ada = errFinalPDFNotReady).
+func (s *Service) officialPDF(ctx context.Context, d *LetterDetail, c officialCopy) (*DocumentVersion, error) {
+	if c.isMaster() {
+		return s.finalVersion(ctx, d.InternalID)
 	}
-	var final *DocumentVersion
-	err := s.tx.InTx(ctx, func(q db.DBTX) error {
-		letters := s.repos.Letters(q)
-		if _, err := letters.LockByUUID(ctx, user.Company.Code, d.ID); err != nil {
-			return notFoundAs(err)
-		}
-		existing, err := letters.LatestVersion(ctx, d.InternalID, VersionFinal)
-		if err == nil {
-			final = existing // dibuat request lain selagi menunggu kunci
-			return nil
-		}
-		if !errors.Is(err, db.ErrNotFound) {
-			return err
-		}
-
-		src, err := letters.LatestVersion(ctx, d.InternalID, VersionDraft)
-		if errors.Is(err, db.ErrNotFound) {
-			return &apperr.InvalidStateError{Message: "Naskah surat belum diunggah, sehingga PDF resmi belum bisa dibuat."}
-		}
-		if err != nil {
-			return err
-		}
-		docx, err := s.readFile(ctx, src.ObjectKey)
-		if err != nil {
-			return err
-		}
-		if docx, err = fillLetterNumber(docx, *d.LetterNumber); err != nil {
-			return err
-		}
-		converted, err := s.repos.PDF.FromOffice(ctx, "naskah.docx", docx)
-		if err != nil {
-			return err
-		}
-		qrPNG, err := approvalQRPNG(d)
-		if err != nil {
-			return err
-		}
-		stamped, err := s.repos.PDF.StampLastPage(ctx, converted, qrPNG)
-		if err != nil {
-			return err
-		}
-
-		key := uuid.NewString()
-		if err := s.repos.Files.PutDocument(ctx, key, stamped, PDFContentType); err != nil {
-			return err
-		}
-		sum := sha256.Sum256(stamped)
-		checksum := hex.EncodeToString(sum[:])
-		number, _, err := letters.AddVersion(ctx, NewVersion{
-			LetterID: d.InternalID, Status: d.Status, Type: VersionFinal, ObjectKey: key,
-			FileName: finalFileName(*d.LetterNumber), FileExtension: "pdf",
-			FileSize: int64(len(stamped)), Checksum: checksum,
-			CreatedBy: d.Approval.ApprovedBy.ID, CreatedByRole: RoleApprover, // dibuat atas nama penandatangan
-		})
-		if err != nil {
-			return err
-		}
-		if err := s.repos.Audit(q).Record(ctx, audit.Entry{
-			CompanyCode: user.Company.Code, EntityType: audit.EntityLetter, EntityID: d.InternalID, EntityUUID: d.ID,
-			Action:   audit.ActionFinalPDF,
-			Snapshot: finalPDFSnapshot{VersionNumber: number, Checksum: checksum, RequestedBy: user.ID},
-		}); err != nil {
-			return err
-		}
-		final, err = letters.FindVersion(ctx, d.InternalID, number)
-		return err
-	})
-	return final, err
+	exists, err := s.repos.Files.DocumentExists(ctx, copyObjectKey(d.ID, c, "pdf"))
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errFinalPDFNotReady
+	}
+	return s.copyVersion(ctx, d, c)
 }
 
 // openVersion membuka file satu versi naskah dari storage.
@@ -218,53 +161,8 @@ func (s *Service) readFile(ctx context.Context, objectKey string) ([]byte, error
 	return data, nil
 }
 
-// numberPlaceholder adalah penanda nomor surat di template naskah (diisi saat surat terbit).
-const numberPlaceholder = "###NoSurat###"
-
 // docxTextPart: bagian .docx yang berisi teks naskah (isi, header, footer, catatan kaki).
 var docxTextPart = regexp.MustCompile(`^word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$`)
-
-// fillLetterNumber mengganti penanda ###NoSurat### di naskah .docx dengan nomor surat. Penanda
-// yang terpecah oleh format berbeda di tengahnya (misalnya sebagian dicetak tebal) tidak
-// terganti; template sebaiknya menulis penanda dengan satu format.
-func fillLetterNumber(docx []byte, letterNumber string) ([]byte, error) {
-	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
-	if err != nil {
-		return nil, fmt.Errorf("membuka naskah .docx: %w", err)
-	}
-	var escaped bytes.Buffer
-	if err := xml.EscapeText(&escaped, []byte(letterNumber)); err != nil {
-		return nil, err
-	}
-
-	var out bytes.Buffer
-	zw := zip.NewWriter(&out)
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			return nil, fmt.Errorf("membaca naskah .docx: %w", err)
-		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, fmt.Errorf("membaca naskah .docx: %w", err)
-		}
-		if docxTextPart.MatchString(f.Name) {
-			data = bytes.ReplaceAll(data, []byte(numberPlaceholder), escaped.Bytes())
-		}
-		w, err := zw.CreateHeader(&zip.FileHeader{Name: f.Name, Method: f.Method, Modified: f.Modified})
-		if err != nil {
-			return nil, fmt.Errorf("menulis naskah .docx: %w", err)
-		}
-		if _, err := w.Write(data); err != nil {
-			return nil, fmt.Errorf("menulis naskah .docx: %w", err)
-		}
-	}
-	if err := zw.Close(); err != nil {
-		return nil, fmt.Errorf("menulis naskah .docx: %w", err)
-	}
-	return out.Bytes(), nil
-}
 
 // finalFileName membentuk nama file PDF resmi dari nomor surat, contoh 015-TI-PSP-X-2026.pdf.
 func finalFileName(letterNumber string) string {

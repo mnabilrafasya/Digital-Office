@@ -28,7 +28,7 @@ func (h *Handler) TemplateFile(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, err)
 		return
 	}
-	sendFile(w, f, "template")
+	sendFile(w, f, "attachment", "template")
 }
 
 // CreateTemplate menangani POST /api/v1/templates (multipart/form-data: file .docx, name,
