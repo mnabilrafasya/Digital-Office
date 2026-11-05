@@ -6,7 +6,8 @@
 // Terhubung ke POST /api/v1/templates & PUT /api/v1/templates/{templateId}
 // ─────────────────────────────────────────────
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Plus,
@@ -40,6 +41,11 @@ export function TemplateManagerModal({
   onClose,
   onUpdated,
 }: TemplateManagerModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [mode, setMode] = useState<"list" | "create" | "edit">("list");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -119,7 +125,9 @@ export function TemplateManagerModal({
     }
   }
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
         {/* Header */}
@@ -321,7 +329,8 @@ export function TemplateManagerModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

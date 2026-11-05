@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────
 
 import { fetchLookups } from "./form";
+import { getCachedTemplates } from "@/lib/templates/letter-templates";
 import type { LetterDetail } from "./letter-detail";
 
 const API = "/api/v1";
@@ -124,15 +125,31 @@ export async function formValuesToLetterInput(values: FormInputValues) {
       (r): r is { unitId: string } | { aliasLevelId: string } => r !== null
     );
 
+  const resolvedLetterTypeId =
+    values.letterTypeId && /^\d+$/.test(String(values.letterTypeId).trim())
+      ? String(values.letterTypeId).trim()
+      : null;
+
+  const rawTemplateId =
+    values.templateId && /^\d+$/.test(String(values.templateId).trim())
+      ? String(values.templateId).trim()
+      : null;
+
+  // Jika pengguna memilih kombinasi Jenis Surat dan Template dari jenis surat berbeda
+  // (mis. Memo Internal + template Nota Dinas Internal), tetap izinkan dokumen .docx
+  // dipakai di editor, tetapi kirim templateId: null ke backend agar tidak ditolak checkTemplate
+  const selectedTpl = rawTemplateId
+    ? getCachedTemplates().find((t) => String(t.id) === rawTemplateId)
+    : undefined;
+  const isTemplateTypeMismatch = Boolean(
+    selectedTpl?.letterType?.id &&
+      resolvedLetterTypeId &&
+      String(selectedTpl.letterType.id) !== resolvedLetterTypeId
+  );
+
   return {
-    letterTypeId:
-      values.letterTypeId && /^\d+$/.test(String(values.letterTypeId).trim())
-        ? String(values.letterTypeId).trim()
-        : null,
-    templateId:
-      values.templateId && /^\d+$/.test(String(values.templateId).trim())
-        ? String(values.templateId).trim()
-        : null,
+    letterTypeId: resolvedLetterTypeId,
+    templateId: isTemplateTypeMismatch ? null : rawTemplateId,
     classificationId:
       values.classificationId && /^\d+$/.test(String(values.classificationId).trim())
         ? String(values.classificationId).trim()

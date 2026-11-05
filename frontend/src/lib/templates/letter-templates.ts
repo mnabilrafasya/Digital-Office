@@ -65,7 +65,7 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
       "Format korespondensi internal (Yth, Dari, Tanggal, Perihal, Pembahasan, TTD Elektronik).",
     fileUrl: "/templates/nota-dinas.docx",
     fallbackFileUrl: "/templates/nota-dinas.docx",
-    letterTypeKeywords: ["nota", "dinas", "internal"],
+    letterTypeKeywords: ["nota", "dinas"],
   },
   {
     id: "tmpl-undangan",
@@ -349,28 +349,44 @@ export async function resolveTemplateDocxBlob(
   const templates = cachedTemplates ?? (await fetchTemplates());
   const tpl = getTemplateById(templateId, templates);
 
-  const res = await fetch(tpl.fileUrl, {
-    cache: "no-store",
-    credentials: "include",
-  });
-
-  if (res.ok) {
-    const blob = await res.blob();
-    return { blob, template: tpl };
-  }
-
-  if (tpl.fallbackFileUrl && tpl.fallbackFileUrl !== tpl.fileUrl) {
-    const fallbackRes = await fetch(tpl.fallbackFileUrl, {
+  try {
+    const res = await fetch(tpl.fileUrl, {
       cache: "no-store",
+      credentials: "include",
     });
-    if (fallbackRes.ok) {
-      const blob = await fallbackRes.blob();
+
+    if (res.ok) {
+      const blob = await res.blob();
       return { blob, template: tpl };
     }
+  } catch (err) {
+    console.warn(`[Template] Gagal mengambil template "${tpl.name}" dari ${tpl.fileUrl}:`, err);
+  }
+
+  // Fallback otomatis jika berkas template tidak ada di MinIO (mis. terhapus):
+  // langsung beralih ke Dokumen Kosong (Blank) agar editor naskah tetap bisa terbuka
+  const blankTpl =
+    LETTER_TEMPLATE_LIST.find((t) => t.id === "tmpl-kosong") ??
+    LETTER_TEMPLATE_LIST[LETTER_TEMPLATE_LIST.length - 1];
+
+  console.warn(
+    `[Template] Berkas "${tpl.name}" tidak ditemukan di server/MinIO. Otomatis beralih ke dokumen kosong.`
+  );
+
+  const blankRes = await fetch(blankTpl.fileUrl, { cache: "no-store" });
+  if (blankRes.ok) {
+    const blob = await blankRes.blob();
+    return {
+      blob,
+      template: {
+        ...tpl,
+        fileUrl: blankTpl.fileUrl,
+      },
+    };
   }
 
   throw new Error(
-    `Gagal memuat file template "${tpl.name}" dari ${tpl.fileUrl} (HTTP ${res.status})`
+    `Gagal memuat file template "${tpl.name}" dan dokumen kosong cadangan.`
   );
 }
 

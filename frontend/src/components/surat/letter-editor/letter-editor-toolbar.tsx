@@ -120,20 +120,20 @@ export function LetterEditorToolbar({
     )?.id ?? appliedTemplateId;
 
   return (
-    <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-panel border-b border-border flex-wrap shrink-0">
+    <div className="flex items-center justify-between gap-1.5 min-[1600px]:gap-2 px-2.5 min-[1600px]:px-3.5 py-2 bg-panel border-b border-border flex-wrap xl:flex-nowrap shrink-0">
       {/* Kiri: Grup Template + Grup Aksi Berkas */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1.5 min-[1600px]:gap-2 flex-wrap xl:flex-nowrap shrink-0">
         {/* Kapsul Template & Sinkronisasi Form */}
-        <div className="inline-flex items-center rounded-lg border border-border bg-surface p-0.5 shadow-2xs">
-          <div className="flex items-center gap-1.5 pl-2.5 pr-1 text-xs font-semibold text-text-muted">
+        <div className="inline-flex items-center rounded-lg border border-border bg-surface p-0.5 shadow-2xs shrink-0">
+          <div className="flex items-center gap-1.5 pl-2 min-[1600px]:pl-2.5 pr-1 text-xs font-semibold text-text-muted">
             <FileText size={13} className="text-primary shrink-0" />
-            <span className="hidden sm:inline">Template:</span>
+            <span className="hidden min-[1600px]:inline">Template:</span>
           </div>
           <select
             value={resolvedSelectedId}
             onChange={(e) => onSelectTemplate(e.target.value)}
             aria-label="Pilih template naskah"
-            className="text-xs py-1 pl-1 pr-2 rounded-md bg-transparent text-text font-semibold focus:outline-none cursor-pointer"
+            className="text-xs py-1 pl-1 pr-1.5 min-[1600px]:pr-2 max-w-45 min-[1600px]:max-w-none truncate rounded-md bg-transparent text-text font-semibold focus:outline-none cursor-pointer"
           >
             {templates.map((tpl) => (
               <option key={tpl.id} value={tpl.id} className="bg-surface text-text">
@@ -147,23 +147,23 @@ export function LetterEditorToolbar({
             onClick={onSyncFormData}
             disabled={!isReady}
             title="Isi otomatis Perihal, Penerima, dan Penandatangan dari Form Section 1 ke dalam naskah"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50 whitespace-nowrap"
           >
-            <RefreshCw size={12} className="text-primary" />
+            <RefreshCw size={12} className="text-primary shrink-0" />
             <span>Sinkronkan Form</span>
           </button>
         </div>
 
         {/* Grup Segmented: Buka .docx | Unduh .docx | Cetak / PDF */}
-        <div className="inline-flex items-center rounded-lg border border-border bg-surface p-0.5 shadow-2xs">
+        <div className="inline-flex items-center rounded-lg border border-border bg-surface p-0.5 shadow-2xs shrink-0">
           <button
             type="button"
             onClick={onOpenDocx}
             disabled={!isReady}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50 whitespace-nowrap"
             title="Buka dokumen Microsoft Word (.docx) dari komputer Anda"
           >
-            <Upload size={13} className="text-primary" />
+            <Upload size={13} className="text-primary shrink-0" />
             <span>Buka .docx</span>
           </button>
 
@@ -173,10 +173,10 @@ export function LetterEditorToolbar({
             type="button"
             onClick={onDownloadDocx}
             disabled={!isReady || isSaving}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50 whitespace-nowrap"
             title="Unduh salinan naskah saat ini ke komputer sebagai file .docx"
           >
-            <Download size={13} className="text-primary" />
+            <Download size={13} className="text-primary shrink-0" />
             <span>{isSaving ? "Mengunduh..." : "Unduh .docx"}</span>
           </button>
 
@@ -186,45 +186,45 @@ export function LetterEditorToolbar({
             type="button"
             onClick={onPrintPdf}
             disabled={!isReady}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors disabled:opacity-50 whitespace-nowrap"
             title="Cetak naskah atau simpan sebagai PDF"
           >
-            <Printer size={13} className="text-primary" />
+            <Printer size={13} className="text-primary shrink-0" />
             <span>Cetak / PDF</span>
           </button>
         </div>
       </div>
 
       {/* Kanan-Tengah & Kanan: Status / Penanda Nomor + Zoom & Utilitas */}
-      <div className="flex items-center gap-2 ml-auto flex-wrap">
+      <div className="flex items-center gap-1.5 min-[1600px]:gap-2 ml-auto flex-wrap xl:flex-nowrap shrink-0">
         {statusNotification ? (
-          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-status-success-text bg-status-success-bg border border-status-success-text/20 px-2.5 py-1 rounded-lg">
-            <CheckCircle2 size={13} />
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-status-success-text bg-status-success-bg border border-status-success-text/20 px-2.5 py-1 rounded-lg whitespace-nowrap">
+            <CheckCircle2 size={13} className="shrink-0" />
             <span>{statusNotification}</span>
           </div>
         ) : (
-          <div className="hidden xl:flex items-center gap-1.5">
+          <div className="hidden xl:flex items-center gap-1.5 shrink-0">
             {/* Chip Interaktif ###NoSurat### */}
             <button
               type="button"
               onClick={handleCopyPlaceholder}
               title="Klik untuk menyalin ###NoSurat###. Penanda ini otomatis diganti nomor resmi oleh server saat disetujui Approver."
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-bg text-[11px] text-text-muted hover:text-text transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-bg text-[11px] text-text-muted hover:text-text transition-colors shadow-2xs whitespace-nowrap"
             >
-              <span>Penanda:</span>
+              <span className="hidden min-[1600px]:inline">Penanda:</span>
               <code className="font-mono font-semibold text-text">
                 ###NoSurat###
               </code>
               {copiedPlaceholder ? (
-                <Check size={11} className="text-status-success-text" />
+                <Check size={11} className="text-status-success-text shrink-0" />
               ) : (
-                <Copy size={11} className="text-text-muted" />
+                <Copy size={11} className="text-text-muted shrink-0" />
               )}
             </button>
 
             {/* Badge Status Versi Server */}
             <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-surface text-[11px] text-text-muted shadow-2xs"
+              className="hidden min-[1600px]:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-surface text-[11px] text-text-muted shadow-2xs whitespace-nowrap"
               title="Naskah .docx otomatis diunggah ke server saat klik Simpan Draft atau Kirim Surat"
             >
               <CloudUpload size={12} className="text-primary shrink-0" />

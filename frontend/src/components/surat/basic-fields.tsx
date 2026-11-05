@@ -77,6 +77,7 @@ function SelectError({ message, onRetry }: { message: string; onRetry: () => voi
 
 export function BasicFields() {
   const { control, formState: { errors }, setValue } = useFormContext<BuatSuratFormValues>();
+  const letterTypeId = useWatch({ control, name: "letterTypeId" });
   const templateId = useWatch({ control, name: "templateId" });
   const sifat = useWatch({ control, name: "sifat" });
   const kecepatan = useWatch({ control, name: "kecepatan" });
@@ -155,17 +156,23 @@ export function BasicFields() {
                   if (selectedLT) {
                     const ltName = selectedLT.name.toLowerCase();
                     const ltCode = selectedLT.code.toLowerCase();
+                    // 1. Cari template khusus untuk jenis surat ini
+                    // 2. Jika tidak ada, cari template umum (!t.letterType) yang cocok keyword-nya
+                    // 3. Fallback ke template umum pertama (mis. Surat Dinas Resmi Standar)
                     const matched =
                       templates.find(
                         (t) =>
                           t.letterType?.id === val ||
                           t.letterType?.code?.toLowerCase() === ltCode
                       ) ??
-                      templates.find((t) =>
-                        t.letterTypeKeywords.some(
-                          (kw) => ltName.includes(kw) || ltCode.includes(kw)
-                        )
+                      templates.find(
+                        (t) =>
+                          !t.letterType &&
+                          t.letterTypeKeywords.some(
+                            (kw) => ltName.includes(kw) || ltCode.includes(kw)
+                          )
                       ) ??
+                      templates.find((t) => !t.letterType) ??
                       templates[0];
                     if (matched) {
                       setValue("templateId", matched.id, {
@@ -213,7 +220,21 @@ export function BasicFields() {
             <select
               id="templateId"
               value={field.value ?? ""}
-              onChange={(e) => field.onChange(e.target.value || undefined)}
+              onChange={(e) => {
+                const nextTplId = e.target.value || undefined;
+                field.onChange(nextTplId);
+                // Jika Jenis Surat belum dipilih dan user memilih template khusus jenis tertentu,
+                // otomatis sesuaikan Jenis Surat-nya agar tidak ditolak backend
+                if (nextTplId && !letterTypeId) {
+                  const chosen = templates.find((t) => t.id === nextTplId);
+                  if (chosen?.letterType?.id) {
+                    setValue("letterTypeId", chosen.letterType.id, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    });
+                  }
+                }
+              }}
               className={inputClass()}
             >
               <option value="">— Pilih template (opsional) —</option>
