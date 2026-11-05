@@ -29,32 +29,30 @@ import {
 import { cn } from "@/lib/utils";
 import { useState, useEffect, Suspense } from "react";
 import { getInboxUnreadCount } from "@/lib/api/inbox";
+import { getPendingTaskCounts } from "@/lib/api/letters";
+
+type DynamicBadgeType = "inbox" | "review" | "approval";
 
 interface NavItem {
   label: string;
   href?: string;
   icon: React.ReactNode;
   badge?: number;
-  dynamicBadge?: boolean;
+  dynamicBadge?: DynamicBadgeType;
   requiredPermission?: string;
   children?: NavItem[];
 }
 
-// ─── Badge dinamis inbox dari backend ────────
+interface DynamicBadgeCounts {
+  inbox: number;
+  review: number;
+  approval: number;
+}
 
-function InboxBadge() {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    getInboxUnreadCount()
-      .then(setCount)
-      .catch(() => {});
-  }, []);
-
-  if (count === 0) return null;
-
+function OrangeCountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
   return (
-    <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1">
+    <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1 shrink-0">
       {count > 99 ? "99+" : count}
     </span>
   );
@@ -94,12 +92,14 @@ const NAV_ITEMS: NavItem[] = [
         label: "Menunggu Review",
         href: "/surat/review",
         icon: <ClipboardCheck size={14} />,
+        dynamicBadge: "review",
         requiredPermission: "LETTER_REVIEW",
       },
       {
         label: "Menunggu Approval",
         href: "/surat/approval",
         icon: <CheckSquare size={14} />,
+        dynamicBadge: "approval",
         requiredPermission: "LETTER_APPROVE",
       },
     ],
@@ -120,7 +120,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Inbox",
     href: "/inbox",
     icon: <Inbox size={16} />,
-    dynamicBadge: true, // badge dari backend, bukan hardcode
+    dynamicBadge: "inbox", // badge dari backend, bukan hardcode
   },
   {
     label: "Notifikasi",
@@ -167,7 +167,15 @@ function filterNavItemsByPermissions(
 
 // ─── Nav group ───────────────────────────────
 
-function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
+function NavGroup({
+  item,
+  depth = 0,
+  badgeCounts,
+}: {
+  item: NavItem;
+  depth?: number;
+  badgeCounts: DynamicBadgeCounts;
+}) {
   const pathname = usePathname();
   const isActive = item.href
     ? pathname === item.href || pathname.startsWith(item.href + "/")
@@ -179,6 +187,11 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   const [open, setOpen] = useState(isActive ?? false);
 
   if (item.children) {
+    const childrenBadgeSum = item.children.reduce((sum, child) => {
+      const dyn = child.dynamicBadge ? badgeCounts[child.dynamicBadge] : 0;
+      return sum + (child.badge ?? 0) + dyn;
+    }, 0);
+
     return (
       <div>
         <button
@@ -193,18 +206,32 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
             {item.icon}
             <span>{item.label}</span>
           </span>
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span className="flex items-center gap-1.5">
+            {!open && childrenBadgeSum > 0 && (
+              <OrangeCountBadge count={childrenBadgeSum} />
+            )}
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
         </button>
         {open && (
           <div className="mt-0.5 ml-3 border-l border-white/10 pl-3 space-y-0.5">
             {item.children.map((child) => (
-              <NavGroup key={child.label} item={child} depth={depth + 1} />
+              <NavGroup
+                key={child.label}
+                item={child}
+                depth={depth + 1}
+                badgeCounts={badgeCounts}
+              />
             ))}
           </div>
         )}
       </div>
     );
   }
+
+  const resolvedBadge = item.dynamicBadge
+    ? badgeCounts[item.dynamicBadge]
+    : (item.badge ?? 0);
 
   return (
     <Link
@@ -219,14 +246,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
         {item.icon}
         <span>{item.label}</span>
       </span>
-      {/* Badge statis */}
-      {item.badge != null && item.badge > 0 && (
-        <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1">
-          {item.badge}
-        </span>
-      )}
-      {/* Badge dinamis (inbox) */}
-      {item.dynamicBadge && <InboxBadge />}
+      <OrangeCountBadge count={resolvedBadge} />
     </Link>
   );
 }
@@ -234,7 +254,30 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
 // ─── Sidebar ─────────────────────────────────
 
 export function Sidebar({ permissions }: { permissions?: string[] }) {
+  const pathname = usePathname();
   const visibleItems = filterNavItemsByPermissions(NAV_ITEMS, permissions);
+  const [badgeCounts, setBadgeCounts] = useState<DynamicBadgeCounts>({
+    inbox: 0,
+    review: 0,
+    approval: 0,
+  });
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getInboxUnreadCount(), getPendingTaskCounts()])
+      .then(([inboxCount, tasks]) => {
+        if (!active) return;
+        setBadgeCounts({
+          inbox: inboxCount,
+          review: tasks.review,
+          approval: tasks.approval,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
 
   return (
     <aside className="fixed inset-y-0 left-0 w-56 bg-primary-dark flex flex-col z-30 overflow-hidden">
@@ -259,7 +302,11 @@ export function Sidebar({ permissions }: { permissions?: string[] }) {
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
         <Suspense fallback={null}>
           {visibleItems.map((item) => (
-            <NavGroup key={item.label} item={item} />
+            <NavGroup
+              key={item.label}
+              item={item}
+              badgeCounts={badgeCounts}
+            />
           ))}
         </Suspense>
       </nav>

@@ -36,7 +36,10 @@ import {
   uploadOfficialPdf,
 } from "@/lib/api/letter-document";
 import { ensurePdfExportLibs } from "@/lib/pdf/devexpress-pdf";
-import { WordZoomControl } from "@/components/ui/word-zoom-control";
+import {
+  WordZoomControl,
+  useWordZoomInteractivity,
+} from "@/components/ui/word-zoom-control";
 import {
   createWordEditorOptions,
   loadRichEdit,
@@ -64,6 +67,7 @@ export default function OfficialDocumentInner({
   letter,
   onPdfReadyChange,
 }: OfficialDocumentInnerProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEdit | null>(null);
   const pendingExportRef = useRef<PendingExport | null>(null);
@@ -72,10 +76,39 @@ export default function OfficialDocumentInner({
   const [pdfState, setPdfState] = useState<PdfState>("checking");
   const [message, setMessage] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const zoomLevelRef = useRef(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   // Jabatan pemilik salinan yang dilihat (penerima langsung); null = salinan induk
   const [copyFor, setCopyFor] = useState<string | null>(null);
+
+  const applyZoom = useCallback((level: number) => {
+    const clamped = Math.min(2, Math.max(0.5, Math.round(level * 100) / 100));
+    setZoomLevel(clamped);
+    zoomLevelRef.current = clamped;
+    const editor = editorRef.current;
+    if (editor && !editor.isDisposed) {
+      try {
+        editor.zoomLevel = clamped;
+        editor.adjust();
+      } catch {
+        // Abaikan bila instance sedang ditutup
+      }
+    }
+  }, []);
+
+  const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
+    wrapperRef,
+    containerRef,
+    zoomLevel,
+    onZoomChange: applyZoom,
+    isReady: docState === "ready",
+  });
+
+  const keyDownRef = useRef(handleDevExpressKeyDown);
+  useEffect(() => {
+    keyDownRef.current = handleDevExpressKeyDown;
+  }, [handleDevExpressKeyDown]);
 
   useEffect(() => {
     onPdfReadyChange?.(pdfState === "ready", copyFor);
@@ -160,8 +193,9 @@ export default function OfficialDocumentInner({
           mod,
           readOnly: true,
           showRibbon: false,
-          initialZoom: 1,
+          initialZoom: zoomLevelRef.current,
           height: DEFAULT_HEIGHT,
+          onKeyDown: (s, args) => keyDownRef.current(s, args),
         });
         // Tangkap hasil ekspor (jangan diunduh otomatis oleh browser)
         options.events.pdfExporting = (_s, e) => {
@@ -214,24 +248,40 @@ export default function OfficialDocumentInner({
     };
   }, [letter.id, reloadKey, ensureOfficialPdf]);
 
-  // Ukuran editor disesuaikan ulang saat masuk/keluar layar penuh
+  // Ukuran editor disesuaikan ulang saat masuk/keluar layar penuh atau lebar panel berubah
   useEffect(() => {
+    const outer = containerRef.current;
     const t = setTimeout(() => {
       const editor = editorRef.current;
-      if (editor && !editor.isDisposed) editor.adjust();
+      if (editor && !editor.isDisposed) {
+        try {
+          editor.zoomLevel = zoomLevelRef.current;
+          editor.adjust();
+        } catch {
+          // Abaikan
+        }
+      }
     }, 150);
-    return () => clearTimeout(t);
-  }, [isFullscreen]);
 
-  const applyZoom = useCallback((level: number) => {
-    const clamped = Math.min(2, Math.max(0.5, Math.round(level * 100) / 100));
-    setZoomLevel(clamped);
-    const editor = editorRef.current;
-    if (editor && !editor.isDisposed) {
-      editor.zoomLevel = clamped;
-      editor.adjust();
-    }
-  }, []);
+    if (!outer) return () => clearTimeout(t);
+
+    const ro = new ResizeObserver(() => {
+      const editor = editorRef.current;
+      if (editor && !editor.isDisposed) {
+        try {
+          editor.adjust();
+        } catch {
+          // Abaikan
+        }
+      }
+    });
+    ro.observe(outer);
+
+    return () => {
+      clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [isFullscreen, docState]);
 
   function retryPdf() {
     const editor = editorRef.current;
@@ -247,10 +297,10 @@ export default function OfficialDocumentInner({
   const bodyHeight = isFullscreen ? "calc(100vh - 80px)" : DEFAULT_HEIGHT;
   const wrapperClass = isFullscreen
     ? "fixed inset-0 z-[45] isolate bg-surface flex flex-col p-4 shadow-2xl"
-    : "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm";
+    : "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm min-w-0 max-w-full";
 
   return (
-    <div className={wrapperClass}>
+    <div ref={wrapperRef} className={wrapperClass}>
       <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-panel border-b border-border flex-wrap shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-text">Naskah Surat</span>
@@ -359,6 +409,12 @@ export default function OfficialDocumentInner({
           </div>
         )}
       </div>
+
+      {feedbackPercent !== null && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-neutral-900/90 text-white text-xs px-3.5 py-1.5 rounded-full font-medium shadow-lg flex items-center gap-1.5 animate-in fade-in duration-150">
+          <span>Zoom: {feedbackPercent}%</span>
+        </div>
+      )}
     </div>
   );
 }

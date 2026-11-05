@@ -11,7 +11,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Plus } from "lucide-react";
 
-import { listLetters } from "@/lib/api/letters";
+import { listLetters, getPendingTaskCounts } from "@/lib/api/letters";
 import type {
   LetterListItem,
   ListLettersResponse,
@@ -112,6 +112,24 @@ export function DaftarSuratView({
   const [meta,    setMeta]    = useState({ page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
+  const [tasksBadgeCount, setTasksBadgeCount] = useState(0);
+
+  // Ambil jumlah tugas menunggu review + approval untuk badge tab "Tugas Saya"
+  useEffect(() => {
+    if (isSpecialScope) return;
+    let active = true;
+    getPendingTaskCounts()
+      .then((res) => {
+        if (!active) return;
+        // Total tugas aktif yang membutuhkan aksi (review + approval)
+        const pendingActionTotal = res.review + res.approval;
+        setTasksBadgeCount(pendingActionTotal > 0 ? pendingActionTotal : res.tasksTotal);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isSpecialScope, effectiveScope]);
 
   // ── Fetch ─────────────────────────────────
 
@@ -265,7 +283,12 @@ export function DaftarSuratView({
                   : "text-text-muted hover:text-text"
               )}
             >
-              Tugas Saya (Review &amp; Approval)
+              <span>Tugas Saya (Review &amp; Approval)</span>
+              {tasksBadgeCount > 0 && (
+                <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1.5">
+                  {tasksBadgeCount > 99 ? "99+" : tasksBadgeCount}
+                </span>
+              )}
             </button>
           </div>
         )}

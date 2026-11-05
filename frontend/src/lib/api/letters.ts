@@ -94,7 +94,10 @@ const COUNT_GROUPS = {
 
 /** Jumlah per status = meta.total dari request pageSize=1 (akurat untuk berapa pun surat). */
 async function fetchTotal(scope: string, status: string): Promise<number> {
-  const sp = new URLSearchParams({ scope, status, page: "1", pageSize: "1" });
+  const sp = new URLSearchParams({ scope, page: "1", pageSize: "1" });
+  if (status) {
+    sp.set("status", status);
+  }
   const res = await fetch(`${API}/letters?${sp.toString()}`, {
     cache: "no-store",
   });
@@ -103,6 +106,29 @@ async function fetchTotal(scope: string, status: string): Promise<number> {
     meta?: { total?: number };
   } | null;
   return json?.meta?.total ?? 0;
+}
+
+export interface PendingTaskCounts {
+  review: number;
+  approval: number;
+  tasksTotal: number;
+}
+
+/**
+ * Mengambil jumlah tugas review dan approval yang sedang menunggu tindak lanjut user aktif.
+ * Digunakan untuk menampilkan badge notifikasi oranye pada Sidebar & tab Tugas Saya.
+ */
+export async function getPendingTaskCounts(): Promise<PendingTaskCounts> {
+  try {
+    const [review, approval, tasksTotal] = await Promise.all([
+      fetchTotal("tasks", "IN_REVIEW,RETURNED_TO_REVIEWER"),
+      fetchTotal("tasks", "IN_APPROVAL"),
+      fetchTotal("tasks", ""),
+    ]);
+    return { review, approval, tasksTotal };
+  } catch {
+    return { review: 0, approval: 0, tasksTotal: 0 };
+  }
 }
 
 export async function listLetters(
