@@ -30,9 +30,13 @@ import { getInboxItem, inboxSourceLabel } from "@/lib/api/inbox";
 import type { InboxItemDetail, ForwardRecord } from "@/lib/api/inbox";
 import { getLetter, formatBytes } from "@/lib/api/letter-detail";
 import type { LetterDetail } from "@/lib/api/letter-detail";
-import { getLetterAttachmentDownloadUrl } from "@/lib/api/letter-document";
+import {
+  getLetterAttachmentDownloadUrl,
+  officialPdfUrl,
+} from "@/lib/api/letter-document";
 import { DisposisiModal } from "@/components/inbox/disposisi-modal";
 import { RedirectModal } from "@/components/inbox/redirect-modal";
+import { ReviewDocumentViewer } from "@/components/review/document-viewer";
 import { LetterTrackingPanel } from "@/components/review/letter-tracking-panel";
 import { cn } from "@/lib/utils";
 
@@ -126,13 +130,23 @@ export default function InboxDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<"disposisi" | "redirect" | null>(null);
+  const [pdfReady, setPdfReady] = useState(false);
+  const [copyFor, setCopyFor] = useState<string | null>(null);
+
+  const handlePdfReadyChange = useCallback(
+    (ready: boolean, owner: string | null) => {
+      setPdfReady(ready);
+      setCopyFor(owner);
+    },
+    []
+  );
 
   const load = useCallback(async () => {
     try {
       const inboxItem = await getInboxItem(itemId);
       setItem(inboxItem);
       setError(null);
-      // Muat detail surat (untuk QR, penerima lengkap, dan lampiran) — gagal tidak fatal
+      // Muat detail surat (untuk pratinjau naskah resmi, QR, penerima lengkap, dan lampiran)
       getLetter(inboxItem.letter.id)
         .then((ld) => {
           if (ld) setLetter(ld);
@@ -298,14 +312,34 @@ export default function InboxDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
         {/* ─ Kolom Kiri ─ */}
         <div className="space-y-4">
+          {/* Pratinjau Naskah Resmi & Penyiapan Salinan PDF Penerima */}
+          {letter ? (
+            <ReviewDocumentViewer
+              letter={letter}
+              onPdfReadyChange={handlePdfReadyChange}
+            />
+          ) : (
+            <div className="border border-border rounded-xl bg-panel/30 flex items-center justify-center gap-2 text-text-muted p-8 min-h-[240px]">
+              <Loader2 size={18} className="animate-spin text-primary" />
+              <span className="text-xs">Memuat naskah resmi surat...</span>
+            </div>
+          )}
+
           {/* QR & Unduh PDF — hanya tersedia setelah surat SENT (approval exists) */}
           {letter?.approval && (
             <div className="border border-border rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center gap-2">
-                <QrCode size={15} className="text-primary" />
-                <h3 className="text-sm font-semibold text-text">
-                  QR Persetujuan & Dokumen Resmi
-                </h3>
+              <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <QrCode size={15} className="text-primary" />
+                  <h3 className="text-sm font-semibold text-text">
+                    QR Persetujuan & Dokumen Resmi
+                  </h3>
+                </div>
+                {copyFor && (
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    Salinan untuk {copyFor}
+                  </span>
+                )}
               </div>
               <div className="p-4 flex items-start gap-4 flex-wrap">
                 <div className="w-24 h-24 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
@@ -339,12 +373,19 @@ export default function InboxDetailPage() {
                     <span>{formatDateTime(letter.approval.approvedAt)}</span>
                   </div>
                   <a
-                    href={`/api/v1/letters/${item.letter.id}/document`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
+                    href={pdfReady ? officialPdfUrl(item.letter.id) : undefined}
+                    aria-disabled={!pdfReady}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
                   >
-                    <Download size={13} /> Unduh PDF Resmi
+                    {pdfReady ? (
+                      <>
+                        <Download size={13} /> Unduh PDF Resmi
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 size={13} className="animate-spin" /> Menyiapkan PDF Resmi...
+                      </>
+                    )}
                   </a>
                 </div>
               </div>

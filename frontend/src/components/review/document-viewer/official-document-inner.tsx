@@ -48,6 +48,7 @@ const EXPORT_TIMEOUT_MS = 60_000;
 
 export interface OfficialDocumentInnerProps {
   letter: LetterDetail;
+  onPdfReadyChange?: (ready: boolean, copyFor: string | null) => void;
 }
 
 // Keadaan naskah di layar dan PDF resmi
@@ -59,7 +60,10 @@ interface PendingExport {
   reject: (err: Error) => void;
 }
 
-export default function OfficialDocumentInner({ letter }: OfficialDocumentInnerProps) {
+export default function OfficialDocumentInner({
+  letter,
+  onPdfReadyChange,
+}: OfficialDocumentInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<RichEdit | null>(null);
   const pendingExportRef = useRef<PendingExport | null>(null);
@@ -72,6 +76,10 @@ export default function OfficialDocumentInner({ letter }: OfficialDocumentInnerP
   const [reloadKey, setReloadKey] = useState(0);
   // Jabatan pemilik salinan yang dilihat (penerima langsung); null = salinan induk
   const [copyFor, setCopyFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    onPdfReadyChange?.(pdfState === "ready", copyFor);
+  }, [pdfState, copyFor, onPdfReadyChange]);
 
   const pdfFileName = `${(letter.letterNumber ?? "Naskah_Resmi").replace(/[\\/]/g, "-")}.pdf`;
 

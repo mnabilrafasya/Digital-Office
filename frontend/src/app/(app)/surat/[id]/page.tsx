@@ -29,7 +29,10 @@ import {
   getLetterHistory,
 } from "@/lib/api/letter-detail";
 import type { LetterDetail, LetterHistoryEntry } from "@/lib/api/letter-detail";
-import { getLetterAttachmentDownloadUrl } from "@/lib/api/letter-document";
+import {
+  getLetterAttachmentDownloadUrl,
+  officialPdfUrl,
+} from "@/lib/api/letter-document";
 import { StatusBadge } from "@/components/daftar-surat/status-badge";
 import type { LetterStatus } from "@/lib/types";
 import { LetterSteps } from "@/components/review/letter-steps";
@@ -100,11 +103,14 @@ function formatDateTime(iso: string) {
 }
 
 const ACTION_LABEL: Record<string, string> = {
+  CREATE: "Draf Dibuat",
+  SAVE: "Naskah Disimpan",
   SUBMIT: "Dikirim ke Reviewer",
   APPROVE: "Disetujui",
-  RETURN: "Dikembalikan",
+  RETURN: "Dikembalikan untuk Revisi",
   READ: "Dibaca",
   SIGN: "Ditandatangani & Diterbitkan",
+  CANCEL: "Dibatalkan",
 };
 
 // ─── Page ────────────────────────────────────
@@ -117,6 +123,16 @@ export default function SuratDetailPage() {
   const [history, setHistory] = useState<LetterHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pdfReady, setPdfReady] = useState(false);
+  const [copyFor, setCopyFor] = useState<string | null>(null);
+
+  const handlePdfReadyChange = useCallback(
+    (ready: boolean, owner: string | null) => {
+      setPdfReady(ready);
+      setCopyFor(owner);
+    },
+    []
+  );
 
   const load = useCallback(async () => {
     try {
@@ -323,7 +339,10 @@ export default function SuratDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
         {/* ─ Kolom Kiri ─ */}
         <div className="space-y-4">
-          <ReviewDocumentViewer letter={letter} />
+          <ReviewDocumentViewer
+            letter={letter}
+            onPdfReadyChange={handlePdfReadyChange}
+          />
 
           {/* Panel info approver (IN_APPROVAL) */}
           {isApprover && hasActions && <ApproverPanel letter={letter} />}
@@ -331,11 +350,18 @@ export default function SuratDetailPage() {
           {/* Kartu Pengesahan & QR — hanya setelah SENT */}
           {status === "SENT" && letter.approval && (
             <div className="border border-border rounded-xl bg-surface overflow-hidden">
-              <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center gap-2">
-                <QrCode size={16} className="text-primary" />
-                <h3 className="text-sm font-semibold text-text">
-                  Pengesahan & QR Persetujuan
-                </h3>
+              <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <QrCode size={16} className="text-primary" />
+                  <h3 className="text-sm font-semibold text-text">
+                    Pengesahan & QR Persetujuan
+                  </h3>
+                </div>
+                {copyFor && (
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    Salinan untuk {copyFor}
+                  </span>
+                )}
               </div>
               <div className="p-4 flex items-start gap-4 flex-wrap">
                 {/* QR image dari backend */}
@@ -383,12 +409,19 @@ export default function SuratDetailPage() {
                     </div>
                   )}
                   <a
-                    href={`/api/v1/letters/${letter.id}/document`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors"
+                    href={pdfReady ? officialPdfUrl(letter.id) : undefined}
+                    aria-disabled={!pdfReady}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
                   >
-                    <Download size={13} /> Unduh PDF Resmi
+                    {pdfReady ? (
+                      <>
+                        <Download size={13} /> Unduh PDF Resmi
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 size={13} className="animate-spin" /> Menyiapkan PDF Resmi...
+                      </>
+                    )}
                   </a>
                 </div>
               </div>
@@ -565,7 +598,7 @@ export default function SuratDetailPage() {
               </h3>
             </div>
             <div className="px-4 py-4">
-              <LetterSteps steps={letter.steps} />
+              <LetterSteps steps={letter.steps} history={history} />
             </div>
             {/* Riwayat aksi dari backend */}
             {history.length > 0 && (
@@ -595,6 +628,11 @@ export default function SuratDetailPage() {
                         <span className="font-semibold text-text">
                           {ACTION_LABEL[h.action] ?? h.action}
                         </span>
+                        {h.versionNumber != null && (
+                          <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-panel border border-border text-text-muted">
+                            v{h.versionNumber}
+                          </span>
+                        )}
                         <span className="text-text-muted">
                           {" "}
                           oleh {h.actor.name}

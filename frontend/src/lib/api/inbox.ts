@@ -5,6 +5,14 @@
 // ─────────────────────────────────────────────
 
 import type { LookupRef, UnitRef, PersonRef } from "./letter-detail";
+import {
+  fetchCandidates,
+  fetchUnits,
+  type CandidateItem,
+  type UnitItem,
+} from "./form";
+
+export type { CandidateItem as InboxUserCandidate, UnitItem as InboxUnitItem };
 
 // ─── Tipe ────────────────────────────────────
 
@@ -76,20 +84,6 @@ export interface InboxListResponse {
 
 const API = "/api/v1";
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<{ data: T }> {
-  const res = await fetch(`${API}${path}`, {
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(body.error?.message ?? `HTTP ${res.status}`);
-  }
-  const json = (await res.json()) as { data: T; meta?: PaginationMeta; counts?: InboxCounts };
-  return { data: json as unknown as T };
-}
-
 // ─── Fetch daftar inbox ───────────────────────
 
 export async function getInboxList(params: {
@@ -100,14 +94,16 @@ export async function getInboxList(params: {
 }): Promise<InboxListResponse> {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
-  if (params.q)      qs.set("q", params.q);
-  if (params.page)   qs.set("page", String(params.page));
+  if (params.q) qs.set("q", params.q);
+  if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 
   const query = qs.toString() ? `?${qs.toString()}` : "";
   const res = await fetch(`${API}/inbox${query}`, { cache: "no-store" });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
     throw new Error(body.error?.message ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<InboxListResponse>;
@@ -116,13 +112,38 @@ export async function getInboxList(params: {
 // ─── Fetch satu item inbox ────────────────────
 
 export async function getInboxItem(itemId: string): Promise<InboxItemDetail> {
-  const res = await fetch(`${API}/inbox/${encodeURIComponent(itemId)}`, { cache: "no-store" });
+  const res = await fetch(`${API}/inbox/${encodeURIComponent(itemId)}`, {
+    cache: "no-store",
+  });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
     throw new Error(body.error?.message ?? `HTTP ${res.status}`);
   }
   const json = (await res.json()) as { data: InboxItemDetail };
   return json.data;
+}
+
+// ─── Pencarian Tujuan Disposisi & Pengalihan ──
+
+/**
+ * Mencari daftar kandidat pegawai/pejabat aktif untuk tujuan Disposisi atau Pengalihan
+ * melalui lapisan API resmi (`GET /api/v1/users/candidates`).
+ */
+export async function searchInboxTargetUsers(
+  q?: string,
+  limit = 20
+): Promise<CandidateItem[]> {
+  return fetchCandidates({ type: "REVIEWER", q, limit });
+}
+
+/**
+ * Mencari daftar unit organisasi aktif untuk tujuan Disposisi
+ * melalui lapisan API resmi (`GET /api/v1/units`).
+ */
+export async function searchInboxTargetUnits(q?: string): Promise<UnitItem[]> {
+  return fetchUnits(q);
 }
 
 // ─── Disposisi ────────────────────────────────
@@ -131,14 +152,19 @@ export async function disposeInboxItem(
   itemId: string,
   payload: { userIds?: string[]; unitIds?: string[]; note?: string }
 ): Promise<InboxItemDetail> {
-  const res = await fetch(`${API}/inbox/${encodeURIComponent(itemId)}/disposition`, {
-    method: "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(
+    `${API}/inbox/${encodeURIComponent(itemId)}/disposition`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
     throw new Error(body.error?.message ?? `HTTP ${res.status}`);
   }
   const json = (await res.json()) as { data: InboxItemDetail };
@@ -151,14 +177,19 @@ export async function redirectInboxItem(
   itemId: string,
   payload: { userId: string; note?: string }
 ): Promise<InboxItemDetail> {
-  const res = await fetch(`${API}/inbox/${encodeURIComponent(itemId)}/redirect`, {
-    method: "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(
+    `${API}/inbox/${encodeURIComponent(itemId)}/redirect`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
     throw new Error(body.error?.message ?? `HTTP ${res.status}`);
   }
   const json = (await res.json()) as { data: InboxItemDetail };

@@ -16,13 +16,16 @@ import {
   buatSuratSchema,
   type BuatSuratFormValues,
 } from "@/lib/schemas";
-import type { LetterAttachment, StepEntry } from "@/lib/types";
+import type { LetterAttachment } from "@/lib/types";
 
 import {
   saveDraft,
   submitLetter,
   getDraftLetter,
+  detailToFormValues,
+  DraftSaveError,
 } from "@/lib/api/letter-draft";
+import { isEditableByDrafter } from "@/lib/api/letter-detail";
 import { listLetters } from "@/lib/api/letters";
 
 import { ActionBar } from "@/components/surat/action-bar";
@@ -128,6 +131,13 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       .then(({ detail, etag }) => {
         if (cancelled) return;
 
+        // Jika surat sudah tidak bisa diedit drafter (mis. IN_REVIEW, IN_APPROVAL, SENT, CANCELLED),
+        // alihkan ke halaman detail/review surat (/surat/<id>)
+        if (!isEditableByDrafter(detail.status, detail.allowedActions ?? [])) {
+          router.replace(`/surat/${detail.id}`);
+          return;
+        }
+
         setDraftId(detail.id);
         setDraftEtag(etag);
         setServerVersionNumber(detail.currentVersion ?? 0);
@@ -135,93 +145,13 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
         draftEtagRef.current = etag;
         loadedDraftIdRef.current = detail.id;
 
-        // Ekstrak reviewers & approvers dengan ID deterministik
-        const reviewers: StepEntry[] = (detail.steps ?? [])
-          .filter((s) => s.role === "REVIEWER")
-          .map((s, idx) => ({
-            id: `rev-${s.user.id || idx}`,
-            employeeId: String(s.user.id),
-            employeeName: s.user.name,
-            jabatan: s.user.positionName,
-            unitName: s.user.unitName,
-            kodeAlias: "R",
-          }));
+        const { formValues, attachments: loadedAttachments } =
+          detailToFormValues(detail);
 
-        const approvers: StepEntry[] = (detail.steps ?? [])
-          .filter((s) => s.role === "APPROVER")
-          .map((s, idx) => ({
-            id: `app-${s.user.id || idx}`,
-            employeeId: String(s.user.id),
-            employeeName: s.user.name,
-            jabatan: s.user.positionName,
-            unitName: s.user.unitName,
-            kodeAlias: "A",
-          }));
-
-        const toUnits = (detail.recipients?.to ?? [])
-          .map((r) => {
-            if (r.type === "UNIT" && r.unit) {
-              return { id: String(r.unit.id), name: r.unit.name };
-            }
-            if (r.type === "ALIAS" && r.alias) {
-              return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
-            }
-            return null;
-          })
-          .filter((u): u is { id: string; name: string } => u !== null);
-
-        const ccUnits = (detail.recipients?.cc ?? [])
-          .map((r) => {
-            if (r.type === "UNIT" && r.unit) {
-              return { id: String(r.unit.id), name: r.unit.name };
-            }
-            if (r.type === "ALIAS" && r.alias) {
-              return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
-            }
-            return null;
-          })
-          .filter((u): u is { id: string; name: string } => u !== null);
-
-        const newValues: BuatSuratFormValues = {
-          letterTypeId: detail.letterType?.id
-            ? String(detail.letterType.id)
-            : "",
-          templateId: detail.template?.id
-            ? String(detail.template.id)
-            : undefined,
-          classificationId: detail.classification?.id
-            ? String(detail.classification.id)
-            : "",
-          kecepatan:
-            (detail.urgency?.code as "BIASA" | "SEGERA" | "SANGAT_SEGERA") ||
-            "BIASA",
-          sifat:
-            (detail.confidentiality?.code as
-              | "BIASA"
-              | "TERBATAS"
-              | "RAHASIA") || "BIASA",
-          title: detail.title ?? "",
-          specialNote: detail.specialNote ?? "",
-          summary: detail.summary ?? "",
-          reviewers,
-          approvers,
-          toUnits,
-          ccUnits,
-        };
-
-        const loadedAttachments: LetterAttachment[] = (
-          detail.attachments ?? []
-        ).map((a) => ({
-          id: a.id,
-          fileName: a.fileName,
-          sizeBytes: a.size,
-          mimeType: a.contentType,
-          uploadedAt: a.uploadedAt,
-        }));
         setAttachments(loadedAttachments);
         setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
 
-        reset(newValues);
+        reset(formValues);
         setLastSaved(new Date());
         setSaveFailed(false);
       })
@@ -239,7 +169,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [draftQueryId, reset]);
+  }, [draftQueryId, reset, router]);
 
   // ─── Pastikan draf sudah dibuat di server sebelum mengunggah lampiran ke MinIO ───
   async function ensureDraftId(): Promise<string> {
@@ -275,6 +205,41 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     return createPromise;
   }
 
+  // ─── Sinkronisasi ulang state bila terjadi 412 (VERSION_CONFLICT) atau 409 (INVALID_STATE) ───
+  function handleDraftConflictOrStateError(err: unknown) {
+    if (!(err instanceof DraftSaveError)) return false;
+
+    if (err.status === 409) {
+      const targetId = err.latestDetail?.id ?? draftIdRef.current;
+      alert(err.message);
+      if (targetId) {
+        router.replace(`/surat/${targetId}`);
+      }
+      return true;
+    }
+
+    if (err.status === 412 && err.latestDetail) {
+      const detail = err.latestDetail;
+      if (!isEditableByDrafter(detail.status, detail.allowedActions ?? [])) {
+        alert(err.message);
+        router.replace(`/surat/${detail.id}`);
+        return true;
+      }
+      const { formValues, attachments: latestAttachments } =
+        detailToFormValues(detail);
+      setDraftEtag(err.latestEtag ?? null);
+      draftEtagRef.current = err.latestEtag ?? null;
+      setServerVersionNumber(detail.currentVersion ?? 0);
+      setAttachments(latestAttachments);
+      setSavedAttachmentsSignature(JSON.stringify(latestAttachments));
+      reset(formValues);
+      alert(err.message);
+      return true;
+    }
+
+    return false;
+  }
+
   // ─── Handlers ────────────────────────────────
 
   async function handleLoadDraft() {
@@ -302,88 +267,13 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       draftEtagRef.current = etag;
       loadedDraftIdRef.current = detail.id;
 
-      const reviewers: StepEntry[] = (detail.steps ?? [])
-        .filter((s) => s.role === "REVIEWER")
-        .map((s, idx) => ({
-          id: `rev-${s.user.id || idx}`,
-          employeeId: String(s.user.id),
-          employeeName: s.user.name,
-          jabatan: s.user.positionName,
-          unitName: s.user.unitName,
-          kodeAlias: "R",
-        }));
+      const { formValues, attachments: loadedAttachments } =
+        detailToFormValues(detail);
 
-      const approvers: StepEntry[] = (detail.steps ?? [])
-        .filter((s) => s.role === "APPROVER")
-        .map((s, idx) => ({
-          id: `app-${s.user.id || idx}`,
-          employeeId: String(s.user.id),
-          employeeName: s.user.name,
-          jabatan: s.user.positionName,
-          unitName: s.user.unitName,
-          kodeAlias: "A",
-        }));
-
-      const toUnits = (detail.recipients?.to ?? [])
-        .map((r) => {
-          if (r.type === "UNIT" && r.unit) {
-            return { id: String(r.unit.id), name: r.unit.name };
-          }
-          if (r.type === "ALIAS" && r.alias) {
-            return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
-          }
-          return null;
-        })
-        .filter((u): u is { id: string; name: string } => u !== null);
-
-      const ccUnits = (detail.recipients?.cc ?? [])
-        .map((r) => {
-          if (r.type === "UNIT" && r.unit) {
-            return { id: String(r.unit.id), name: r.unit.name };
-          }
-          if (r.type === "ALIAS" && r.alias) {
-            return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
-          }
-          return null;
-        })
-        .filter((u): u is { id: string; name: string } => u !== null);
-
-      const newValues: BuatSuratFormValues = {
-        letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
-        templateId: detail.template?.id
-          ? String(detail.template.id)
-          : undefined,
-        classificationId: detail.classification?.id
-          ? String(detail.classification.id)
-          : "",
-        kecepatan:
-          (detail.urgency?.code as "BIASA" | "SEGERA" | "SANGAT_SEGERA") ||
-          "BIASA",
-        sifat:
-          (detail.confidentiality?.code as "BIASA" | "TERBATAS" | "RAHASIA") ||
-          "BIASA",
-        title: detail.title ?? "",
-        specialNote: detail.specialNote ?? "",
-        summary: detail.summary ?? "",
-        reviewers,
-        approvers,
-        toUnits,
-        ccUnits,
-      };
-
-      const loadedAttachments: LetterAttachment[] = (
-        detail.attachments ?? []
-      ).map((a) => ({
-        id: a.id,
-        fileName: a.fileName,
-        sizeBytes: a.size,
-        mimeType: a.contentType,
-        uploadedAt: a.uploadedAt,
-      }));
       setAttachments(loadedAttachments);
       setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
 
-      reset(newValues);
+      reset(formValues);
       setLastSaved(new Date());
       setSaveFailed(false);
       window.history.replaceState(null, "", `/surat/baru?draft=${detail.id}`);
@@ -433,7 +323,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     } catch (err: unknown) {
       console.error("Gagal simpan draf:", err);
       setSaveFailed(true);
-      alert(err instanceof Error ? err.message : "Gagal menyimpan draf.");
+      if (!handleDraftConflictOrStateError(err)) {
+        alert(err instanceof Error ? err.message : "Gagal menyimpan draf.");
+      }
     } finally {
       setIsSavingDraft(false);
     }
@@ -483,11 +375,13 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     } catch (err: unknown) {
       console.error("Gagal mengirim surat:", err);
       setSubmitFailed(true);
-      setSubmitErrorMessage(
-        err instanceof Error
-          ? err.message
-          : "Gagal mengirim surat. Periksa kelengkapan surat dan coba lagi."
-      );
+      if (!handleDraftConflictOrStateError(err)) {
+        setSubmitErrorMessage(
+          err instanceof Error
+            ? err.message
+            : "Gagal mengirim surat. Periksa kelengkapan surat dan coba lagi."
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }

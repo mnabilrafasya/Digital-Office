@@ -2,10 +2,88 @@
 // Registri & klien API template tata naskah dinas (.docx).
 // - Mengambil daftar dan file .docx template dari backend & MinIO (`/api/v1/templates` dan `/api/v1/templates/{id}/file`).
 // - Menyediakan fallback ke `frontend/public/templates/*.docx` bila diakses tanpa sesi login (misal `/dev/editor`).
-// - Saat tombol "Sinkronkan Form" diklik, placeholder di dalam dokumen .docx yang dimuat
-//   diperbarui secara langsung di editor dengan data form terbaru (Perihal, Sifat, Penerima, Approver).
+// - Saat tombol "Sinkronkan Form" diklik, placeholder statis di dalam dokumen .docx yang dimuat
+//   diperbarui secara langsung di editor dengan data form terbaru (Perihal, Penerima, Approver),
+//   sementara penanda sistem `###*...*###` / `###...###` tetap dijaga utuh untuk diisi backend saat surat terbit.
 
 import type { RichEdit } from "devexpress-richedit";
+
+export interface SystemPlaceholderDefinition {
+  /** Kode penanda sistem sesuai `backend/internal/surat/penanda.go` */
+  code: string;
+  /** Label singkat penanda */
+  label: string;
+  /** Penjelasan nilai yang diisikan oleh server saat surat disetujui (SENT) */
+  description: string;
+}
+
+/**
+ * Daftar 12 penanda sistem (`###*Nama*###`) yang dikenali backend (`internal/surat/penanda.go`).
+ * Backend juga menerima bentuk tanpa bintang (`###Nama###`) dan tidak peka huruf besar/kecil.
+ */
+export const SYSTEM_PLACEHOLDERS: SystemPlaceholderDefinition[] = [
+  {
+    code: "###*NoSurat*###",
+    label: "Nomor Surat",
+    description: "Nomor surat resmi (diisi otomatis saat disetujui Approver)",
+  },
+  {
+    code: "###*TglSurat*###",
+    label: "Tanggal Surat",
+    description: "Tanggal surat disetujui (contoh: 5 November 2026)",
+  },
+  {
+    code: "###*Perihal*###",
+    label: "Perihal",
+    description: "Perihal / judul surat dari metadata form",
+  },
+  {
+    code: "###*Sifat*###",
+    label: "Sifat Surat",
+    description: "Sifat kerahasiaan surat (Biasa / Terbatas / Rahasia)",
+  },
+  {
+    code: "###*Lampiran*###",
+    label: "Jumlah Lampiran",
+    description: "Jumlah berkas lampiran (contoh: 2 (dua) berkas atau -)",
+  },
+  {
+    code: "###*Kepada*###",
+    label: "Tujuan (Kepada)",
+    description:
+      "Jabatan pemilik salinan (untuk penerima langsung) atau daftar penerima tujuan",
+  },
+  {
+    code: "###*Tembusan*###",
+    label: "Tembusan (CC)",
+    description: "Daftar penerima tembusan bernomor (atau kosong bila tanpa CC)",
+  },
+  {
+    code: "###*Dari*###",
+    label: "Unit Pengirim",
+    description: "Nama unit kerja pengirim surat",
+  },
+  {
+    code: "###*JabatanPenandatangan*###",
+    label: "Jabatan Penandatangan",
+    description: "Jabatan pejabat Approver yang menandatangani surat",
+  },
+  {
+    code: "###*NamaPenandatangan*###",
+    label: "Nama Penandatangan",
+    description: "Nama lengkap pejabat Approver penandatangan",
+  },
+  {
+    code: "###*NoBadge*###",
+    label: "NIK / Nomor Badge",
+    description: "Nomor induk karyawan (employeeNumber) Approver penandatangan",
+  },
+  {
+    code: "###*QRCode*###",
+    label: "QR Code Persetujuan",
+    description: "Posisi gambar QR pengesahan resmi berukuran 3 × 3 cm",
+  },
+];
 
 export interface LetterTemplateContext {
   title?: string;
@@ -52,7 +130,7 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
     legacyId: "tmpl-dinas-standar",
     name: "Surat Dinas Resmi Standar",
     description:
-      "Format surat resmi dengan Kop PT Pupuk Sriwidjaja Palembang, Nomor ###NoSurat###, Yth, TTD & Tembusan.",
+      "Format surat resmi dengan Kop PT Pupuk Sriwidjaja Palembang, Nomor ###*NoSurat*###, Yth, TTD & Tembusan.",
     fileUrl: "/templates/surat-dinas-standar.docx",
     fallbackFileUrl: "/templates/surat-dinas-standar.docx",
     letterTypeKeywords: ["surat", "antar", "keluar", "standar", "korporat"],
@@ -419,8 +497,10 @@ function replacePlaceholderInSubDoc(
 }
 
 /**
- * Menyinkronkan data form (Perihal, Penerima, Pejabat Penandatangan, Nomor Surat)
- * ke dalam naskah .docx yang sedang dimuat di DevExpress RichEdit.
+ * Menyinkronkan data form (Perihal, Penerima, Pejabat Penandatangan)
+ * ke dalam placeholder statis (`[...]`) di naskah .docx yang sedang dimuat di DevExpress RichEdit.
+ * Penanda sistem `###*Nama*###` / `###Nama###` sengaja TIDAK ditimpa agar tetap diisi
+ * secara dinamis oleh backend (`penanda.go`) saat surat disetujui Approver & dibuatkan salinan per penerima.
  */
 export function applyTemplateContextToEditor(
   editor: RichEdit | null | undefined,
@@ -506,14 +586,6 @@ export function applyTemplateContextToEditor(
           subDoc,
           "Staf Pengembang Sistem / Unit TI",
           ctx.drafter.position
-        );
-      }
-
-      if (ctx.letterNumberPlaceholder) {
-        replacePlaceholderInSubDoc(
-          subDoc,
-          "###NoSurat###",
-          ctx.letterNumberPlaceholder
         );
       }
     } finally {

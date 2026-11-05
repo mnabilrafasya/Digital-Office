@@ -7,7 +7,7 @@
 // ─── Tipe sesuai model backend (model/letter.go) ───
 
 export interface LookupRef {
-  id: string;     // backend: int64 json:"id,string"
+  id: string; // backend: int64 json:"id,string"
   code: string;
   name: string;
 }
@@ -43,7 +43,7 @@ export interface LetterStep {
   role: "REVIEWER" | "APPROVER";
   order: number;
   state: StepState;
-  /** Catatan pengembalian — ada bila step pernah mengembalikan surat */
+  /** Catatan pengembalian opsional (bila diperkaya dari riwayat) */
   returnNote?: string;
   user: StepUser;
 }
@@ -125,12 +125,10 @@ async function apiFetch<T>(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as {
+    const body = (await res.json().catch(() => ({}))) as {
       error?: { message?: string };
     };
-    throw new Error(
-      body.error?.message ?? `HTTP ${res.status}`
-    );
+    throw new Error(body.error?.message ?? `HTTP ${res.status}`);
   }
 
   const json = (await res.json()) as { data: T };
@@ -142,15 +140,9 @@ async function apiFetch<T>(
 
 export async function getLetter(id: string): Promise<LetterDetail | null> {
   try {
-    const { data } = await apiFetch<LetterDetail>(`/letters/${encodeURIComponent(id)}`);
-    // DEBUG SEMENTARA — hapus setelah bug allowedActions teratasi
-    console.log("[DEBUG getLetter] status:", data.status);
-    console.log("[DEBUG getLetter] allowedActions:", data.allowedActions);
-    console.log("[DEBUG getLetter] currentAssignee:", data.currentAssignee);
-    console.log("[DEBUG getLetter] steps:", data.steps.map(s => ({
-      role: s.role, order: s.order, state: s.state,
-      userId: s.user.id, name: s.user.name,
-    })));
+    const { data } = await apiFetch<LetterDetail>(
+      `/letters/${encodeURIComponent(id)}`
+    );
     return data;
   } catch (e) {
     const err = e as Error;
@@ -181,13 +173,16 @@ export async function reviewAction(
   note?: string
 ): Promise<ReviewActionResult> {
   const endpoint =
-    action === "APPROVE" ? "approve"
-    : action === "RETURN" ? "return"
-    : action === "CANCEL" ? "cancel"
-    : "submit";
+    action === "APPROVE"
+      ? "approve"
+      : action === "RETURN"
+        ? "return"
+        : action === "CANCEL"
+          ? "cancel"
+          : "submit";
 
   const hasBody = action !== "SUBMIT";
-  const body    = hasBody ? JSON.stringify({ note: note ?? null }) : undefined;
+  const body = hasBody ? JSON.stringify({ note: note ?? null }) : undefined;
 
   try {
     const { data } = await apiFetch<LetterDetail>(
@@ -204,8 +199,8 @@ export async function reviewAction(
 // ─── Util ──────────────────────────────────────────────────────
 
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024)            return `${bytes} B`;
-  if (bytes < 1024 * 1024)     return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
@@ -213,7 +208,10 @@ export function formatBytes(bytes: number): string {
  * Cek apakah surat ini dalam status "perlu diedit drafter".
  * Drafter harus diarahkan ke form edit, bukan halaman review.
  */
-export function isEditableByDrafter(status: string, allowedActions: string[]): boolean {
+export function isEditableByDrafter(
+  status: string,
+  allowedActions: string[]
+): boolean {
   return (
     (status === "DRAFT" || status === "RETURNED_TO_DRAFTER") &&
     allowedActions.includes("EDIT")
@@ -222,21 +220,36 @@ export function isEditableByDrafter(status: string, allowedActions: string[]): b
 
 // ─── Riwayat surat ─────────────────────────────────────────────
 
+export type LetterHistoryAction =
+  | "CREATE"
+  | "SAVE"
+  | "SUBMIT"
+  | "APPROVE"
+  | "RETURN"
+  | "READ"
+  | "SIGN"
+  | "CANCEL"
+  | string;
+
 export interface LetterHistoryEntry {
-  action: "SUBMIT" | "APPROVE" | "RETURN" | "READ" | "SIGN";
+  action: LetterHistoryAction;
   actorRole: string;
   actor: PersonRef;
   target: PersonRef | null;
-  fromStatus: string;
+  fromStatus: string | null;
   toStatus: string;
   note: string | null;
-  versionNumber: number;
+  versionNumber: number | null;
   createdAt: string;
 }
 
-export async function getLetterHistory(id: string): Promise<LetterHistoryEntry[]> {
+export async function getLetterHistory(
+  id: string
+): Promise<LetterHistoryEntry[]> {
   try {
-    const { data } = await apiFetch<LetterHistoryEntry[]>(`/letters/${encodeURIComponent(id)}/history`);
+    const { data } = await apiFetch<LetterHistoryEntry[]>(
+      `/letters/${encodeURIComponent(id)}/history`
+    );
     return data;
   } catch {
     return [];

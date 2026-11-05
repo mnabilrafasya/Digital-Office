@@ -2,13 +2,17 @@
 
 // ─────────────────────────────────────────────
 // components/review/document-viewer/index.tsx
-// Dynamic import wrapper untuk ReviewDocumentViewer di /surat/[id].
+// Dynamic import wrapper untuk ReviewDocumentViewer di /surat/[id] dan /inbox/[itemId].
 // ssr: false WAJIB untuk library DevExpress browser.
 // ─────────────────────────────────────────────
 
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 import type { ReviewDocumentInnerProps } from "./review-document-inner";
+
+export interface ReviewDocumentViewerProps extends ReviewDocumentInnerProps {
+  onPdfReadyChange?: (ready: boolean, copyFor: string | null) => void;
+}
 
 function ViewerLoading() {
   return (
@@ -42,9 +46,14 @@ const OfficialDocumentInner = dynamic(
 // Surat yang sudah terbit ditampilkan sebagai naskah resmi (sudah terisi nomor, tanggal, dan QR)
 // dalam mode baca; PDF resminya diekspor dari tampilan yang sama. Editor biasa hanya untuk naskah
 // yang masih diproses.
-export function ReviewDocumentViewer(props: ReviewDocumentInnerProps) {
+export function ReviewDocumentViewer(props: ReviewDocumentViewerProps) {
   if (props.letter.status === "SENT") {
-    return <OfficialDocumentInner letter={props.letter} />;
+    return (
+      <OfficialDocumentInner
+        letter={props.letter}
+        onPdfReadyChange={props.onPdfReadyChange}
+      />
+    );
   }
   return <ReviewDocumentInner {...props} />;
 }

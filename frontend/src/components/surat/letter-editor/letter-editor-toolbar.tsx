@@ -4,7 +4,7 @@
 // Command bar terpadu gaya Microsoft Word / Office 365 di bagian atas editor naskah:
 // - Grup 1: Pilihan Template Naskah (.docx dari /api/v1/templates) & Sinkronkan Data Form
 // - Grup 2: Operasi Berkas terintegrasi (Buka .docx, Unduh .docx, Cetak / PDF)
-// - Grup 3: Chip interaktif salin penanda `###NoSurat###` & indikator versi dokumen (.docx)
+// - Grup 3: Menu interaktif salin 12 Penanda Sistem (`###*Nama*###`) & indikator versi dokumen (.docx)
 // - Grup 4: Kontrol Zoom ringkas, Panduan Pintasan Keyboard, & Layar Penuh
 
 import { useState, useRef, useEffect } from "react";
@@ -21,12 +21,15 @@ import {
   CloudUpload,
   Copy,
   Check,
+  ChevronDown,
+  Hash,
 } from "lucide-react";
 
 import { WordZoomControl } from "@/components/ui/word-zoom-control";
 import {
   fetchTemplates,
   getCachedTemplates,
+  SYSTEM_PLACEHOLDERS,
   type LetterTemplateDefinition,
 } from "@/lib/templates/letter-templates";
 
@@ -76,11 +79,13 @@ export function LetterEditorToolbar({
   hasUnsavedDocumentChanges,
 }: LetterEditorToolbarProps) {
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [copiedPlaceholder, setCopiedPlaceholder] = useState(false);
+  const [showPlaceholders, setShowPlaceholders] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [templates, setTemplates] = useState<LetterTemplateDefinition[]>(() =>
     getCachedTemplates()
   );
   const shortcutRef = useRef<HTMLDivElement>(null);
+  const placeholderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +100,7 @@ export function LetterEditorToolbar({
   }, []);
 
   useEffect(() => {
-    if (!showShortcuts) return;
+    if (!showShortcuts && !showPlaceholders) return;
     const handleOutside = (e: MouseEvent) => {
       if (
         shortcutRef.current &&
@@ -103,15 +108,23 @@ export function LetterEditorToolbar({
       ) {
         setShowShortcuts(false);
       }
+      if (
+        placeholderRef.current &&
+        !placeholderRef.current.contains(e.target as Node)
+      ) {
+        setShowPlaceholders(false);
+      }
     };
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
-  }, [showShortcuts]);
+  }, [showShortcuts, showPlaceholders]);
 
-  const handleCopyPlaceholder = () => {
-    navigator.clipboard?.writeText("###NoSurat###");
-    setCopiedPlaceholder(true);
-    setTimeout(() => setCopiedPlaceholder(false), 2000);
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard?.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => {
+      setCopiedCode((prev) => (prev === code ? null : prev));
+    }, 2000);
   };
 
   const resolvedSelectedId =
@@ -195,7 +208,7 @@ export function LetterEditorToolbar({
         </div>
       </div>
 
-      {/* Kanan-Tengah & Kanan: Status / Penanda Nomor + Zoom & Utilitas */}
+      {/* Kanan-Tengah & Kanan: Status / Penanda Sistem + Zoom & Utilitas */}
       <div className="flex items-center gap-1.5 min-[1600px]:gap-2 ml-auto flex-wrap xl:flex-nowrap shrink-0">
         {statusNotification ? (
           <div className="inline-flex items-center gap-1.5 text-xs font-medium text-status-success-text bg-status-success-bg border border-status-success-text/20 px-2.5 py-1 rounded-lg whitespace-nowrap">
@@ -204,23 +217,110 @@ export function LetterEditorToolbar({
           </div>
         ) : (
           <div className="hidden xl:flex items-center gap-1.5 shrink-0">
-            {/* Chip Interaktif ###NoSurat### */}
-            <button
-              type="button"
-              onClick={handleCopyPlaceholder}
-              title="Klik untuk menyalin ###NoSurat###. Penanda ini otomatis diganti nomor resmi oleh server saat disetujui Approver."
-              className="inline-flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-bg text-[11px] text-text-muted hover:text-text transition-colors shadow-2xs whitespace-nowrap"
+            {/* Segmented Chip & Menu 12 Penanda Sistem (`###*Nama*###`) */}
+            <div
+              ref={placeholderRef}
+              className="relative inline-flex items-center rounded-lg border border-border bg-surface shadow-2xs"
             >
-              <span className="hidden min-[1600px]:inline">Penanda:</span>
-              <code className="font-mono font-semibold text-text">
-                ###NoSurat###
-              </code>
-              {copiedPlaceholder ? (
-                <Check size={11} className="text-status-success-text shrink-0" />
-              ) : (
-                <Copy size={11} className="text-text-muted shrink-0" />
+              <button
+                type="button"
+                onClick={() => handleCopyCode("###*NoSurat*###")}
+                title="Klik untuk menyalin ###*NoSurat*###. Penanda ini otomatis diganti nomor resmi oleh server saat disetujui Approver."
+                className="inline-flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-l-lg hover:bg-bg text-[11px] text-text-muted hover:text-text transition-colors whitespace-nowrap"
+              >
+                <span className="hidden min-[1600px]:inline">Penanda:</span>
+                <code className="font-mono font-semibold text-text">
+                  ###*NoSurat*###
+                </code>
+                {copiedCode === "###*NoSurat*###" ? (
+                  <Check
+                    size={11}
+                    className="text-status-success-text shrink-0"
+                  />
+                ) : (
+                  <Copy size={11} className="text-text-muted shrink-0" />
+                )}
+              </button>
+
+              <span className="h-4 w-px bg-border" />
+
+              <button
+                type="button"
+                onClick={() => setShowPlaceholders((v) => !v)}
+                title="Lihat daftar lengkap 12 Penanda Sistem (###*...*###)"
+                aria-label="Daftar Penanda Sistem"
+                className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-r-lg text-[11px] text-text-muted hover:text-text hover:bg-bg transition-colors"
+              >
+                <Hash size={11} className="text-primary" />
+                <ChevronDown size={11} />
+              </button>
+
+              {showPlaceholders && (
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-96 bg-surface border border-border rounded-xl shadow-lg p-3 text-xs">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-border">
+                    <div>
+                      <span className="font-semibold text-text block">
+                        Penanda Sistem Otomatis ({SYSTEM_PLACEHOLDERS.length})
+                      </span>
+                      <span className="text-[11px] text-text-muted">
+                        Klik untuk menyalin ke naskah. Diisi server saat surat
+                        disetujui Approver.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowPlaceholders(false)}
+                      className="text-text-muted hover:text-text text-[11px] shrink-0"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                  <ul className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                    {SYSTEM_PLACEHOLDERS.map((item) => {
+                      const isCopied = copiedCode === item.code;
+                      return (
+                        <li key={item.code}>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyCode(item.code)}
+                            className="w-full flex items-start justify-between gap-2 p-2 rounded-lg hover:bg-panel text-left transition-colors group"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <code className="font-mono font-semibold text-[11px] text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                  {item.code}
+                                </code>
+                                <span className="font-medium text-text text-[11px]">
+                                  {item.label}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+                                {item.description}
+                              </p>
+                            </div>
+                            <span className="shrink-0 mt-0.5 text-[11px] text-text-muted group-hover:text-text inline-flex items-center gap-1">
+                              {isCopied ? (
+                                <>
+                                  <Check
+                                    size={12}
+                                    className="text-status-success-text"
+                                  />
+                                  <span className="text-status-success-text font-medium">
+                                    Disalin
+                                  </span>
+                                </>
+                              ) : (
+                                <Copy size={12} />
+                              )}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               )}
-            </button>
+            </div>
 
             {/* Badge Status Versi Server */}
             <div

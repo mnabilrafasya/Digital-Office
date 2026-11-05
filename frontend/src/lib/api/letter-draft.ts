@@ -9,6 +9,8 @@
 
 import { fetchLookups } from "./form";
 import { getCachedTemplates } from "@/lib/templates/letter-templates";
+import type { BuatSuratFormValues } from "@/lib/schemas";
+import type { LetterAttachment, StepEntry } from "@/lib/types";
 import type { LetterDetail } from "./letter-detail";
 
 const API = "/api/v1";
@@ -17,6 +19,31 @@ export interface SaveDraftResult {
   id: string;
   etag: string | null;
   detail: LetterDetail;
+}
+
+/** Error khusus untuk konflik versi (412) atau status tidak valid (409) saat simpan draf */
+export class DraftSaveError extends Error {
+  status: number;
+  code?: string;
+  latestDetail?: LetterDetail;
+  latestEtag?: string | null;
+
+  constructor(
+    message: string,
+    status: number,
+    options?: {
+      code?: string;
+      latestDetail?: LetterDetail;
+      latestEtag?: string | null;
+    }
+  ) {
+    super(message);
+    this.name = "DraftSaveError";
+    this.status = status;
+    this.code = options?.code;
+    this.latestDetail = options?.latestDetail;
+    this.latestEtag = options?.latestEtag;
+  }
 }
 
 /** Cache lookup ID untuk sifat & kecepatan agar tidak fetch berulang kali */
@@ -85,6 +112,93 @@ function mapRecipientInput(
   return null;
 }
 
+/**
+ * Mengonversi detail surat dari backend (`LetterDetail`) menjadi nilai form `BuatSuratFormValues`
+ * dan daftar lampiran `LetterAttachment[]` (menghindari duplikasi kode di halaman Buat Surat).
+ */
+export function detailToFormValues(detail: LetterDetail): {
+  formValues: BuatSuratFormValues;
+  attachments: LetterAttachment[];
+} {
+  const reviewers: StepEntry[] = (detail.steps ?? [])
+    .filter((s) => s.role === "REVIEWER")
+    .map((s, idx) => ({
+      id: `rev-${s.user.id || idx}`,
+      employeeId: String(s.user.id),
+      employeeName: s.user.name,
+      jabatan: s.user.positionName,
+      unitName: s.user.unitName,
+      kodeAlias: "R",
+    }));
+
+  const approvers: StepEntry[] = (detail.steps ?? [])
+    .filter((s) => s.role === "APPROVER")
+    .map((s, idx) => ({
+      id: `app-${s.user.id || idx}`,
+      employeeId: String(s.user.id),
+      employeeName: s.user.name,
+      jabatan: s.user.positionName,
+      unitName: s.user.unitName,
+      kodeAlias: "A",
+    }));
+
+  const toUnits = (detail.recipients?.to ?? [])
+    .map((r) => {
+      if (r.type === "UNIT" && r.unit) {
+        return { id: String(r.unit.id), name: r.unit.name };
+      }
+      if (r.type === "ALIAS" && r.alias) {
+        return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
+      }
+      return null;
+    })
+    .filter((u): u is { id: string; name: string } => u !== null);
+
+  const ccUnits = (detail.recipients?.cc ?? [])
+    .map((r) => {
+      if (r.type === "UNIT" && r.unit) {
+        return { id: String(r.unit.id), name: r.unit.name };
+      }
+      if (r.type === "ALIAS" && r.alias) {
+        return { id: `alias-${r.alias.levelId}`, name: r.alias.label };
+      }
+      return null;
+    })
+    .filter((u): u is { id: string; name: string } => u !== null);
+
+  const formValues: BuatSuratFormValues = {
+    letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
+    templateId: detail.template?.id ? String(detail.template.id) : undefined,
+    classificationId: detail.classification?.id
+      ? String(detail.classification.id)
+      : "",
+    kecepatan:
+      (detail.urgency?.code as "BIASA" | "SEGERA" | "SANGAT_SEGERA") || "BIASA",
+    sifat:
+      (detail.confidentiality?.code as "BIASA" | "TERBATAS" | "RAHASIA") ||
+      "BIASA",
+    title: detail.title ?? "",
+    specialNote: detail.specialNote ?? "",
+    summary: detail.summary ?? "",
+    reviewers,
+    approvers,
+    toUnits,
+    ccUnits,
+  };
+
+  const attachments: LetterAttachment[] = (detail.attachments ?? []).map(
+    (a) => ({
+      id: a.id,
+      fileName: a.fileName,
+      sizeBytes: a.size,
+      mimeType: a.contentType,
+      uploadedAt: a.uploadedAt,
+    })
+  );
+
+  return { formValues, attachments };
+}
+
 /** Mengonversi nilai form BuatSuratFormValues ke payload LetterInput backend */
 export async function formValuesToLetterInput(values: FormInputValues) {
   const { confidentiality: confMap, urgency: urgMap } = await getLookupIdMap();
@@ -151,7 +265,8 @@ export async function formValuesToLetterInput(values: FormInputValues) {
     letterTypeId: resolvedLetterTypeId,
     templateId: isTemplateTypeMismatch ? null : rawTemplateId,
     classificationId:
-      values.classificationId && /^\d+$/.test(String(values.classificationId).trim())
+      values.classificationId &&
+      /^\d+$/.test(String(values.classificationId).trim())
         ? String(values.classificationId).trim()
         : null,
     confidentialityId: confidentialityId ?? null,
@@ -185,8 +300,14 @@ export async function saveDraft(
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message ?? `Gagal membuat draf (HTTP ${res.status})`);
+      const err = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string };
+      };
+      throw new DraftSaveError(
+        err.error?.message ?? `Gagal membuat draf (HTTP ${res.status})`,
+        res.status,
+        { code: err.error?.code }
+      );
     }
 
     const etag = res.headers.get("etag") || res.headers.get("x-etag");
@@ -219,9 +340,9 @@ export async function saveDraft(
       body: JSON.stringify(payload),
     });
 
-    // Jika server merespons 428 (Precondition Required) atau 409 (Conflict),
-    // otomatis ambil ETag mutakhir lalu coba kirim kembali
-    if (res.status === 428 || res.status === 409) {
+    // Hanya untuk 428 (Precondition Required / belum ada If-Match):
+    // ambil ETag mutakhir lalu coba kirim kembali sekali
+    if (res.status === 428) {
       try {
         const fresh = await getDraftLetter(draftId);
         if (fresh.etag) {
@@ -233,13 +354,57 @@ export async function saveDraft(
           });
         }
       } catch {
-        // Abaikan kegagalan refresh, lanjutkan ke penanganan error standar
+        // Lanjutkan ke penanganan error di bawah
       }
     }
 
+    // 412 Precondition Failed (VERSION_CONFLICT):
+    // Jangan menimpa diam-diam. Ambil detail & ETag terbaru lalu beri tahu pengguna.
+    if (res.status === 412) {
+      const err = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string };
+      };
+      const fresh = await getDraftLetter(draftId).catch(() => null);
+      throw new DraftSaveError(
+        err.error?.message ??
+          "Draf telah diubah di sesi atau tab lain (412). Data terbaru telah dimuat, silakan periksa kembali sebelum menyimpan.",
+        412,
+        {
+          code: err.error?.code ?? "VERSION_CONFLICT",
+          latestDetail: fresh?.detail,
+          latestEtag: fresh?.etag ?? null,
+        }
+      );
+    }
+
+    // 409 Conflict (INVALID_STATE):
+    // Surat sudah diproses (bukan DRAFT / RETURNED_TO_DRAFTER), jangan di-retry PUT.
+    if (res.status === 409) {
+      const err = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string };
+      };
+      const fresh = await getDraftLetter(draftId).catch(() => null);
+      throw new DraftSaveError(
+        err.error?.message ??
+          "Surat ini sedang diproses dan tidak lagi dalam status draf yang dapat diedit.",
+        409,
+        {
+          code: err.error?.code ?? "INVALID_STATE",
+          latestDetail: fresh?.detail,
+          latestEtag: fresh?.etag ?? null,
+        }
+      );
+    }
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message ?? `Gagal memperbarui draf (HTTP ${res.status})`);
+      const err = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string };
+      };
+      throw new DraftSaveError(
+        err.error?.message ?? `Gagal memperbarui draf (HTTP ${res.status})`,
+        res.status,
+        { code: err.error?.code }
+      );
     }
 
     const etag = res.headers.get("etag") || res.headers.get("x-etag");
@@ -256,8 +421,12 @@ export async function submitLetter(letterId: string): Promise<LetterDetail> {
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message ?? `Gagal mengirim surat (HTTP ${res.status})`);
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ?? `Gagal mengirim surat (HTTP ${res.status})`
+    );
   }
 
   const json = (await res.json()) as { data: LetterDetail };
@@ -265,15 +434,21 @@ export async function submitLetter(letterId: string): Promise<LetterDetail> {
 }
 
 /** Mengambil detail draf surat beserta ETag-nya */
-export async function getDraftLetter(letterId: string): Promise<{ detail: LetterDetail; etag: string | null }> {
+export async function getDraftLetter(
+  letterId: string
+): Promise<{ detail: LetterDetail; etag: string | null }> {
   const res = await fetch(`${API}/letters/${letterId}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message ?? `Gagal memuat surat (HTTP ${res.status})`);
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ?? `Gagal memuat surat (HTTP ${res.status})`
+    );
   }
 
   const etag = res.headers.get("etag") || res.headers.get("x-etag");
