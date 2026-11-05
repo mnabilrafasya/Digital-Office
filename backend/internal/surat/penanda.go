@@ -144,9 +144,9 @@ func tanggalIndonesia(t time.Time) string {
 
 // fillPlaceholders mengisi penanda sistem di naskah .docx: teks dari values (kunci huruf kecil)
 // dan gambar QR di posisi ###*QRCode*###. Naskah tanpa penanda QR mendapat QR di akhir isi
-// surat (rata kanan), jadi QR selalu ikut tampil dan ikut diekspor ke PDF. File lain di dalam
-// .docx tidak diubah.
-func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]byte, error) {
+// surat (rata kanan), jadi QR selalu ikut tampil dan ikut diekspor ke PDF. watermarkPNG yang
+// tidak nil disisipkan di setiap halaman (watermark.go). File lain di dalam .docx tidak diubah.
+func fillPlaceholders(docx []byte, values map[string]string, qrPNG, watermarkPNG []byte) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
 	if err != nil {
 		return nil, fmt.Errorf("membuka naskah .docx: %w", err)
@@ -165,7 +165,7 @@ func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]by
 		files[f.Name] = data
 	}
 
-	qrMedia := uniqueMediaName(files)
+	qrMedia := uniqueMediaFile(files, qrMediaName)
 	docPrID := qrDocPrIDBase
 	var qrParts []string // bagian naskah yang memuat QR (butuh relasi ke gambar)
 	for _, f := range zr.File {
@@ -195,11 +195,20 @@ func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]by
 		added[qrMedia] = true
 		files["[Content_Types].xml"] = ensurePNGContentType(files["[Content_Types].xml"])
 		for _, part := range qrParts {
-			rels := path.Join(path.Dir(part), "_rels", path.Base(part)+".rels")
+			rels := relsPath(part)
 			if _, ok := files[rels]; !ok {
 				added[rels] = true
 			}
-			files[rels] = addImageRelationship(files[rels], strings.TrimPrefix(qrMedia, "word/"))
+			files[rels] = addRelationship(files[rels], qrRelID, imageRelType, strings.TrimPrefix(qrMedia, "word/"))
+		}
+	}
+	if watermarkPNG != nil {
+		names, err := addWatermark(files, watermarkPNG)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range names {
+			added[name] = true
 		}
 	}
 
@@ -382,13 +391,18 @@ func qrDrawingXML(docPrID int) string {
 		`</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`
 }
 
-// uniqueMediaName memilih nama file gambar QR yang belum dipakai di dalam .docx.
-func uniqueMediaName(files map[string][]byte) string {
-	name := "word/media/" + qrMediaName + ".png"
+// uniqueMediaFile memilih nama file gambar (word/media/<base>.png) yang belum dipakai di dalam .docx.
+func uniqueMediaFile(files map[string][]byte, base string) string {
+	name := "word/media/" + base + ".png"
 	for i := 2; files[name] != nil; i++ {
-		name = fmt.Sprintf("word/media/%s-%d.png", qrMediaName, i)
+		name = fmt.Sprintf("word/media/%s-%d.png", base, i)
 	}
 	return name
+}
+
+// relsPath adalah file relasi milik sebuah bagian naskah, contoh word/_rels/header1.xml.rels.
+func relsPath(part string) string {
+	return path.Join(path.Dir(part), "_rels", path.Base(part)+".rels")
 }
 
 // ensurePNGContentType memastikan [Content_Types].xml mengenal ekstensi png.
@@ -397,19 +411,34 @@ func ensurePNGContentType(ct []byte) []byte {
 	if pngContentType.MatchString(s) {
 		return ct
 	}
-	return []byte(strings.Replace(s, "</Types>", `<Default Extension="png" ContentType="image/png"/></Types>`, 1))
+	return addToTypes(ct, `<Default Extension="png" ContentType="image/png"/>`)
 }
 
-// addImageRelationship menambah relasi gambar QR ke file .rels sebuah bagian naskah (dibuat
-// bila belum ada). target relatif terhadap folder word/ (semua bagian naskah ada di sana).
-func addImageRelationship(rels []byte, target string) []byte {
-	rel := `<Relationship Id="` + qrRelID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="` + target + `"/>`
+// addToTypes menambah satu elemen ke [Content_Types].xml, juga bila ditulis ringkas (<Types/>).
+func addToTypes(ct []byte, elem string) []byte {
+	s := string(ct)
+	if i := strings.LastIndex(s, "</Types>"); i >= 0 {
+		return []byte(s[:i] + elem + s[i:])
+	}
+	if i := strings.LastIndex(s, "/>"); i >= 0 && strings.Contains(s, "<Types") {
+		return []byte(s[:i] + ">" + elem + "</Types>" + s[i+2:])
+	}
+	return ct
+}
+
+// imageRelType adalah jenis relasi gambar di file .rels.
+const imageRelType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+
+// addRelationship menambah relasi id ke file .rels sebuah bagian naskah (dibuat bila belum ada).
+// target relatif terhadap folder word/ (semua bagian naskah ada di sana).
+func addRelationship(rels []byte, id, relType, target string) []byte {
+	rel := `<Relationship Id="` + id + `" Type="` + relType + `" Target="` + target + `"/>`
 	if len(rels) == 0 {
 		return []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
 			`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` + rel + `</Relationships>`)
 	}
 	s := string(rels)
-	if strings.Contains(s, `Id="`+qrRelID+`"`) {
+	if strings.Contains(s, `Id="`+id+`"`) {
 		return rels
 	}
 	return []byte(strings.Replace(s, "</Relationships>", rel+"</Relationships>", 1))

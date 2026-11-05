@@ -13,6 +13,7 @@ require (
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/pdfcpu/pdfcpu v0.16.4
 	golang.org/x/crypto v0.58.0
+	golang.org/x/image v0.47.0
 	rsc.io/qr v0.2.0
 )
 
@@ -42,7 +43,6 @@ require (
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
