@@ -19,6 +19,7 @@ import (
 	"office.backend/internal/platform/pdf"
 	"office.backend/internal/platform/server"
 	"office.backend/internal/platform/storage"
+	"office.backend/internal/platform/upload"
 	"office.backend/internal/surat"
 )
 
@@ -95,11 +96,15 @@ func run() error {
 	}, cfg.Location)
 
 	router := newRouter(routerDeps{
-		Health:            server.NewHealthHandler(conn, files),
-		Auth:              auth.NewHandler(authService, cfg.JWTTTL),
-		MasterData:        masterdata.NewHandler(masterdata.NewService(masterRepo)),
-		Organisasi:        organisasi.NewHandler(organisasi.NewService(orgRepo, orgRepo, orgRepo)),
-		Surat:             surat.NewHandler(suratService),
+		Health:     server.NewHealthHandler(conn, files),
+		Auth:       auth.NewHandler(authService, cfg.JWTTTL),
+		MasterData: masterdata.NewHandler(masterdata.NewService(masterRepo)),
+		Organisasi: organisasi.NewHandler(organisasi.NewService(orgRepo, orgRepo, orgRepo)),
+		Surat: surat.NewHandler(suratService, surat.UploadOptions{
+			Limiter:     upload.NewLimiter(int64(cfg.UploadMemoryMB)<<20, cfg.UploadWait),
+			ReadTimeout: cfg.UploadReadTimeout,
+			Timeout:     cfg.UploadTimeout,
+		}),
 		Inbox:             inbox.NewHandler(inboxService),
 		Audit:             audit.NewHandler(audit.NewService(conn, cfg.Location)),
 		Tokens:            tokens,

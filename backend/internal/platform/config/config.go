@@ -30,6 +30,13 @@ type Config struct {
 	MemoryLimitMB     int            // 0 = tanpa batas
 	TrustProxyHeaders bool
 
+	// Antrean unggahan: jatah memori total semua unggahan, batas menunggu giliran, dan batas waktu
+	// khusus request unggahan (mengirim file dan total).
+	UploadMemoryMB    int
+	UploadWait        time.Duration
+	UploadReadTimeout time.Duration
+	UploadTimeout     time.Duration
+
 	DBHost            string
 	DBPort            string
 	DBUser            string
@@ -93,6 +100,10 @@ func Load() (*Config, error) {
 	cfg.TrustProxyHeaders = cfg.parseBool("TRUST_PROXY_HEADERS", false)
 	cfg.MemoryLimitMB = cfg.parseInt("APP_MEMORY_LIMIT_MB", 0)
 	cfg.JWTTTL = cfg.parseDuration("JWT_TTL", 8*time.Hour)
+	cfg.UploadMemoryMB = cfg.parseInt("UPLOAD_MEMORY_MB", 200)
+	cfg.UploadWait = cfg.parseDuration("UPLOAD_WAIT", 60*time.Second)
+	cfg.UploadReadTimeout = cfg.parseDuration("UPLOAD_READ_TIMEOUT", 2*time.Minute)
+	cfg.UploadTimeout = cfg.parseDuration("UPLOAD_TIMEOUT", 3*time.Minute)
 
 	if cfg.DBPassword == "" || cfg.MinioAccessKey == "" || cfg.MinioSecretKey == "" {
 		return nil, errors.New("DB_PASSWORD, MINIO_ROOT_USER, dan MINIO_ROOT_PASSWORD wajib diisi di .env")
@@ -122,6 +133,14 @@ func (c *Config) ValidateAPI() error {
 	}
 	if c.MemoryLimitMB < 0 {
 		errs = append(errs, errors.New("APP_MEMORY_LIMIT_MB tidak boleh negatif (0 = tanpa batas)"))
+	}
+	if c.UploadMemoryMB < 1 {
+		errs = append(errs, errors.New("UPLOAD_MEMORY_MB harus lebih dari 0"))
+	}
+	if c.UploadWait <= 0 || c.UploadReadTimeout <= 0 || c.UploadTimeout <= 0 {
+		errs = append(errs, errors.New("UPLOAD_WAIT, UPLOAD_READ_TIMEOUT, dan UPLOAD_TIMEOUT harus lebih dari 0, contoh: 60s atau 2m"))
+	} else if c.UploadTimeout <= c.UploadWait || c.UploadTimeout < c.UploadReadTimeout {
+		errs = append(errs, errors.New("UPLOAD_TIMEOUT harus lebih lama dari UPLOAD_WAIT dan tidak kurang dari UPLOAD_READ_TIMEOUT"))
 	}
 
 	loc, err := time.LoadLocation(c.AppTimezone)

@@ -1,8 +1,6 @@
 package surat
 
 import (
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"mime"
@@ -16,23 +14,18 @@ import (
 	"office.backend/internal/platform/middleware"
 )
 
-// Batas request multipart.
-const (
-	multipartOverhead = 1 << 20  // ruang tambahan di luar isi file (boundary, header, field teks)
-	multipartMemory   = 32 << 20 // bagian request yang disimpan di memori; sisanya file sementara
-)
-
 // SaveDocument menangani PUT /api/v1/letters/{letterId}/document (multipart/form-data, field
 // "file" berisi .docx). Response 201 berisi versi baru dan ETag surat yang baru.
 func (h *Handler) SaveDocument(w http.ResponseWriter, r *http.Request) {
-	data, fileName, ok := readUpload(w, r, MaxDocumentBytes, "naskah", true)
+	form, ok := h.readUpload(w, r, MaxDocumentBytes, "naskah", true)
 	if !ok {
 		return
 	}
+	defer form.release()
 	v, rowVer, err := h.letters.SaveDocument(r.Context(), auth.CurrentUserFrom(r.Context()), DocumentInput{
 		LetterID: chi.URLParam(r, "letterId"),
-		FileName: fileName,
-		Data:     data,
+		FileName: form.fileName,
+		Data:     form.data,
 		ClientIP: middleware.ClientIPFrom(r.Context()),
 	})
 	if err != nil {
@@ -87,51 +80,6 @@ func (h *Handler) Document(w http.ResponseWriter, r *http.Request) {
 	sendFile(w, f, disposition, "naskah")
 }
 
-// readUpload membaca request multipart/form-data: field "file" (maksimal maxBytes) dan field teks
-// lain (dibaca pemanggil lewat formValue). required=false: field file boleh tidak dikirim (data
-// nil). ok=false berarti response error sudah ditulis.
-func readUpload(w http.ResponseWriter, r *http.Request, maxBytes int, label string, required bool) (data []byte, fileName string, ok bool) {
-	invalid := "Kirim " + label + " sebagai multipart/form-data dengan field file"
-	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes)+multipartOverhead)
-	if err := r.ParseMultipartForm(multipartMemory); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			httpx.Validation(w, fmt.Sprintf("Ukuran %s maksimal %d MB", label, maxBytes>>20))
-			return nil, "", false
-		}
-		httpx.Validation(w, invalid)
-		return nil, "", false
-	}
-	defer r.MultipartForm.RemoveAll() // field teks tetap bisa dibaca; yang dihapus hanya file sementara
-
-	file, header, err := r.FormFile("file")
-	if errors.Is(err, http.ErrMissingFile) && !required {
-		return nil, "", true
-	}
-	if err != nil {
-		httpx.Validation(w, invalid)
-		return nil, "", false
-	}
-	defer file.Close()
-	if data, err = io.ReadAll(io.LimitReader(file, int64(maxBytes)+1)); err != nil {
-		httpx.Validation(w, "File "+label+" tidak bisa dibaca")
-		return nil, "", false
-	}
-	return data, header.Filename, true
-}
-
-// formValue membaca field teks multipart; nil bila field tidak dikirim. Dipanggil setelah readUpload.
-func formValue(r *http.Request, key string) *string {
-	if r.MultipartForm == nil {
-		return nil
-	}
-	v, ok := r.MultipartForm.Value[key]
-	if !ok || len(v) == 0 {
-		return nil
-	}
-	return &v[0]
-}
-
 // sendFile mengirim file dan menutup Body-nya. disposition "attachment" (diunduh) atau "inline"
 // (ditampilkan browser); what dipakai di log.
 func sendFile(w http.ResponseWriter, f *DocumentFile, disposition, what string) {
@@ -162,13 +110,14 @@ func (h *Handler) FilledDocument(w http.ResponseWriter, r *http.Request) {
 // field "file" berisi PDF hasil ekspor editor). 201 bila PDF resmi baru disimpan, 200 bila sudah
 // ada sebelumnya (PDF yang tersimpan tetap dipakai).
 func (h *Handler) SaveFinalPDF(w http.ResponseWriter, r *http.Request) {
-	data, _, ok := readUpload(w, r, MaxFinalPDFBytes, "PDF resmi", true)
+	form, ok := h.readUpload(w, r, MaxFinalPDFBytes, "PDF resmi", true)
 	if !ok {
 		return
 	}
+	defer form.release()
 	v, created, err := h.letters.SaveFinalPDF(r.Context(), auth.CurrentUserFrom(r.Context()), FinalPDFInput{
 		LetterID: chi.URLParam(r, "letterId"),
-		Data:     data,
+		Data:     form.data,
 		ClientIP: middleware.ClientIPFrom(r.Context()),
 	})
 	if err != nil {

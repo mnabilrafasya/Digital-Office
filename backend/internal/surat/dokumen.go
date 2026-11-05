@@ -25,7 +25,8 @@ import (
 
 // Batas dan format naskah.
 const (
-	MaxDocumentBytes  = 10 << 20 // 10 MB
+	MaxUploadBytes    = 25 << 20 // batas semua unggahan: naskah, template, lampiran, PDF resmi
+	MaxDocumentBytes  = MaxUploadBytes
 	DocxContentType   = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	maxFileNameLength = 255 // letter_versions.file_name NVARCHAR(255)
 )
