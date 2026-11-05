@@ -19,8 +19,6 @@ import {
   Pencil,
   QrCode,
   CheckCircle2,
-  Clock,
-  ArrowRight,
 } from "lucide-react";
 import {
   getLetter,
@@ -35,7 +33,7 @@ import {
 } from "@/lib/api/letter-document";
 import { StatusBadge } from "@/components/daftar-surat/status-badge";
 import type { LetterStatus } from "@/lib/types";
-import { LetterSteps } from "@/components/review/letter-steps";
+import { CompactAuditTrail } from "@/components/review/compact-audit-trail";
 import { ReviewModals } from "@/components/review/review-modals";
 import { ReviewDocumentViewer } from "@/components/review/document-viewer";
 import { ApproverPanel } from "@/components/review/approver-panel";
@@ -101,17 +99,6 @@ function formatDateTime(iso: string) {
     timeZoneName: "short",
   }).format(new Date(iso));
 }
-
-const ACTION_LABEL: Record<string, string> = {
-  CREATE: "Draf Dibuat",
-  SAVE: "Naskah Disimpan",
-  SUBMIT: "Dikirim ke Reviewer",
-  APPROVE: "Disetujui",
-  RETURN: "Dikembalikan untuk Revisi",
-  READ: "Dibaca",
-  SIGN: "Ditandatangani & Diterbitkan",
-  CANCEL: "Dibatalkan",
-};
 
 // ─── Page ────────────────────────────────────
 
@@ -336,9 +323,9 @@ export default function SuratDetailPage() {
         )}
 
       {/* ── Dua kolom ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-5">
         {/* ─ Kolom Kiri ─ */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <ReviewDocumentViewer
             letter={letter}
             onPdfReadyChange={handlePdfReadyChange}
@@ -492,8 +479,13 @@ export default function SuratDetailPage() {
             </div>
           )}
 
-          {/* Lacak Posisi, Pohon Distribusi, Riwayat Versi Naskah (.docx), & Audit Surat */}
-          <LetterTrackingPanel letterId={letter.id} showVersions />
+          {/* Lacak Posisi, Diagram Alur, Pohon Distribusi, Riwayat Versi Naskah (.docx), & Audit Surat */}
+          <LetterTrackingPanel
+            letterId={letter.id}
+            letter={letter}
+            history={history}
+            showVersions
+          />
         </div>
 
         {/* ─ Kolom Kanan ─ */}
@@ -590,80 +582,8 @@ export default function SuratDetailPage() {
             </dl>
           </div>
 
-          {/* Alur & Riwayat */}
-          <div className="border border-border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-border bg-panel/30">
-              <h3 className="text-sm font-semibold text-text">
-                Alur & Riwayat
-              </h3>
-            </div>
-            <div className="px-4 py-4">
-              <LetterSteps steps={letter.steps} history={history} />
-            </div>
-            {/* Riwayat aksi dari backend */}
-            {history.length > 0 && (
-              <div className="border-t border-border px-4 py-3 space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                  Riwayat Aksi
-                </p>
-                <ol className="space-y-2.5">
-                  {history.map((h, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs">
-                      <div className="w-5 h-5 rounded-full bg-panel border border-border flex items-center justify-center shrink-0 mt-0.5">
-                        {h.action === "APPROVE" || h.action === "SIGN" ? (
-                          <CheckCircle2
-                            size={10}
-                            className="text-status-success-text"
-                          />
-                        ) : h.action === "RETURN" ? (
-                          <ArrowRight
-                            size={10}
-                            className="text-status-warn-text rotate-180"
-                          />
-                        ) : (
-                          <Clock size={10} className="text-text-muted" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <span className="font-semibold text-text">
-                          {ACTION_LABEL[h.action] ?? h.action}
-                        </span>
-                        {h.versionNumber != null && (
-                          <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-panel border border-border text-text-muted">
-                            v{h.versionNumber}
-                          </span>
-                        )}
-                        <span className="text-text-muted">
-                          {" "}
-                          oleh {h.actor.name}
-                        </span>
-                        {h.target && (
-                          <span className="text-text-muted">
-                            {" "}
-                            → {h.target.name}
-                          </span>
-                        )}
-                        {h.note && (
-                          <p className="text-text-muted mt-0.5 italic">
-                            &quot;{h.note}&quot;
-                          </p>
-                        )}
-                        <p className="text-text-muted/70 mt-0.5">
-                          {new Intl.DateTimeFormat("id-ID", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }).format(new Date(h.createdAt))}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-          </div>
+          {/* Alur & Riwayat Ringkas + Modal Visualisasi Diagram */}
+          <CompactAuditTrail letter={letter} history={history} />
         </div>
       </div>
 
