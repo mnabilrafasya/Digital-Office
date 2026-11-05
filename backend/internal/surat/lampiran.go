@@ -27,8 +27,8 @@ import (
 
 // Batas lampiran (mengikuti form front-end).
 const (
-	MaxAttachmentBytes = 25 << 20 // 25 MB per file
-	MaxAttachments     = 20       // per surat
+	MaxAttachmentBytes = MaxUploadBytes // per file
+	MaxAttachments     = 20             // per surat
 )
 
 // oleSignature adalah awal file Office lama (.doc).

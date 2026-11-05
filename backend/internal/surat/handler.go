@@ -12,11 +12,12 @@ import (
 // Handler menangani surat: alias penerima, draf, daftar, riwayat, dan alur persetujuan.
 type Handler struct {
 	letters *Service
+	uploads UploadOptions
 }
 
-// NewHandler membuat Handler.
-func NewHandler(letters *Service) *Handler {
-	return &Handler{letters: letters}
+// NewHandler membuat Handler. uploads mengatur antrean dan batas waktu request unggahan.
+func NewHandler(letters *Service, uploads UploadOptions) *Handler {
+	return &Handler{letters: letters, uploads: uploads}
 }
 
 // Create menangani POST /api/v1/letters (body boleh kosong = draf kosong).

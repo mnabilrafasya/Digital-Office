@@ -26,7 +26,7 @@ func TestParseDocument(t *testing.T) {
 		{"tanpa nama", "", testDocx, "wajib berupa file .docx"},
 		{"kosong", "a.docx", nil, "kosong"},
 		{"bukan zip", "a.docx", []byte("bukan zip"), "bukan dokumen .docx"},
-		{"terlalu besar", "a.docx", append(append([]byte{}, testDocx...), make([]byte, MaxDocumentBytes)...), "maksimal 10 MB"},
+		{"terlalu besar", "a.docx", append(append([]byte{}, testDocx...), make([]byte, MaxDocumentBytes)...), "maksimal 25 MB"},
 		{"nama terlalu panjang", strings.Repeat("a", 251) + ".docx", testDocx, "Nama file maksimal 255"},
 	}
 	for _, tt := range tests {

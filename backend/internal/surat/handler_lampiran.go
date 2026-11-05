@@ -13,14 +13,15 @@ import (
 // AddAttachment menangani POST /api/v1/letters/{letterId}/attachments (multipart/form-data,
 // field "file"). Response 201 berisi lampiran baru dan ETag surat yang baru.
 func (h *Handler) AddAttachment(w http.ResponseWriter, r *http.Request) {
-	data, fileName, ok := readUpload(w, r, MaxAttachmentBytes, "lampiran", true)
+	form, ok := h.readUpload(w, r, MaxAttachmentBytes, "lampiran", true)
 	if !ok {
 		return
 	}
+	defer form.release()
 	a, rowVer, err := h.letters.AddAttachment(r.Context(), auth.CurrentUserFrom(r.Context()), AttachmentInput{
 		LetterID: chi.URLParam(r, "letterId"),
-		FileName: fileName,
-		Data:     data,
+		FileName: form.fileName,
+		Data:     form.data,
 		ClientIP: middleware.ClientIPFrom(r.Context()),
 	})
 	if err != nil {
