@@ -32,7 +32,7 @@ import (
 //  3. Unduhan memakai PDF salinan yang tersimpan (OpenDocument).
 
 // MaxFinalPDFBytes adalah batas ukuran PDF resmi yang diunggah editor.
-const MaxFinalPDFBytes = 25 << 20 // 25 MB
+const MaxFinalPDFBytes = MaxUploadBytes
 
 // pdfSignature adalah awal setiap file PDF.
 var pdfSignature = []byte("%PDF-")

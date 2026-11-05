@@ -55,7 +55,7 @@ func TestViewDocumentNotRecordedAsDownload(t *testing.T) {
 
 // documentRouter menyusun route naskah surat seperti di cmd/api, untuk uji handler.
 func documentRouter(svc *Service) http.Handler {
-	h := NewHandler(svc)
+	h := NewHandler(svc, UploadOptions{})
 	r := chi.NewRouter()
 	r.Get("/letters/{letterId}/document", h.Document)
 	r.Get("/letters/{letterId}/document/filled", h.FilledDocument)

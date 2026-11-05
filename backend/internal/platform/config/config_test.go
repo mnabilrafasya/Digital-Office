@@ -37,7 +37,8 @@ func TestLoadToleratesAPIOnlySettings(t *testing.T) {
 
 func TestLoadDefaults(t *testing.T) {
 	setRequiredEnv(t)
-	for _, k := range []string{"DB_TRUST_SERVER_CERTIFICATE", "TRUST_PROXY_HEADERS", "APP_TIMEZONE", "APP_MEMORY_LIMIT_MB"} {
+	for _, k := range []string{"DB_TRUST_SERVER_CERTIFICATE", "TRUST_PROXY_HEADERS", "APP_TIMEZONE", "APP_MEMORY_LIMIT_MB",
+		"UPLOAD_MEMORY_MB", "UPLOAD_WAIT", "UPLOAD_READ_TIMEOUT", "UPLOAD_TIMEOUT"} {
 		t.Setenv(k, "")
 	}
 
@@ -45,6 +46,9 @@ func TestLoadDefaults(t *testing.T) {
 	cfg, _ := Load()
 	if !cfg.DBTrustServerCert || cfg.TrustProxyHeaders || cfg.AppTimezone != "Asia/Jakarta" || cfg.MemoryLimitMB != 0 {
 		t.Errorf("default development salah: %+v", cfg)
+	}
+	if cfg.UploadMemoryMB != 200 || cfg.UploadWait != time.Minute || cfg.UploadReadTimeout != 2*time.Minute || cfg.UploadTimeout != 3*time.Minute {
+		t.Errorf("default antrean unggahan salah: %d MB, %v, %v, %v", cfg.UploadMemoryMB, cfg.UploadWait, cfg.UploadReadTimeout, cfg.UploadTimeout)
 	}
 	t.Setenv("APP_ENV", "production")
 	if cfg, _ := Load(); cfg.DBTrustServerCert {
@@ -54,7 +58,8 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestValidateAPI(t *testing.T) {
 	valid := func() *Config {
-		return &Config{JWTSecret: strings.Repeat("a", 32), JWTTTL: 8 * time.Hour, AppTimezone: "Asia/Jakarta"}
+		return &Config{JWTSecret: strings.Repeat("a", 32), JWTTTL: 8 * time.Hour, AppTimezone: "Asia/Jakarta",
+			UploadMemoryMB: 200, UploadWait: time.Minute, UploadReadTimeout: 2 * time.Minute, UploadTimeout: 3 * time.Minute}
 	}
 	tests := []struct {
 		name    string
@@ -68,6 +73,9 @@ func TestValidateAPI(t *testing.T) {
 		{"TTL nol", func(c *Config) { c.JWTTTL = 0 }, true},
 		{"batas memori negatif", func(c *Config) { c.MemoryLimitMB = -1 }, true},
 		{"zona waktu salah", func(c *Config) { c.AppTimezone = "Mars/Olympus" }, true},
+		{"jatah unggahan nol", func(c *Config) { c.UploadMemoryMB = 0 }, true},
+		{"batas tunggu unggahan nol", func(c *Config) { c.UploadWait = 0 }, true},
+		{"batas total tidak lebih lama dari menunggu", func(c *Config) { c.UploadTimeout = time.Minute }, true},
 	}
 	for _, tt := range tests {
 		cfg := valid()

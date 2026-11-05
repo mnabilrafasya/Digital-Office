@@ -49,9 +49,11 @@ func (s *Storage) OpenTemplate(ctx context.Context, objectKey string) (io.ReadCl
 	return s.open(ctx, BucketTemplates, objectKey)
 }
 
+// put menyimpan data dalam satu kali kirim (tanpa multipart): file aplikasi maksimal 25 MB dan sudah
+// ada di memori, sedangkan multipart menyalin isinya lagi ke buffer per bagian (16 MB tiap bagian).
 func (s *Storage) put(ctx context.Context, bucket, objectKey string, data []byte, contentType string) error {
 	_, err := s.client.PutObject(ctx, bucket, objectKey, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: contentType})
+		minio.PutObjectOptions{ContentType: contentType, DisableMultipart: true})
 	if err != nil {
 		return fmt.Errorf("menyimpan file ke MinIO (%s): %w", bucket, err)
 	}

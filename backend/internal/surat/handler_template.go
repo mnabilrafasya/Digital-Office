@@ -34,10 +34,11 @@ func (h *Handler) TemplateFile(w http.ResponseWriter, r *http.Request) {
 // CreateTemplate menangani POST /api/v1/templates (multipart/form-data: file .docx, name,
 // description, letterTypeId). Response 201 berisi template baru.
 func (h *Handler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
-	in, ok := readTemplateForm(w, r, true)
+	in, release, ok := h.readTemplateForm(w, r, true)
 	if !ok {
 		return
 	}
+	defer release()
 	t, err := h.letters.CreateTemplate(r.Context(), auth.CurrentUserFrom(r.Context()), in)
 	if err != nil {
 		httpx.WriteError(w, r, err)
@@ -51,10 +52,11 @@ func (h *Handler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 // mengganti seluruh data template (yang tidak dikirim berarti kosong); file .docx opsional,
 // tanpa file berarti file lama tetap dipakai.
 func (h *Handler) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	in, ok := readTemplateForm(w, r, false)
+	in, release, ok := h.readTemplateForm(w, r, false)
 	if !ok {
 		return
 	}
+	defer release()
 	in.ID = chi.URLParam(r, "templateId")
 	t, err := h.letters.UpdateTemplate(r.Context(), auth.CurrentUserFrom(r.Context()), in)
 	if err != nil {
@@ -64,18 +66,19 @@ func (h *Handler) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, t)
 }
 
-// readTemplateForm membaca form template. ok=false berarti response error sudah ditulis.
-func readTemplateForm(w http.ResponseWriter, r *http.Request, fileRequired bool) (TemplateInput, bool) {
-	data, fileName, ok := readUpload(w, r, MaxDocumentBytes, "template", fileRequired)
+// readTemplateForm membaca form template. ok=false berarti response error sudah ditulis; selain
+// itu release wajib dipanggil setelah template diproses (jatah antrean unggahan).
+func (h *Handler) readTemplateForm(w http.ResponseWriter, r *http.Request, fileRequired bool) (TemplateInput, func(), bool) {
+	form, ok := h.readUpload(w, r, MaxDocumentBytes, "template", fileRequired)
 	if !ok {
-		return TemplateInput{}, false
+		return TemplateInput{}, nil, false
 	}
 	return TemplateInput{
-		Name:         formValue(r, "name"),
-		Description:  formValue(r, "description"),
-		LetterTypeID: formValue(r, "letterTypeId"),
-		FileName:     fileName,
-		Data:         data,
+		Name:         form.value("name"),
+		Description:  form.value("description"),
+		LetterTypeID: form.value("letterTypeId"),
+		FileName:     form.fileName,
+		Data:         form.data,
 		ClientIP:     middleware.ClientIPFrom(r.Context()),
-	}, true
+	}, form.release, true
 }
