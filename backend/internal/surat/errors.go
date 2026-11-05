@@ -16,3 +16,6 @@ var errTemplateNameTaken error = &apperr.InvalidStateError{Message: "Nama templa
 
 // errAttachmentNotFound: lampiran tidak ada di surat ini (404).
 var errAttachmentNotFound error = &apperr.NotFoundError{Message: "Lampiran tidak ditemukan"}
+
+// errFinalPDFNotReady: surat sudah terbit, tetapi PDF resminya belum dibuat editor (409).
+var errFinalPDFNotReady error = &apperr.InvalidStateError{Message: "PDF resmi belum tersedia. Buka halaman surat untuk menyiapkannya."}

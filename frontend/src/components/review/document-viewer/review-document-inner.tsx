@@ -40,6 +40,7 @@ import {
 import { useSelectOnFocus } from "@/components/surat/letter-editor/use-select-on-focus";
 import {
   createWordEditorOptions,
+  loadRichEdit,
   type RichEditModule,
 } from "@/components/surat/letter-editor/word-editor-config";
 
@@ -227,7 +228,7 @@ export default function ReviewDocumentInner({
 
     (async () => {
       try {
-        const mod = (await import("devexpress-richedit")) as RichEditModule;
+        const mod = await loadRichEdit(); // modul + file font resmi
         if (disposed || !hostEl.isConnected) return;
         moduleRef.current = mod;
         docFmtRef.current = mod.DocumentFormat;

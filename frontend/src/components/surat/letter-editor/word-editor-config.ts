@@ -9,6 +9,8 @@
 
 import type { Options } from "devexpress-richedit";
 
+import "./official-fonts.css";
+
 // Tipe modul dinamis DevExpress RichEdit
 export type RichEditModule = typeof import("devexpress-richedit") & {
   license?: (key: string) => void;
@@ -35,6 +37,47 @@ export const INDONESIAN_AUTOCORRECT_RULES = [
   { replace: "bertandatangan", with: "bertanda tangan" },
   { replace: "tandatangan", with: "tanda tangan" },
 ];
+
+/**
+ * Font naskah yang boleh dipilih beserta file-nya di public/fonts. File saat ini adalah font
+ * terbuka (OFL) yang ukuran hurufnya identik dengan font Office: Liberation untuk Arial, Times New
+ * Roman, dan Courier New; Carlito untuk Calibri; Caladea untuk Cambria. Untuk memakai font
+ * Microsoft asli cukup mengganti file dan URI di sini, tanpa mengubah kode lain.
+ */
+const fontFiles = (base: string) => ({
+  regularFontUri: `/fonts/${base}-Regular.ttf`,
+  boldFontUri: `/fonts/${base}-Bold.ttf`,
+  italicFontUri: `/fonts/${base}-Italic.ttf`,
+  boldItalicFontUri: `/fonts/${base}-BoldItalic.ttf`,
+});
+
+export const OFFICIAL_FONTS = {
+  defaultFolder: "/fonts/",
+  fonts: [
+    { name: "Arial", fontFamily: "Arial", ...fontFiles("LiberationSans") },
+    { name: "Times New Roman", fontFamily: "Times New Roman", ...fontFiles("LiberationSerif") },
+    { name: "Courier New", fontFamily: "Courier New", ...fontFiles("LiberationMono") },
+    { name: "Calibri", fontFamily: "Calibri", ...fontFiles("Carlito") },
+    { name: "Cambria", fontFamily: "Cambria", ...fontFiles("Caladea") },
+  ],
+  mappings: { defaultFontName: "Arial" },
+};
+
+/**
+ * Memuat modul DevExpress RichEdit sekaligus file font resmi (official-fonts.css). Font dimuat lebih
+ * dulu supaya editor mengukur dan menggambar teks dengan file yang sama dengan PDF resmi.
+ */
+export async function loadRichEdit(): Promise<RichEditModule> {
+  const faces = OFFICIAL_FONTS.fonts.flatMap(({ fontFamily }) =>
+    ["400", "700", "italic 400", "italic 700"].map((style) => `${style} 16px "${fontFamily}"`)
+  );
+  const [mod] = await Promise.all([
+    import("devexpress-richedit") as Promise<RichEditModule>,
+    // Font gagal dimuat tidak menghentikan editor (DevExpress memakai font pengganti)
+    Promise.all(faces.map((f) => document.fonts.load(f).catch(() => []))),
+  ]);
+  return mod;
+}
 
 export interface ConfigureWordOptionsParams {
   mod: RichEditModule;
@@ -83,8 +126,9 @@ export function createWordEditorOptions({
     },
   };
 
-  // Biarkan options.fonts memakai default bawaan DevExpress (sudah mencakup 30+ font Office
-  // seperti Calibri, Arial, Times New Roman, Tahoma, Cambria, Bookman Old Style lengkap dengan metriknya).
+  // Font dibatasi ke daftar yang file-nya tersedia di public/fonts, supaya tampilan di layar dan
+  // PDF resmi (ekspor DevExpress) memakai file font yang sama. Font lain di naskah dipetakan ke Arial.
+  options.fonts = OFFICIAL_FONTS;
 
   // Konfigurasi AutoCorrect ala Microsoft Word
   options.autoCorrect = {

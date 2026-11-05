@@ -27,6 +27,7 @@ import { useWordZoomInteractivity } from "@/components/ui/word-zoom-control";
 import { useSelectOnFocus } from "./use-select-on-focus";
 import {
   createWordEditorOptions,
+  loadRichEdit,
   type RichEditModule,
 } from "./word-editor-config";
 import { LetterEditorToolbar } from "./letter-editor-toolbar";
@@ -263,7 +264,7 @@ export default function RichEditSuratInner({
 
     (async () => {
       try {
-        const mod = (await import("devexpress-richedit")) as RichEditModule;
+        const mod = await loadRichEdit(); // modul + file font resmi
         if (disposed || !hostEl.isConnected) return;
         moduleRef.current = mod;
         docFmtRef.current = mod.DocumentFormat;

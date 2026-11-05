@@ -159,6 +159,8 @@ type Approval struct {
 	ApprovedAt time.Time `json:"approvedAt"`
 	ApprovedBy PersonRef `json:"approvedBy"`
 	QRURL      string    `json:"qrUrl"` // gambar PNG QR persetujuan (GET, wajib login)
+	// EmployeeNumber adalah NIK penandatangan, untuk penanda ###*NoBadge*### di PDF resmi.
+	EmployeeNumber string `json:"-"`
 }
 
 // LookupRef adalah ringkasan lookup di detail surat.

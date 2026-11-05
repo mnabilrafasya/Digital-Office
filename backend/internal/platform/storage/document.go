@@ -19,6 +19,18 @@ func (s *Storage) OpenDocument(ctx context.Context, objectKey string) (io.ReadCl
 	return s.open(ctx, BucketDocuments, objectKey)
 }
 
+// DocumentExists mengecek apakah file surat dengan nama objectKey ada di bucket documents.
+func (s *Storage) DocumentExists(ctx context.Context, objectKey string) (bool, error) {
+	_, err := s.client.StatObject(ctx, BucketDocuments, objectKey, minio.StatObjectOptions{})
+	if err == nil {
+		return true, nil
+	}
+	if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+		return false, nil
+	}
+	return false, fmt.Errorf("memeriksa file di MinIO: %w", err)
+}
+
 // RemoveDocument menghapus file surat (dipakai saat lampiran draf dihapus).
 func (s *Storage) RemoveDocument(ctx context.Context, objectKey string) error {
 	if err := s.client.RemoveObject(ctx, BucketDocuments, objectKey, minio.RemoveObjectOptions{}); err != nil {
