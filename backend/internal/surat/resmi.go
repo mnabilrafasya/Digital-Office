@@ -108,7 +108,11 @@ func (s *Service) fillCopy(ctx context.Context, d *LetterDetail, c officialCopy)
 	if err != nil {
 		return nil, err
 	}
-	return fillPlaceholders(docx, letterPlaceholders(d, c), qrPNG)
+	watermark, err := watermarkFor(d)
+	if err != nil {
+		return nil, err
+	}
+	return fillPlaceholders(docx, letterPlaceholders(d, c), qrPNG, watermark)
 }
 
 // SaveFinalPDF menyimpan PDF resmi salinan milik user, hasil ekspor editor. Yang boleh: siapa pun
