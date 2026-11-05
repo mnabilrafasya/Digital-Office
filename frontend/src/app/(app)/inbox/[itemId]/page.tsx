@@ -18,10 +18,8 @@ import {
   QrCode,
   Share2,
   ArrowRight,
-  Building2,
   CheckCircle2,
   MailOpen,
-  ExternalLink,
   FileText,
   File,
   FileSpreadsheet,
@@ -32,20 +30,27 @@ import {
   getInboxList,
   inboxSourceLabel,
   type InboxItemDetail,
-  type ForwardRecord,
 } from "@/lib/api/inbox";
 import {
   getLetter,
+  getLetterHistory,
   formatBytes,
   type LetterDetail,
+  type LetterHistoryEntry,
 } from "@/lib/api/letter-detail";
+import {
+  getLetterTracking,
+  type DistributionNode,
+} from "@/lib/api/audit";
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
 } from "@/lib/api/letter-document";
 import { DisposisiModal } from "@/components/inbox/disposisi-modal";
 import { RedirectModal } from "@/components/inbox/redirect-modal";
+import { InboxForwardingTrail } from "@/components/inbox/inbox-forwarding-trail";
 import { ReviewDocumentViewer } from "@/components/review/document-viewer";
+import { CompactAuditTrail } from "@/components/review/compact-audit-trail";
 import { LetterTrackingPanel } from "@/components/review/letter-tracking-panel";
 import { cn } from "@/lib/utils";
 
@@ -87,47 +92,6 @@ function MetaRow({
   );
 }
 
-function ForwardItem({ f }: { f: ForwardRecord }) {
-  return (
-    <li className="px-4 py-3 flex items-start gap-3">
-      <div className="w-7 h-7 rounded-full bg-panel border border-border flex items-center justify-center shrink-0 mt-0.5">
-        {f.type === "DISPOSITION" ? (
-          <Share2 size={12} className="text-status-info-text" />
-        ) : (
-          <ArrowRight size={12} className="text-status-warn-text" />
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-text">
-          {f.type === "DISPOSITION" ? "Disposisi" : "Dialihkan"} ke{" "}
-          {f.targetType === "UNIT" ? (
-            <span className="inline-flex items-center gap-1">
-              <Building2 size={10} className="shrink-0" />
-              {f.targetUnit?.name ?? "—"}
-            </span>
-          ) : (
-            f.targetUser?.name ?? "—"
-          )}
-        </p>
-        <p className="text-xs text-text-muted mt-0.5">
-          Diterima oleh:{" "}
-          <strong className="text-text">{f.recipient.name}</strong>
-          {" · "}
-          {f.recipient.positionName}
-        </p>
-        {f.note && (
-          <p className="text-xs text-text-muted italic mt-0.5">
-            &ldquo;{f.note}&rdquo;
-          </p>
-        )}
-        <p className="text-[11px] text-text-muted/70 mt-0.5">
-          {formatDateTime(f.createdAt)}
-        </p>
-      </div>
-    </li>
-  );
-}
-
 // ─── Page ────────────────────────────────────
 
 export default function InboxDetailPage() {
@@ -136,6 +100,9 @@ export default function InboxDetailPage() {
 
   const [item, setItem] = useState<InboxItemDetail | null>(null);
   const [letter, setLetter] = useState<LetterDetail | null>(null);
+  const [history, setHistory] = useState<LetterHistoryEntry[]>([]);
+  const [distribution, setDistribution] = useState<DistributionNode[]>([]);
+  const [siblingItems, setSiblingItems] = useState<InboxItemDetail[]>([]);
   const [neighborIds, setNeighborIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -156,10 +123,18 @@ export default function InboxDetailPage() {
       const inboxItem = await getInboxItem(itemId);
       setItem(inboxItem);
       setError(null);
-      // Muat detail surat (untuk pratinjau naskah resmi, QR, penerima lengkap, dan lampiran)
+      // Muat detail surat, riwayat aksi, & distribusi pelacakan secara paralel
       getLetter(inboxItem.letter.id)
         .then((ld) => {
           if (ld) setLetter(ld);
+        })
+        .catch(() => {});
+      getLetterHistory(inboxItem.letter.id)
+        .then(setHistory)
+        .catch(() => {});
+      getLetterTracking(inboxItem.letter.id)
+        .then((tr) => {
+          if (tr) setDistribution(tr.distribution ?? []);
         })
         .catch(() => {});
     } catch (e) {
@@ -181,6 +156,41 @@ export default function InboxDetailPage() {
             if (!cancelled && ld) setLetter(ld);
           })
           .catch(() => {});
+        getLetterHistory(inboxItem.letter.id)
+          .then((items) => {
+            if (!cancelled) setHistory(items);
+          })
+          .catch(() => {});
+        getLetterTracking(inboxItem.letter.id)
+          .then((tr) => {
+            if (!cancelled && tr) setDistribution(tr.distribution ?? []);
+          })
+          .catch(() => {});
+
+        getInboxList({ pageSize: 50 })
+          .then((res) => {
+            if (cancelled) return;
+            setNeighborIds(res.data.map((it) => it.id));
+            const sameLetterIds = res.data
+              .filter((it) => it.letter.id === inboxItem.letter.id)
+              .map((it) => it.id);
+            if (sameLetterIds.length > 0) {
+              Promise.all(
+                sameLetterIds.map((sid) =>
+                  sid === inboxItem.id
+                    ? Promise.resolve(inboxItem)
+                    : getInboxItem(sid).catch(() => null)
+                )
+              ).then((details) => {
+                if (!cancelled) {
+                  setSiblingItems(
+                    details.filter((d): d is InboxItemDetail => d !== null)
+                  );
+                }
+              });
+            }
+          })
+          .catch(() => {});
       })
       .catch((e: unknown) => {
         if (!cancelled) {
@@ -192,15 +202,6 @@ export default function InboxDetailPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-
-    // Ambil urutan ID inbox untuk navigasi Pesan Sebelumnya / Berikutnya ala Gmail
-    getInboxList({ pageSize: 50 })
-      .then((res) => {
-        if (!cancelled) {
-          setNeighborIds(res.data.map((it) => it.id));
-        }
-      })
-      .catch(() => {});
 
     return () => {
       cancelled = true;
@@ -397,9 +398,9 @@ export default function InboxDetailPage() {
       </div>
 
       {/* ── Dua kolom ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-5">
         {/* ─ Kolom Kiri ─ */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Pratinjau Naskah Resmi & Penyiapan Salinan PDF Penerima */}
           {letter ? (
             <ReviewDocumentViewer
@@ -538,44 +539,64 @@ export default function InboxDetailPage() {
             </div>
           )}
 
-          {/* Riwayat penerusan */}
-          {item.forwards.length > 0 && (
-            <div className="border border-border rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-border bg-panel/30">
-                <h3 className="text-sm font-semibold text-text">
-                  Riwayat Penerusan ({item.forwards.length})
-                </h3>
-              </div>
-              <ul className="divide-y divide-border">
-                {item.forwards.map((f) => (
-                  <ForwardItem key={f.id} f={f} />
-                ))}
-              </ul>
+          {letter && letter.attachments.length === 0 && (
+            <div className="border border-border rounded-xl px-4 py-5 text-center text-xs text-text-muted">
+              Tidak ada berkas lampiran pendukung.
             </div>
           )}
 
-          {/* Belum ada penerusan */}
-          {item.forwards.length === 0 && !hasActions && (
-            <div className="border border-dashed border-border rounded-xl px-4 py-6 text-center text-xs text-text-muted">
-              Belum ada penerusan dari item ini.
-            </div>
-          )}
+          {/* Visualisasi Alur Disposisi & Pengalihan */}
+          <InboxForwardingTrail
+            item={item}
+            letter={letter}
+            copyFor={copyFor}
+            distribution={distribution}
+            siblingItems={siblingItems}
+          />
 
-          {/* Pelacakan Cabang Distribusi Penerima */}
-          <LetterTrackingPanel letterId={item.letter.id} />
+          {/* Pelacakan Cabang Distribusi Penerima, Diagram Alur, & Versi */}
+          <LetterTrackingPanel
+            letterId={item.letter.id}
+            letter={letter ?? undefined}
+            history={history}
+            showVersions
+          />
         </div>
 
         {/* ─ Kolom Kanan ─ */}
         <div className="space-y-4">
-          {/* Info surat */}
+          {/* Metadata & Ringkasan Lengkap */}
           <div className="border border-border rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border bg-panel/30">
-              <h3 className="text-sm font-semibold text-text">Info Surat</h3>
+              <h3 className="text-sm font-semibold text-text">
+                Metadata & Ringkasan
+              </h3>
             </div>
             <dl className="px-4 py-3 space-y-3">
+              {item.letter.letterType && (
+                <MetaRow label="Jenis Surat">
+                  {item.letter.letterType.name}
+                </MetaRow>
+              )}
+              {letter?.classification && (
+                <MetaRow label="Klasifikasi">
+                  <span className="font-mono text-xs">
+                    {letter.classification.code}
+                  </span>{" "}
+                  — {letter.classification.name}
+                </MetaRow>
+              )}
               <MetaRow label="Unit Pengirim">
                 {item.letter.senderUnit.name}
               </MetaRow>
+              {letter?.drafter && (
+                <MetaRow label="Pejabat Pembuat">
+                  {letter.drafter.name}
+                  <span className="block text-xs text-text-muted">
+                    {letter.drafter.positionName}
+                  </span>
+                </MetaRow>
+              )}
               <MetaRow label="Penandatangan">
                 {item.letter.approver.name}
                 <span className="block text-xs text-text-muted">
@@ -586,14 +607,21 @@ export default function InboxDetailPage() {
                 {formatDateTime(item.letter.letterDate)}
               </MetaRow>
               {letter && letter.recipients.to.length > 0 && (
-                <MetaRow label="Tujuan">
-                  <div className="flex flex-wrap gap-1 mt-0.5">
+                <MetaRow label="Tujuan / Penerima">
+                  <div className="flex flex-wrap gap-1.5 mt-0.5">
                     {letter.recipients.to.map((r, i) => (
                       <span
                         key={i}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary font-medium"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-primary/10 text-primary font-medium"
                       >
-                        {r.type === "UNIT" ? r.unit.name : r.alias.label}
+                        <span>
+                          {r.type === "UNIT" ? r.unit.name : r.alias.label}
+                        </span>
+                        {r.type === "UNIT" && r.resolvedHead && (
+                          <span className="font-normal opacity-75">
+                            ({r.resolvedHead.name})
+                          </span>
+                        )}
                       </span>
                     ))}
                   </div>
@@ -601,32 +629,42 @@ export default function InboxDetailPage() {
               )}
               {letter && letter.recipients.cc.length > 0 && (
                 <MetaRow label="Tembusan (CC)">
-                  <div className="flex flex-wrap gap-1 mt-0.5">
+                  <div className="flex flex-wrap gap-1.5 mt-0.5">
                     {letter.recipients.cc.map((r, i) => (
                       <span
                         key={i}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-panel text-text-muted border border-border font-medium"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-panel text-text-muted border border-border font-medium"
                       >
-                        {r.type === "UNIT" ? r.unit.name : r.alias.label}
+                        <span>
+                          {r.type === "UNIT" ? r.unit.name : r.alias.label}
+                        </span>
+                        {r.type === "UNIT" && r.resolvedHead && (
+                          <span className="font-normal opacity-75">
+                            ({r.resolvedHead.name})
+                          </span>
+                        )}
                       </span>
                     ))}
                   </div>
                 </MetaRow>
               )}
+              {letter?.summary && (
+                <MetaRow label="Ringkasan">
+                  <p className="text-sm text-text-muted">{letter.summary}</p>
+                </MetaRow>
+              )}
+              {letter?.specialNote && (
+                <MetaRow label="Keterangan Khusus">
+                  <p className="text-sm text-status-warn-text">
+                    {letter.specialNote}
+                  </p>
+                </MetaRow>
+              )}
             </dl>
           </div>
 
-          {/* Tautan ke halaman detail surat lengkap */}
-          <Link
-            href={`/surat/${item.letter.id}`}
-            className="flex items-center justify-between gap-2 w-full px-4 py-3 border border-border rounded-xl hover:bg-panel transition-colors text-sm text-text font-medium"
-          >
-            <span className="flex items-center gap-2">
-              <ExternalLink size={14} className="text-text-muted shrink-0" />
-              Buka Detail Surat Lengkap
-            </span>
-            <ChevronRight size={14} className="text-text-muted shrink-0" />
-          </Link>
+          {/* Alur Persetujuan & Riwayat Aksi (sama dengan halaman detail surat) */}
+          {letter && <CompactAuditTrail letter={letter} history={history} />}
         </div>
       </div>
 

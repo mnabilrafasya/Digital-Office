@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 interface InboxMessageRowProps {
   item: InboxItem;
+  turnCount?: number;
   selected: boolean;
   active: boolean;
   starred: boolean;
@@ -67,6 +68,7 @@ function formatGmailTimestamp(iso: string): string {
 
 export function InboxMessageRow({
   item,
+  turnCount = 1,
   selected,
   active,
   starred,
@@ -180,17 +182,27 @@ export function InboxMessageRow({
           <ArrowRight size={13} className="text-status-warn-text shrink-0" />
         )}
         <div className="min-w-0 flex-1">
-          <p
-            className={cn(
-              "text-xs sm:text-sm truncate",
-              isUnread
-                ? "font-bold text-text"
-                : "font-medium text-text-muted group-hover:text-text"
+          <div className="flex items-center gap-1 min-w-0">
+            <p
+              className={cn(
+                "text-xs sm:text-sm truncate",
+                isUnread
+                  ? "font-bold text-text"
+                  : "font-medium text-text-muted group-hover:text-text"
+              )}
+              title={`${senderPrimary} (${inboxSourceLabel(item.source)})`}
+            >
+              {senderPrimary}
+            </p>
+            {turnCount > 1 && (
+              <span
+                title={`Surat ini telah melewati ${turnCount} putaran di kotak masuk Anda`}
+                className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-primary/10 text-primary shrink-0"
+              >
+                {turnCount}
+              </span>
             )}
-            title={`${senderPrimary} (${inboxSourceLabel(item.source)})`}
-          >
-            {senderPrimary}
-          </p>
+          </div>
           {density === "comfortable" && (
             <p className="text-[11px] text-text-muted truncate leading-tight">
               {inboxSourceLabel(item.source)}

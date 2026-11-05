@@ -165,9 +165,25 @@ function InboxView() {
     };
   }, [activeTab, debouncedQuery, page, reloadTick]);
 
-  // Penyaringan tambahan sisi klien (Asal Surat, Sifat, Kecepatan, Berbintang)
+  // Hitung jumlah putaran per surat (letter.id) dan gabungkan baris surat yang sama
+  // seperti thread percakapan Gmail agar surat yang dikembalikan/didisposisi ulang
+  // tidak tampil ganda bertumpuk di daftar kotak masuk.
+  const turnCountByLetterId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const it of items) {
+      map.set(it.letter.id, (map.get(it.letter.id) ?? 0) + 1);
+    }
+    return map;
+  }, [items]);
+
+  // Penyaringan tambahan sisi klien (Asal Surat, Sifat, Kecepatan, Berbintang) + Threading per letter.id
   const visibleItems = useMemo(() => {
+    const seenLetters = new Set<string>();
     return items.filter((item) => {
+      // Hanya tampilkan putaran terbaru untuk surat (letter.id) yang sama
+      if (seenLetters.has(item.letter.id)) {
+        return false;
+      }
       if (clientFilters.starredOnly && !starredIds.has(item.id)) {
         return false;
       }
@@ -219,6 +235,7 @@ function InboxView() {
       ) {
         return false;
       }
+      seenLetters.add(item.letter.id);
       return true;
     });
   }, [items, clientFilters, starredIds]);
@@ -432,9 +449,9 @@ function InboxView() {
         {/* Workspace: Daftar Pesan + Panel Baca Samping (jika splitView aktif) */}
         <div
           className={cn(
-            "grid min-h-[68vh]",
+            "grid min-h-[68vh] w-full min-w-0 max-w-full overflow-hidden",
             splitView && activeItemId
-              ? "grid-cols-1 lg:grid-cols-[minmax(380px,46%)_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border"
+              ? "grid-cols-1 lg:grid-cols-[minmax(320px,42%)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,45%)_minmax(0,1fr)] divide-y lg:divide-y-0 lg:divide-x divide-border"
               : "grid-cols-1"
           )}
         >
@@ -483,6 +500,7 @@ function InboxView() {
                   <InboxMessageRow
                     key={item.id}
                     item={item}
+                    turnCount={turnCountByLetterId.get(item.letter.id) ?? 1}
                     selected={selectedIds.has(item.id)}
                     active={activeItemId === item.id}
                     starred={starredIds.has(item.id)}
@@ -520,7 +538,7 @@ function InboxView() {
 
           {/* ─ Kolom Kanan: Panel Baca Samping ala Gmail ─ */}
           {splitView && activeItemId && (
-            <div className="min-w-0 h-full">
+            <div className="min-w-0 max-w-full overflow-hidden h-full">
               <InboxReadingPane
                 itemId={activeItemId}
                 currentIndex={activeIndex}

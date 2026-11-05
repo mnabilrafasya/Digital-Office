@@ -18,7 +18,6 @@ import {
   Loader2,
   AlertCircle,
   MailOpen,
-  Building2,
   CheckCircle2,
   FileText,
   Paperclip,
@@ -27,20 +26,29 @@ import {
 } from "lucide-react";
 import {
   getInboxItem,
+  getInboxList,
   inboxSourceLabel,
   inboxStatusLabel,
   type InboxItemDetail,
 } from "@/lib/api/inbox";
 import {
   getLetter,
+  getLetterHistory,
   formatBytes,
   type LetterDetail,
+  type LetterHistoryEntry,
 } from "@/lib/api/letter-detail";
+import {
+  getLetterTracking,
+  type DistributionNode,
+} from "@/lib/api/audit";
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
 } from "@/lib/api/letter-document";
+import { InboxForwardingTrail } from "./inbox-forwarding-trail";
 import { ReviewDocumentViewer } from "@/components/review/document-viewer";
+import { LetterTrackingPanel } from "@/components/review/letter-tracking-panel";
 import { cn } from "@/lib/utils";
 
 interface InboxReadingPaneProps {
@@ -78,6 +86,9 @@ export function InboxReadingPane({
 }: InboxReadingPaneProps) {
   const [item, setItem] = useState<InboxItemDetail | null>(null);
   const [letter, setLetter] = useState<LetterDetail | null>(null);
+  const [history, setHistory] = useState<LetterHistoryEntry[]>([]);
+  const [distribution, setDistribution] = useState<DistributionNode[]>([]);
+  const [siblingItems, setSiblingItems] = useState<InboxItemDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfReady, setPdfReady] = useState(false);
@@ -101,6 +112,9 @@ export function InboxReadingPane({
       setLoading(true);
       setError(null);
       setLetter(null);
+      setHistory([]);
+      setDistribution([]);
+      setSiblingItems([]);
       setPdfReady(false);
       setCopyFor(null);
 
@@ -109,6 +123,40 @@ export function InboxReadingPane({
           if (cancelled) return;
           setItem(inboxDetail);
           onItemLoaded?.(inboxDetail);
+          getLetterHistory(inboxDetail.letter.id)
+            .then((items) => {
+              if (!cancelled) setHistory(items);
+            })
+            .catch(() => {});
+          getLetterTracking(inboxDetail.letter.id)
+            .then((tr) => {
+              if (!cancelled && tr) setDistribution(tr.distribution ?? []);
+            })
+            .catch(() => {});
+          // Muat semua item inbox untuk surat yang sama (bila surat pernah masuk >1 putaran)
+          getInboxList({ pageSize: 50 })
+            .then((res) => {
+              if (cancelled) return;
+              const sameLetterIds = res.data
+                .filter((it) => it.letter.id === inboxDetail.letter.id)
+                .map((it) => it.id);
+              if (sameLetterIds.length > 0) {
+                Promise.all(
+                  sameLetterIds.map((sid) =>
+                    sid === inboxDetail.id
+                      ? Promise.resolve(inboxDetail)
+                      : getInboxItem(sid).catch(() => null)
+                  )
+                ).then((details) => {
+                  if (!cancelled) {
+                    setSiblingItems(
+                      details.filter((d): d is InboxItemDetail => d !== null)
+                    );
+                  }
+                });
+              }
+            })
+            .catch(() => {});
           return getLetter(inboxDetail.letter.id).then((ld) => {
             if (!cancelled && ld) setLetter(ld);
           });
@@ -179,7 +227,7 @@ export function InboxReadingPane({
   const canRedirect = item.allowedActions.includes("REDIRECT");
 
   return (
-    <div className="flex flex-col h-full bg-surface">
+    <div className="flex flex-col h-full w-full min-w-0 max-w-full overflow-hidden bg-surface">
       {/* ── Top Action Bar Panel Baca ala Gmail ── */}
       <div className="px-4 py-2.5 border-b border-border bg-panel/30 flex items-center justify-between gap-2 flex-wrap shrink-0">
         {/* Kiri: Tombol Aksi Cepat (Disposisi, Alihkan, Unduh PDF, Buka Halaman Penuh) */}
@@ -270,7 +318,7 @@ export function InboxReadingPane({
       </div>
 
       {/* ── Isi Panel Baca (Scrollable) ── */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+      <div className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
         {/* Judul & Badge Baris Atas */}
         <div className="space-y-2">
           <div className="flex items-start justify-between gap-2">
@@ -359,31 +407,65 @@ export function InboxReadingPane({
 
           {letter &&
             (letter.recipients.to.length > 0 ||
-              letter.recipients.cc.length > 0) && (
-              <div className="pt-2 border-t border-border/70 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
-                {letter.recipients.to.length > 0 && (
-                  <div>
-                    <span className="font-semibold">Kepada: </span>
-                    <span className="text-text">
-                      {letter.recipients.to
-                        .map((r) =>
-                          r.type === "UNIT" ? r.unit.name : r.alias.label
-                        )
-                        .join(", ")}
-                    </span>
-                  </div>
+              letter.recipients.cc.length > 0 ||
+              letter.classification ||
+              letter.drafter ||
+              letter.summary ||
+              letter.specialNote) && (
+              <div className="pt-2 border-t border-border/70 space-y-1.5 text-xs text-text-muted">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {letter.classification && (
+                    <div>
+                      <span className="font-semibold">Klasifikasi: </span>
+                      <span className="font-mono text-text">
+                        {letter.classification.code}
+                      </span>{" "}
+                      — {letter.classification.name}
+                    </div>
+                  )}
+                  {letter.drafter && (
+                    <div>
+                      <span className="font-semibold">Pembuat: </span>
+                      <span className="text-text">{letter.drafter.name}</span> (
+                      {letter.drafter.positionName})
+                    </div>
+                  )}
+                  {letter.recipients.to.length > 0 && (
+                    <div>
+                      <span className="font-semibold">Kepada: </span>
+                      <span className="text-text">
+                        {letter.recipients.to
+                          .map((r) =>
+                            r.type === "UNIT" ? r.unit.name : r.alias.label
+                          )
+                          .join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {letter.recipients.cc.length > 0 && (
+                    <div>
+                      <span className="font-semibold">Tembusan: </span>
+                      <span>
+                        {letter.recipients.cc
+                          .map((r) =>
+                            r.type === "UNIT" ? r.unit.name : r.alias.label
+                          )
+                          .join(", ")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {letter.summary && (
+                  <p className="text-xs text-text-muted">
+                    <span className="font-semibold text-text">Ringkasan: </span>
+                    {letter.summary}
+                  </p>
                 )}
-                {letter.recipients.cc.length > 0 && (
-                  <div>
-                    <span className="font-semibold">Tembusan: </span>
-                    <span>
-                      {letter.recipients.cc
-                        .map((r) =>
-                          r.type === "UNIT" ? r.unit.name : r.alias.label
-                        )
-                        .join(", ")}
-                    </span>
-                  </div>
+                {letter.specialNote && (
+                  <p className="text-xs text-status-warn-text">
+                    <span className="font-semibold">Keterangan Khusus: </span>
+                    {letter.specialNote}
+                  </p>
                 )}
               </div>
             )}
@@ -446,58 +528,15 @@ export function InboxReadingPane({
           </div>
         )}
 
-        {/* Riwayat Penerusan dari Item Ini (jika ada) */}
-        {item.forwards.length > 0 && (
-          <div className="border border-border rounded-xl overflow-hidden">
-            <div className="px-3.5 py-2 bg-panel/30 border-b border-border">
-              <h4 className="text-xs font-semibold text-text">
-                Riwayat Penerusan dari Anda ({item.forwards.length})
-              </h4>
-            </div>
-            <ul className="divide-y divide-border text-xs">
-              {item.forwards.map((f) => (
-                <li key={f.id} className="px-3.5 py-2.5 flex items-start gap-2.5">
-                  {f.type === "DISPOSITION" ? (
-                    <Share2
-                      size={13}
-                      className="text-status-info-text shrink-0 mt-0.5"
-                    />
-                  ) : (
-                    <ArrowRight
-                      size={13}
-                      className="text-status-warn-text shrink-0 mt-0.5"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-text">
-                      {f.type === "DISPOSITION" ? "Disposisi" : "Dialihkan"} ke{" "}
-                      {f.targetType === "UNIT" ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Building2 size={11} />
-                          {f.targetUnit?.name ?? "—"}
-                        </span>
-                      ) : (
-                        f.targetUser?.name ?? "—"
-                      )}
-                    </p>
-                    <p className="text-text-muted">
-                      Diterima oleh: {f.recipient.name} (
-                      {f.recipient.positionName})
-                    </p>
-                    {f.note && (
-                      <p className="italic text-text-muted mt-0.5">
-                        &ldquo;{f.note}&rdquo;
-                      </p>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-text-muted shrink-0">
-                    {formatDateTime(f.createdAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {/* Visualisasi Ringkas Alur Disposisi & Pengalihan */}
+        <InboxForwardingTrail
+          item={item}
+          letter={letter}
+          copyFor={copyFor}
+          distribution={distribution}
+          siblingItems={siblingItems}
+          compact
+        />
 
         {/* Pratinjau Naskah Resmi (DevExpress Read-Only Viewer) */}
         <div className="space-y-2">
@@ -533,6 +572,13 @@ export function InboxReadingPane({
               </div>
             ))}
         </div>
+
+        {/* Panel Pelacakan Diagram Alur Persetujuan & Pohon Distribusi */}
+        <LetterTrackingPanel
+          letterId={item.letter.id}
+          letter={letter ?? undefined}
+          history={history}
+        />
       </div>
     </div>
   );
