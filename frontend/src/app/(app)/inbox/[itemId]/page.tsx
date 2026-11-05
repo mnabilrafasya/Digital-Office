@@ -2,7 +2,7 @@
 
 // ─────────────────────────────────────────────
 // app/(app)/inbox/[itemId]/page.tsx
-// Halaman detail satu item inbox
+// Halaman detail satu item inbox (dengan bilah navigasi pesan < > bergaya Gmail)
 // ─────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from "react";
@@ -10,6 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronRight,
+  ChevronLeft,
   Loader2,
   AlertCircle,
   ArrowLeft,
@@ -26,10 +27,18 @@ import {
   FileSpreadsheet,
   Eye,
 } from "lucide-react";
-import { getInboxItem, inboxSourceLabel } from "@/lib/api/inbox";
-import type { InboxItemDetail, ForwardRecord } from "@/lib/api/inbox";
-import { getLetter, formatBytes } from "@/lib/api/letter-detail";
-import type { LetterDetail } from "@/lib/api/letter-detail";
+import {
+  getInboxItem,
+  getInboxList,
+  inboxSourceLabel,
+  type InboxItemDetail,
+  type ForwardRecord,
+} from "@/lib/api/inbox";
+import {
+  getLetter,
+  formatBytes,
+  type LetterDetail,
+} from "@/lib/api/letter-detail";
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
@@ -127,6 +136,7 @@ export default function InboxDetailPage() {
 
   const [item, setItem] = useState<InboxItemDetail | null>(null);
   const [letter, setLetter] = useState<LetterDetail | null>(null);
+  const [neighborIds, setNeighborIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<"disposisi" | "redirect" | null>(null);
@@ -182,10 +192,27 @@ export default function InboxDetailPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
+    // Ambil urutan ID inbox untuk navigasi Pesan Sebelumnya / Berikutnya ala Gmail
+    getInboxList({ pageSize: 50 })
+      .then((res) => {
+        if (!cancelled) {
+          setNeighborIds(res.data.map((it) => it.id));
+        }
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
   }, [itemId]);
+
+  const currentIdx = neighborIds.indexOf(itemId);
+  const prevItemId = currentIdx > 0 ? neighborIds[currentIdx - 1] : null;
+  const nextItemId =
+    currentIdx >= 0 && currentIdx < neighborIds.length - 1
+      ? neighborIds[currentIdx + 1]
+      : null;
 
   // ── Loading ──
   if (loading) {
@@ -222,6 +249,67 @@ export default function InboxDetailPage() {
 
   return (
     <div className={cn("space-y-4", hasActions && "pb-20")}>
+      {/* ── Top Action & Navigation Bar ala Gmail ── */}
+      <div className="bg-surface border border-border rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap shadow-2xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/inbox"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-text-muted hover:text-text hover:bg-panel transition-colors"
+            title="Kembali ke Kotak Masuk"
+          >
+            <ArrowLeft size={14} /> Kembali ke Inbox
+          </Link>
+
+          <span className="h-4 w-px bg-border" />
+
+          {canDispose && (
+            <button
+              type="button"
+              onClick={() => setModal("disposisi")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors"
+            >
+              <Share2 size={13} /> Disposisi
+            </button>
+          )}
+          {canRedirect && (
+            <button
+              type="button"
+              onClick={() => setModal("redirect")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-text hover:bg-panel transition-colors"
+            >
+              <ArrowRight size={13} /> Alihkan
+            </button>
+          )}
+        </div>
+
+        {/* Navigasi Pesan < > ala Gmail */}
+        {currentIdx >= 0 && neighborIds.length > 0 && (
+          <div className="flex items-center gap-1 text-xs text-text-muted ml-auto">
+            <span className="px-1.5 font-medium">
+              {currentIdx + 1} dari {neighborIds.length}
+            </span>
+            <button
+              type="button"
+              disabled={!prevItemId}
+              onClick={() => prevItemId && router.push(`/inbox/${prevItemId}`)}
+              title="Surat sebelumnya"
+              className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-panel disabled:opacity-35 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              type="button"
+              disabled={!nextItemId}
+              onClick={() => nextItemId && router.push(`/inbox/${nextItemId}`)}
+              title="Surat berikutnya"
+              className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-panel disabled:opacity-35 disabled:pointer-events-none transition-colors"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* ── Breadcrumb ── */}
       <nav className="flex items-center gap-1 text-xs text-text-muted flex-wrap">
         <Link href="/inbox" className="hover:text-text transition-colors">

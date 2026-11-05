@@ -1,266 +1,573 @@
 "use client";
 
+// ─────────────────────────────────────────────
 // app/(app)/inbox/page.tsx
-// Halaman daftar Inbox
+// Halaman Kotak Masuk (Inbox) bergaya Gmail:
+// - Omnibox search + filter lanjutan (Asal Surat, Sifat, Kecepatan, Berbintang)
+// - Tab Kategori dengan penghitung real-time (Utama, Belum Dibaca, Sudah Dibaca, Didisposisikan, Dialihkan)
+// - Daftar surat padat & nyaman dengan aksi cepat saat hover, seleksi checkbox, dan penanda bintang
+// - Panel Baca Samping (Split Reading Pane) interaktif
+// ─────────────────────────────────────────────
 
-import { useState, useEffect, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
-  Inbox, Loader2, AlertCircle, Mail, MailOpen,
-  Share2, ArrowRight, Search, RefreshCw, ChevronRight,
+  Inbox,
+  Loader2,
+  AlertCircle,
+  MailOpen,
+  Keyboard,
 } from "lucide-react";
 import {
-  getInboxList, inboxStatusLabel, inboxSourceLabel,
+  getInboxList,
+  type InboxItem,
+  type InboxCounts,
+  type InboxItemDetail,
 } from "@/lib/api/inbox";
-import type { InboxItem, InboxCounts } from "@/lib/api/inbox";
+import {
+  InboxToolbar,
+  DEFAULT_CLIENT_FILTERS,
+  type TabStatus,
+  type DensityMode,
+  type InboxClientFilters,
+} from "@/components/inbox/inbox-toolbar";
+import { InboxMessageRow } from "@/components/inbox/inbox-message-row";
+import { InboxReadingPane } from "@/components/inbox/inbox-reading-pane";
+import { DisposisiModal } from "@/components/inbox/disposisi-modal";
+import { RedirectModal } from "@/components/inbox/redirect-modal";
 import { cn } from "@/lib/utils";
 
-// ─── Tipe ────────────────────────────────────
+const PAGE_SIZE = 20;
+const STARRED_STORAGE_KEY = "digital-office:inbox-starred-ids";
 
-type TabStatus = "" | "UNREAD" | "READ" | "DISPOSED" | "REDIRECTED";
-
-const TABS: { value: TabStatus; label: string }[] = [
-  { value: "",           label: "Semua" },
-  { value: "UNREAD",    label: "Belum Dibaca" },
-  { value: "READ",      label: "Sudah Dibaca" },
-  { value: "DISPOSED",  label: "Didisposisikan" },
-  { value: "REDIRECTED",label: "Dialihkan" },
-];
-
-// ─── Sub-components ──────────────────────────
-
-function StatusPill({ status }: { status: InboxItem["status"] }) {
-  const styles: Record<InboxItem["status"], string> = {
-    UNREAD:     "bg-status-danger-bg text-status-danger-text",
-    READ:       "bg-panel text-text-muted border border-border",
-    DISPOSED:   "bg-status-info-bg text-status-info-text",
-    REDIRECTED: "bg-status-warn-bg text-status-warn-text",
-  };
-  return (
-    <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full", styles[status])}>
-      {inboxStatusLabel(status)}
-    </span>
-  );
+function loadStarredIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(STARRED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
+  } catch {
+    return new Set();
+  }
 }
 
-function SourceIcon({ source }: { source: InboxItem["source"] }) {
-  if (source.type === "DIRECT") return <Mail size={15} className="text-primary shrink-0" />;
-  if (source.forwardType === "DISPOSITION") return <Share2 size={15} className="text-status-info-text shrink-0" />;
-  return <ArrowRight size={15} className="text-status-warn-text shrink-0" />;
+function saveStarredIds(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      STARRED_STORAGE_KEY,
+      JSON.stringify(Array.from(ids))
+    );
+  } catch {
+    // Abaikan bila storage penuh
+  }
 }
-
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric", month: "short", year: "numeric",
-  }).format(new Date(iso));
-}
-
-// ─── Inner view (butuh useSearchParams) ──────
 
 function InboxView() {
-  const router       = useRouter();
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<TabStatus>(
     (searchParams.get("status") as TabStatus) ?? ""
   );
-  const [query,   setQuery]   = useState(searchParams.get("q") ?? "");
-  const [items,   setItems]   = useState<InboxItem[]>([]);
-  const [counts,  setCounts]  = useState<InboxCounts>({ UNREAD: 0, READ: 0, DISPOSED: 0, REDIRECTED: 0 });
-  const [total,   setTotal]   = useState(0);
-  const [page,    setPage]    = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const [query, setQuery] = useState(searchParams.get("q") ?? "");
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const [page, setPage] = useState(() => {
+    const p = Number(searchParams.get("page") ?? "1");
+    return Number.isFinite(p) && p > 0 ? p : 1;
+  });
 
-  const load = useCallback(async (tab: TabStatus, q: string, pg: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await getInboxList({
-        status:   tab || undefined,
-        q:        q || undefined,
-        page:     pg,
-        pageSize: 20,
-      });
-      setItems(res.data);
-      setCounts(res.counts);
-      setTotal(res.meta.total);
-    } catch (e) {
-      setError((e as Error).message ?? "Gagal memuat inbox.");
-    } finally {
-      setLoading(false);
-    }
+  const [items, setItems] = useState<InboxItem[]>([]);
+  const [counts, setCounts] = useState<InboxCounts>({
+    UNREAD: 0,
+    READ: 0,
+    DISPOSED: 0,
+    REDIRECTED: 0,
+  });
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+
+  // State antarmuka ala Gmail
+  const [splitView, setSplitView] = useState(true);
+  const [density, setDensity] = useState<DensityMode>("comfortable");
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [clientFilters, setClientFilters] = useState<InboxClientFilters>(
+    DEFAULT_CLIENT_FILTERS
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [starredIds, setStarredIds] = useState<Set<string>>(() =>
+    loadStarredIds()
+  );
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [modalState, setModalState] = useState<{
+    itemId: string;
+    type: "disposisi" | "redirect";
+  } | null>(null);
+
+  // Debounce input pencarian (250ms) agar pencarian halus
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Sinkronkan URL query string
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (activeTab) params.set("status", activeTab);
+    if (debouncedQuery) params.set("q", debouncedQuery);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    const targetUrl = qs ? `${pathname}?${qs}` : pathname;
+    window.history.replaceState(null, "", targetUrl);
+  }, [activeTab, debouncedQuery, page, pathname]);
+
+  // Fetch daftar inbox dari backend
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+
+      getInboxList({
+        status: activeTab || undefined,
+        q: debouncedQuery || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+        .then((res) => {
+          if (cancelled) return;
+          setItems(res.data);
+          setCounts(res.counts);
+          setTotal(res.meta.total);
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) {
+            setError(
+              e instanceof Error ? e.message : "Gagal memuat kotak masuk."
+            );
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeTab, debouncedQuery, page, reloadTick]);
+
+  // Penyaringan tambahan sisi klien (Asal Surat, Sifat, Kecepatan, Berbintang)
+  const visibleItems = useMemo(() => {
+    return items.filter((item) => {
+      if (clientFilters.starredOnly && !starredIds.has(item.id)) {
+        return false;
+      }
+      if (clientFilters.source !== "ALL") {
+        if (
+          clientFilters.source === "DIRECT_TO" &&
+          !(
+            item.source.type === "DIRECT" && item.source.recipientType === "TO"
+          )
+        ) {
+          return false;
+        }
+        if (
+          clientFilters.source === "DIRECT_CC" &&
+          !(
+            item.source.type === "DIRECT" && item.source.recipientType === "CC"
+          )
+        ) {
+          return false;
+        }
+        if (
+          clientFilters.source === "DISPOSITION" &&
+          !(
+            item.source.type === "FORWARD" &&
+            item.source.forwardType === "DISPOSITION"
+          )
+        ) {
+          return false;
+        }
+        if (
+          clientFilters.source === "REDIRECT" &&
+          !(
+            item.source.type === "FORWARD" &&
+            item.source.forwardType === "REDIRECT"
+          )
+        ) {
+          return false;
+        }
+      }
+      if (
+        clientFilters.confidentiality !== "ALL" &&
+        item.letter.confidentiality?.code !== clientFilters.confidentiality
+      ) {
+        return false;
+      }
+      if (
+        clientFilters.urgency !== "ALL" &&
+        item.letter.urgency?.code !== clientFilters.urgency
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [items, clientFilters, starredIds]);
+
+  const activeIndex = useMemo(
+    () => visibleItems.findIndex((it) => it.id === activeItemId),
+    [visibleItems, activeItemId]
+  );
+
+  const toggleStar = useCallback((id: string) => {
+    setStarredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      saveStarredIds(next);
+      return next;
+    });
   }, []);
 
-  useEffect(() => { load(activeTab, query, page); }, [load, activeTab, query, page]);
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allVisibleSelected =
+    visibleItems.length > 0 &&
+    visibleItems.every((it) => selectedIds.has(it.id));
+
+  const handleToggleSelectAll = useCallback(() => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visibleItems.map((it) => it.id)));
+    }
+  }, [allVisibleSelected, visibleItems]);
+
+  // Saat surat dibuka di Panel Baca, perbarui status baris UNREAD -> READ secara reaktif
+  const handleItemLoaded = useCallback((detail: InboxItemDetail) => {
+    setItems((prev) => {
+      const target = prev.find((it) => it.id === detail.id);
+      if (!target || target.status === detail.status) return prev;
+      const wasUnread = target.status === "UNREAD" && detail.status === "READ";
+      if (wasUnread) {
+        setCounts((c) => ({
+          ...c,
+          UNREAD: Math.max(0, c.UNREAD - 1),
+          READ: c.READ + 1,
+        }));
+      }
+      return prev.map((it) =>
+        it.id === detail.id
+          ? { ...it, status: detail.status, readAt: detail.readAt }
+          : it
+      );
+    });
+  }, []);
+
+  // Pintasan keyboard ala Gmail: j (berikutnya), k (sebelumnya), o/Enter (buka), u/Escape (tutup panel), s (bintang)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable ||
+        modalState !== null
+      ) {
+        return;
+      }
+
+      if (e.key === "j" || e.key === "ArrowDown") {
+        if (visibleItems.length === 0) return;
+        e.preventDefault();
+        const nextIdx =
+          activeIndex < 0
+            ? 0
+            : Math.min(visibleItems.length - 1, activeIndex + 1);
+        setActiveItemId(visibleItems[nextIdx].id);
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        if (visibleItems.length === 0) return;
+        e.preventDefault();
+        const prevIdx = activeIndex <= 0 ? 0 : activeIndex - 1;
+        setActiveItemId(visibleItems[prevIdx].id);
+      } else if (e.key === "u" || e.key === "Escape") {
+        if (activeItemId) {
+          e.preventDefault();
+          setActiveItemId(null);
+        }
+      } else if (e.key === "s" && activeItemId) {
+        e.preventDefault();
+        toggleStar(activeItemId);
+      } else if (e.key === "o" && activeItemId && !splitView) {
+        e.preventDefault();
+        router.push(`/inbox/${activeItemId}`);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    visibleItems,
+    activeIndex,
+    activeItemId,
+    splitView,
+    modalState,
+    router,
+    toggleStar,
+  ]);
 
   function handleTabChange(tab: TabStatus) {
     setActiveTab(tab);
     setPage(1);
+    setSelectedIds(new Set());
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Inbox size={20} className="text-primary" />
-          <h1 className="text-lg font-bold text-text">Kotak Masuk (Inbox)</h1>
-          {counts.UNREAD > 0 && (
-            <span className="bg-status-danger-bg text-status-danger-text text-xs font-bold px-2 py-0.5 rounded-full">
-              {counts.UNREAD} belum dibaca
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => load(activeTab, query, page)}
-          className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text border border-border rounded-lg px-3 py-1.5 transition-colors"
-        >
-          <RefreshCw size={13} /> Perbarui
-        </button>
-      </div>
+  function handleRowClick(item: InboxItem) {
+    if (splitView) {
+      setActiveItemId(item.id);
+    } else {
+      router.push(`/inbox/${item.id}`);
+    }
+  }
 
-      {/* Tab filter */}
-      <div className="flex gap-1 border-b border-border overflow-x-auto">
-        {TABS.map((tab) => {
-          const count = tab.value ? counts[tab.value] : undefined;
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => handleTabChange(tab.value)}
-              className={cn(
-                "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors",
-                activeTab === tab.value
-                  ? "border-primary text-primary"
-                  : "border-transparent text-text-muted hover:text-text"
-              )}
-            >
-              {tab.label}
-              {count != null && count > 0 && (
-                <span className={cn(
-                  "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
-                  activeTab === tab.value
-                    ? "bg-primary/15 text-primary"
-                    : "bg-panel text-text-muted"
-                )}>
-                  {count}
+  const firstSelectedId = useMemo(
+    () => Array.from(selectedIds)[0] ?? null,
+    [selectedIds]
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* ── Header Ringkas ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <Inbox size={18} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-text leading-tight">
+                Kotak Masuk (Inbox)
+              </h1>
+              {counts.UNREAD > 0 && (
+                <span className="bg-status-danger-bg text-status-danger-text text-xs font-bold px-2 py-0.5 rounded-full">
+                  {counts.UNREAD} belum dibaca
                 </span>
               )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <input
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-          placeholder="Cari perihal atau nomor surat..."
-          className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-surface outline-none focus:border-primary"
-        />
-      </div>
-
-      {/* Content */}
-      {loading ? (
-        <div className="flex items-center justify-center py-16 gap-2 text-text-muted">
-          <Loader2 size={18} className="animate-spin text-primary" />
-          <span className="text-sm">Memuat inbox...</span>
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-          <AlertCircle size={28} className="text-status-danger-text" />
-          <p className="text-sm text-text-muted">{error}</p>
-          <button
-            type="button"
-            onClick={() => load(activeTab, query, page)}
-            className="text-sm text-primary hover:underline"
-          >
-            Coba lagi
-          </button>
-        </div>
-      ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-2 text-center border border-dashed border-border rounded-xl">
-          <MailOpen size={28} className="text-text-muted" />
-          <p className="text-sm text-text-muted">Tidak ada surat masuk.</p>
-        </div>
-      ) : (
-        <div className="border border-border rounded-xl overflow-hidden divide-y divide-border">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => router.push(`/inbox/${item.id}`)}
-              className={cn(
-                "w-full text-left flex items-start gap-3 px-4 py-4 hover:bg-panel/50 transition-colors",
-                item.status === "UNREAD" && "bg-status-info-bg/20"
-              )}
-            >
-              <div className="mt-0.5 shrink-0">
-                <SourceIcon source={item.source} />
-              </div>
-              <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <StatusPill status={item.status} />
-                  {item.letter.letterType && (
-                    <span className="text-[10px] text-text-muted border border-border rounded-full px-2 py-0.5">
-                      {item.letter.letterType.name}
-                    </span>
-                  )}
-                  <span className="text-[10px] text-text-muted">
-                    {formatDate(item.receivedAt)}
-                  </span>
-                </div>
-                <p className={cn(
-                  "text-sm truncate",
-                  item.status === "UNREAD" ? "font-bold text-text" : "font-medium text-text"
-                )}>
-                  {item.letter.title ?? "(Tanpa perihal)"}
-                </p>
-                <p className="text-xs text-text-muted">
-                  {inboxSourceLabel(item.source)} · {item.letter.senderUnit.name}
-                </p>
-                {item.letter.letterNumber && (
-                  <p className="text-xs font-mono text-text-muted">{item.letter.letterNumber}</p>
-                )}
-                {item.source.note && (
-                  <p className="text-xs text-text-muted italic truncate">
-                    &ldquo;{item.source.note}&rdquo;
-                  </p>
-                )}
-              </div>
-              <ChevronRight size={14} className="text-text-muted shrink-0 mt-1" />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Paginasi */}
-      {total > 20 && (
-        <div className="flex items-center justify-between text-xs text-text-muted pt-2">
-          <span>Menampilkan {items.length} dari {total} surat</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={page === 1}
-              onClick={() => setPage((p) => p - 1)}
-              className="px-3 py-1.5 border border-border rounded-lg disabled:opacity-40 hover:bg-panel transition-colors"
-            >
-              Sebelumnya
-            </button>
-            <button
-              type="button"
-              disabled={page * 20 >= total}
-              onClick={() => setPage((p) => p + 1)}
-              className="px-3 py-1.5 border border-border rounded-lg disabled:opacity-40 hover:bg-panel transition-colors"
-            >
-              Berikutnya
-            </button>
+            </div>
+            <p className="text-xs text-text-muted">
+              Surat resmi terkirim, tembusan (CC), disposisi, dan pengalihan masuk
+            </p>
           </div>
         </div>
+      </div>
+
+      {/* ── Kontainer Utama Bergaya Gmail ── */}
+      <div className="border border-border rounded-2xl bg-surface shadow-xs overflow-hidden flex flex-col">
+        {/* Toolbar Pencarian, Filter, & Tab Kategori */}
+        <InboxToolbar
+          query={query}
+          onQueryChange={(val) => {
+            setQuery(val);
+            setPage(1);
+          }}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          counts={counts}
+          clientFilters={clientFilters}
+          onClientFiltersChange={setClientFilters}
+          showFilterPanel={showFilterPanel}
+          onToggleFilterPanel={() => setShowFilterPanel((v) => !v)}
+          loading={loading}
+          onRefresh={() => setReloadTick((t) => t + 1)}
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          onPageChange={setPage}
+          splitView={splitView}
+          onToggleSplitView={() => setSplitView((v) => !v)}
+          density={density}
+          onToggleDensity={() =>
+            setDensity((d) => (d === "comfortable" ? "compact" : "comfortable"))
+          }
+          selectedCount={selectedIds.size}
+          allVisibleSelected={allVisibleSelected}
+          onToggleSelectAll={handleToggleSelectAll}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onOpenSelectedFirst={
+            firstSelectedId
+              ? () => {
+                  if (splitView) setActiveItemId(firstSelectedId);
+                  else router.push(`/inbox/${firstSelectedId}`);
+                }
+              : undefined
+          }
+          onDisposeSelectedFirst={
+            firstSelectedId
+              ? () =>
+                  setModalState({
+                    itemId: firstSelectedId,
+                    type: "disposisi",
+                  })
+              : undefined
+          }
+        />
+
+        {/* Workspace: Daftar Pesan + Panel Baca Samping (jika splitView aktif) */}
+        <div
+          className={cn(
+            "grid min-h-[68vh]",
+            splitView && activeItemId
+              ? "grid-cols-1 lg:grid-cols-[minmax(380px,46%)_1fr] divide-y lg:divide-y-0 lg:divide-x divide-border"
+              : "grid-cols-1"
+          )}
+        >
+          {/* ─ Kolom Kiri: Daftar Pesan ─ */}
+          <div className="flex flex-col min-w-0">
+            {loading ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 gap-2.5 text-text-muted">
+                <Loader2 size={22} className="animate-spin text-primary" />
+                <span className="text-sm font-medium">
+                  Memuat surat masuk...
+                </span>
+              </div>
+            ) : error ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 gap-3 text-center px-4">
+                <AlertCircle size={30} className="text-status-danger-text" />
+                <p className="text-sm text-text-muted">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => setReloadTick((t) => t + 1)}
+                  className="px-3.5 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark transition-colors"
+                >
+                  Coba Lagi
+                </button>
+              </div>
+            ) : visibleItems.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 gap-2.5 text-center px-4">
+                <div className="w-12 h-12 rounded-full bg-panel flex items-center justify-center text-text-muted">
+                  <MailOpen size={24} />
+                </div>
+                <p className="text-sm font-semibold text-text">
+                  Tidak ada surat yang cocok
+                </p>
+                <p className="text-xs text-text-muted max-w-xs">
+                  {query ||
+                  clientFilters.source !== "ALL" ||
+                  clientFilters.confidentiality !== "ALL" ||
+                  clientFilters.urgency !== "ALL" ||
+                  clientFilters.starredOnly
+                    ? "Coba ubah kata kunci pencarian atau atur ulang filter lanjutan."
+                    : "Kotak masuk Anda pada kategori ini masih kosong."}
+                </p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto">
+                {visibleItems.map((item) => (
+                  <InboxMessageRow
+                    key={item.id}
+                    item={item}
+                    selected={selectedIds.has(item.id)}
+                    active={activeItemId === item.id}
+                    starred={starredIds.has(item.id)}
+                    density={density}
+                    onToggleSelect={() => toggleSelect(item.id)}
+                    onToggleStar={() => toggleStar(item.id)}
+                    onClickRow={() => handleRowClick(item)}
+                    onOpenFullPage={() => router.push(`/inbox/${item.id}`)}
+                    onQuickDispose={() =>
+                      setModalState({ itemId: item.id, type: "disposisi" })
+                    }
+                    onQuickRedirect={() =>
+                      setModalState({ itemId: item.id, type: "redirect" })
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Footer Baris Daftar */}
+            <div className="px-4 py-2.5 bg-panel/30 border-t border-border flex items-center justify-between text-xs text-text-muted mt-auto">
+              <span>
+                Menampilkan{" "}
+                <strong className="text-text">{visibleItems.length}</strong>{" "}
+                surat di halaman ini (Total:{" "}
+                <strong className="text-text">{total}</strong>)
+              </span>
+              {splitView && !activeItemId && visibleItems.length > 0 && (
+                <span className="hidden sm:inline text-[11px]">
+                  Klik surat untuk membuka Panel Baca Samping
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* ─ Kolom Kanan: Panel Baca Samping ala Gmail ─ */}
+          {splitView && activeItemId && (
+            <div className="min-w-0 h-full">
+              <InboxReadingPane
+                itemId={activeItemId}
+                currentIndex={activeIndex}
+                totalVisible={visibleItems.length}
+                onPrev={() => {
+                  if (activeIndex > 0) {
+                    setActiveItemId(visibleItems[activeIndex - 1].id);
+                  }
+                }}
+                onNext={() => {
+                  if (
+                    activeIndex >= 0 &&
+                    activeIndex < visibleItems.length - 1
+                  ) {
+                    setActiveItemId(visibleItems[activeIndex + 1].id);
+                  }
+                }}
+                onClose={() => setActiveItemId(null)}
+                onOpenModal={(itemId, type) => setModalState({ itemId, type })}
+                onItemLoaded={handleItemLoaded}
+                refreshTrigger={reloadTick}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Modal Disposisi & Pengalihan ── */}
+      {modalState?.type === "disposisi" && (
+        <DisposisiModal
+          itemId={modalState.itemId}
+          onClose={() => setModalState(null)}
+          onSuccess={() => {
+            setModalState(null);
+            setReloadTick((t) => t + 1);
+          }}
+        />
+      )}
+      {modalState?.type === "redirect" && (
+        <RedirectModal
+          itemId={modalState.itemId}
+          onClose={() => setModalState(null)}
+          onSuccess={() => {
+            setModalState(null);
+            setReloadTick((t) => t + 1);
+          }}
+        />
       )}
     </div>
   );
@@ -274,7 +581,7 @@ export default function InboxPage() {
       fallback={
         <div className="flex items-center justify-center min-h-[60vh] gap-2 text-text-muted">
           <Loader2 size={18} className="animate-spin text-primary" />
-          <span className="text-sm">Memuat inbox...</span>
+          <span className="text-sm">Memuat kotak masuk...</span>
         </div>
       }
     >
