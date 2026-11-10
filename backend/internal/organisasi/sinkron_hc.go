@@ -12,10 +12,11 @@ import (
 	"strings"
 )
 
-// Sinkronisasi unit kerja dari API HC PUSRI (hc/organization). Unit dicocokkan lewat UID HC yang
-// disimpan di units.code; kode numerik HC tidak dipakai karena dipakai ulang antar-reorganisasi.
-// Unit tidak pernah dihapus: unit yang hilang dari HC atau berstatus in-active dinonaktifkan,
-// karena surat lama bisa merujuknya.
+// Inisiasi unit kerja dari API HC PUSRI (hc/organization). HC hanya dipakai untuk mengisi struktur
+// organisasi: sinkron hanya MENAMBAH unit yang belum ada. Unit yang sudah ada tidak diubah dan tidak
+// dinonaktifkan, karena setelah inisiasi unit dikelola admin perusahaan (kelola_unit.go). Unit
+// dicocokkan lewat UID HC yang disimpan di units.code; kode numerik HC tidak dipakai karena dipakai
+// ulang antar-reorganisasi.
 
 // HCUnit adalah satu unit dari HC (isi field "data" setelah base64 di-decode).
 type HCUnit struct {
@@ -29,7 +30,8 @@ type HCUnit struct {
 
 // SyncResult adalah ringkasan sinkronisasi.
 type SyncResult struct {
-	Added, Updated, Deactivated, Unchanged int
+	Added    int // unit baru dari HC
+	Existing int // unit yang sudah ada (tidak diubah)
 }
 
 // ParseHCUnits membaca snapshot unit HC berupa array JSON (boleh diawali BOM).
@@ -157,8 +159,9 @@ type existingUnit struct {
 	Active   bool
 }
 
-// SyncHCUnits menyamakan unit companyCode dengan data HC. Wajib dipanggil di dalam transaksi
-// (Repository dibuat di atas transaksi), supaya sinkronisasi berhasil seluruhnya atau tidak sama sekali.
+// SyncHCUnits menambah unit HC yang belum ada di companyCode; unit yang sudah ada tidak diubah. Wajib
+// dipanggil di dalam transaksi (Repository dibuat di atas transaksi), supaya berhasil seluruhnya atau
+// tidak sama sekali.
 func (r *Repository) SyncHCUnits(ctx context.Context, companyCode string, units []HCUnit) (SyncResult, error) {
 	var res SyncResult
 	if err := validateHCUnits(units); err != nil {
@@ -174,21 +177,14 @@ func (r *Repository) SyncHCUnits(ctx context.Context, companyCode string, units 
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Level < sorted[j].Level })
 
 	ids := make(map[string]int64, len(units))
-	changed := map[string]bool{}
+	added := map[string]bool{}
 	for _, u := range sorted {
-		name, typ, active := NormalizeUnitName(u.Text), strings.ToUpper(u.DescLevel), u.Status == "active"
 		if e, ok := existing[u.UID]; ok {
 			ids[u.UID] = e.ID
-			if e.Name != name || e.Type != typ || e.Active != active {
-				const q = `UPDATE units SET name = @name, unit_type = @type, is_active = @active, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`
-				if _, err := r.q.ExecContext(ctx, q, sql.Named("name", name), sql.Named("type", typ),
-					sql.Named("active", active), sql.Named("id", e.ID)); err != nil {
-					return res, fmt.Errorf("memperbarui unit %q: %w", name, err)
-				}
-				changed[u.UID] = true
-			}
+			res.Existing++
 			continue
 		}
+		name, typ, active := NormalizeUnitName(u.Text), strings.ToUpper(u.DescLevel), u.Status == "active"
 		const q = `
 INSERT INTO units (company_code, parent_id, unit_type, code, name, is_active)
 OUTPUT inserted.id
@@ -199,39 +195,19 @@ VALUES (@companyCode, NULL, @type, @code, @name, @active)`
 			return res, fmt.Errorf("menambah unit %q: %w", name, err)
 		}
 		ids[u.UID] = id
+		added[u.UID] = true
 		res.Added++
 	}
 
-	// Induk disusun setelah semua unit punya ID
+	// Induk unit baru disusun setelah semua unit punya ID (induknya bisa unit lama atau baru)
 	for _, u := range units {
-		var want sql.NullInt64
-		if u.ParentUID != "#" {
-			want = sql.NullInt64{Int64: ids[u.ParentUID], Valid: true}
-		}
-		if e, ok := existing[u.UID]; ok && e.ParentID == want {
+		if !added[u.UID] || u.ParentUID == "#" {
 			continue
 		}
 		const q = `UPDATE units SET parent_id = @parentId, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`
-		if _, err := r.q.ExecContext(ctx, q, sql.Named("parentId", want), sql.Named("id", ids[u.UID])); err != nil {
+		if _, err := r.q.ExecContext(ctx, q, sql.Named("parentId", ids[u.ParentUID]), sql.Named("id", ids[u.UID])); err != nil {
 			return res, fmt.Errorf("menyusun induk unit %q: %w", u.Text, err)
 		}
-		if _, isOld := existing[u.UID]; isOld {
-			changed[u.UID] = true
-		}
-	}
-	res.Updated = len(changed)
-	res.Unchanged = len(units) - res.Added - res.Updated
-
-	// Unit yang tidak ada lagi di HC dinonaktifkan, tidak dihapus
-	for code, e := range existing {
-		if _, still := ids[code]; still || !e.Active {
-			continue
-		}
-		const q = `UPDATE units SET is_active = 0, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`
-		if _, err := r.q.ExecContext(ctx, q, sql.Named("id", e.ID)); err != nil {
-			return res, fmt.Errorf("menonaktifkan unit %q: %w", e.Name, err)
-		}
-		res.Deactivated++
 	}
 	return res, nil
 }

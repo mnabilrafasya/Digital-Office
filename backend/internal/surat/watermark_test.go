@@ -3,57 +3,20 @@ package surat
 import (
 	"bytes"
 	"context"
-	"image/png"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+
+	"office.backend/internal/platform/watermark"
 )
 
-func TestRenderWatermark(t *testing.T) {
-	data, err := watermarkPNG()
-	if err != nil {
-		t.Fatal(err)
-	}
-	img, err := png.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("bukan PNG: %v", err)
-	}
-	b := img.Bounds()
-	if b.Dx() != b.Dy() || b.Dx() < 800 {
-		t.Fatalf("ukuran gambar = %v, want persegi yang cukup tajam", b)
-	}
-	alphaAt := func(fx, fy float64) uint32 {
-		_, _, _, a := img.At(b.Min.X+int(fx*float64(b.Dx())), b.Min.Y+int(fy*float64(b.Dy()))).RGBA()
-		return a >> 8
-	}
-	// Pojok kiri atas dan kanan bawah kosong; teks melintasi tengah (miring naik ke kanan)
-	if alphaAt(0.02, 0.02) != 0 || alphaAt(0.98, 0.98) != 0 {
-		t.Error("latar watermark harus transparan")
-	}
-	var maxAlpha, painted uint32
-	for y := b.Min.Y; y < b.Max.Y; y += 4 {
-		for x := b.Min.X; x < b.Max.X; x += 4 {
-			_, _, _, a := img.At(x, y).RGBA()
-			if a>>8 > maxAlpha {
-				maxAlpha = a >> 8
-			}
-			if a > 0 {
-				painted++
-			}
-		}
-	}
-	if maxAlpha == 0 || maxAlpha > watermarkAlpha+1 || painted == 0 {
-		t.Errorf("transparansi watermark salah: alpha maks %d (want 1..%d)", maxAlpha, watermarkAlpha)
-	}
-	if again, _ := watermarkPNG(); !bytes.Equal(again, data) {
-		t.Error("gambar watermark harus dibuat sekali dan sama")
-	}
-}
+// testWatermark adalah watermark contoh untuk uji naskah.
+func testWatermark() ([]byte, error) { return watermark.PNG("PUPUK SRIWIDJAJA") }
 
 func TestWatermarkOnTemplates(t *testing.T) {
-	wm, _ := watermarkPNG()
+	wm, _ := testWatermark()
 	for _, name := range []string{"surat-dinas-standar", "nota-dinas", "undangan-rapat", "surat-tugas", "dokumen-kosong"} {
 		src, err := os.ReadFile("../../database/seeds/templates/" + name + ".docx")
 		if err != nil {
@@ -84,7 +47,7 @@ func TestWatermarkOnTemplates(t *testing.T) {
 }
 
 func TestWatermarkCreatesHeader(t *testing.T) {
-	wm, _ := watermarkPNG()
+	wm, _ := testWatermark()
 	sect := `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>`
 	out, err := fillPlaceholders(makeDocx(docWith(`<w:p><w:r><w:t>Tanpa header</w:t></w:r></w:p>`+sect)), nil, []byte("png"), wm)
 	if err != nil {
@@ -112,7 +75,7 @@ func TestWatermarkPerConfidentiality(t *testing.T) {
 	watermarkConfidentiality = map[string]bool{"RAHASIA": true}
 
 	for code, want := range map[string]bool{"RAHASIA": true, "BIASA": false, "": false} {
-		d := &LetterDetail{}
+		d := &LetterDetail{WatermarkText: ptr("PUPUK SRIWIDJAJA")}
 		if code != "" {
 			d.Confidentiality = &LookupRef{Code: code}
 		}
@@ -123,10 +86,33 @@ func TestWatermarkPerConfidentiality(t *testing.T) {
 	}
 }
 
+// Watermark mengikuti perusahaan surat: tanpa teks = tanpa watermark, teks berbeda = gambar berbeda.
+func TestWatermarkPerCompany(t *testing.T) {
+	biasa := &LookupRef{Code: "BIASA"}
+	for _, text := range []*string{nil, ptr(""), ptr("   ")} {
+		if got, err := watermarkFor(&LetterDetail{WatermarkText: text, Confidentiality: biasa}); err != nil || got != nil {
+			t.Errorf("teks %v: watermark ada = %v (err %v), want tidak ada", text, got != nil, err)
+		}
+	}
+	psp, err := watermarkFor(&LetterDetail{WatermarkText: ptr(" PUPUK  SRIWIDJAJA "), Confidentiality: biasa})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := watermarkFor(&LetterDetail{WatermarkText: ptr("PETROKIMIA GRESIK"), Confidentiality: biasa})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := testWatermark()
+	if !bytes.Equal(psp, want) || bytes.Equal(psp, pkg) {
+		t.Error("watermark harus mengikuti teks perusahaan (spasi berlebih dirapikan)")
+	}
+}
+
 func TestFilledDocumentHasWatermark(t *testing.T) {
 	svc, store, _, _, _ := sentLetter(true)
 	ctx := context.Background()
 	store.detail.Confidentiality = &LookupRef{Code: "BIASA", Name: "Biasa"}
+	store.detail.WatermarkText = ptr("PUPUK SRIWIDJAJA")
 	f, err := svc.FilledDocument(ctx, andiUser, testLetterID)
 	if err != nil {
 		t.Fatal(err)

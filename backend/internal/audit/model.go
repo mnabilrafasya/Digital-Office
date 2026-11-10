@@ -22,6 +22,10 @@ const (
 	EntityLetter   = "LETTER"
 	EntityTemplate = "TEMPLATE" // template surat
 	EntityAudit    = "AUDIT"    // tindakan atas audit log itu sendiri, misalnya ekspor
+	EntityCompany  = "COMPANY"  // perusahaan (entity_id 0; kodenya di snapshot)
+	EntityUnit     = "UNIT"     // unit kerja
+	EntityPosition = "POSITION" // jabatan
+	EntityUser     = "USER"     // user
 )
 
 // Aksi yang dicatat (kolom action). Transisi alur surat memakai nama aksinya sendiri
@@ -41,4 +45,23 @@ const (
 	ActionTemplateCreate   = "TEMPLATE_CREATE"   // template surat dibuat
 	ActionTemplateUpdate   = "TEMPLATE_UPDATE"   // data atau file template surat diganti
 	ActionExport           = "AUDIT_EXPORT"      // audit log diekspor
+	ActionTemplateStatus   = "TEMPLATE_STATUS"   // template diaktifkan/dinonaktifkan admin
+)
+
+// Aksi master data (kolom action). Snapshot berisi data baru, dan data lama untuk perubahan.
+const (
+	ActionCompanyCreate   = "COMPANY_CREATE"   // perusahaan ditambah (SUPERADMIN)
+	ActionCompanyUpdate   = "COMPANY_UPDATE"   // identitas perusahaan diubah (SUPERADMIN)
+	ActionCompanyStatus   = "COMPANY_STATUS"   // perusahaan diaktifkan/dinonaktifkan (SUPERADMIN)
+	ActionCompanySettings = "COMPANY_SETTINGS" // watermark/format nomor diubah (ADMIN)
+	ActionUnitCreate      = "UNIT_CREATE"
+	ActionUnitUpdate      = "UNIT_UPDATE"
+	ActionUnitStatus      = "UNIT_STATUS"
+	ActionPositionCreate  = "POSITION_CREATE"
+	ActionPositionUpdate  = "POSITION_UPDATE"
+	ActionPositionStatus  = "POSITION_STATUS"
+	ActionUserCreate      = "USER_CREATE"
+	ActionUserUpdate      = "USER_UPDATE"
+	ActionUserStatus      = "USER_STATUS"
+	ActionUserPassword    = "USER_PASSWORD_RESET"
 )

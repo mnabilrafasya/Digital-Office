@@ -167,6 +167,7 @@ type fakeRefs struct {
 	unitHeads     map[int64]int64   // unit -> pimpinan
 	aliasMembers  map[int64][]int64 // level -> anggota
 	templates     map[int64]*Template
+	inactive      map[int64]bool // template nonaktif
 }
 
 // fakeRefs juga menjadi penyimpan template (baca dan tulis).
@@ -217,6 +218,34 @@ func (f *fakeRefs) UpdateTemplate(_ context.Context, id int64, d TemplateData, o
 	if objectKey != "" {
 		t.ObjectKey = objectKey
 	}
+	return nil
+}
+
+func (f *fakeRefs) ListAdminTemplates(context.Context, string, string, string) ([]AdminTemplate, error) {
+	out := []AdminTemplate{}
+	for id, t := range f.templates {
+		out = append(out, AdminTemplate{Template: *t, IsActive: !f.inactive[id]})
+	}
+	return out, nil
+}
+
+func (f *fakeRefs) FindAdminTemplate(_ context.Context, _ string, id int64, _ bool) (*AdminTemplate, error) {
+	t, ok := f.templates[id]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	return &AdminTemplate{Template: *t, IsActive: !f.inactive[id]}, nil
+}
+
+func (f *fakeRefs) LockAdminTemplate(ctx context.Context, companyCode string, id int64) (*AdminTemplate, error) {
+	return f.FindAdminTemplate(ctx, companyCode, id, true)
+}
+
+func (f *fakeRefs) SetTemplateActive(_ context.Context, id int64, active bool) error {
+	if f.inactive == nil {
+		f.inactive = map[int64]bool{}
+	}
+	f.inactive[id] = !active
 	return nil
 }
 

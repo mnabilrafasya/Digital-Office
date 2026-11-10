@@ -24,14 +24,18 @@ func NewRepository(q db.DBTX) *Repository {
 func (r *Repository) FindLoginByEmployeeNumber(ctx context.Context, employeeNumber string) (*LoginRecord, error) {
 	const q = `
 SELECT u.id, u.password_hash, u.is_active,
-       CASE WHEN r.is_active = 1 AND r.deleted_at IS NULL THEN 1 ELSE 0 END
+       CASE WHEN r.is_active = 1 AND r.deleted_at IS NULL THEN 1 ELSE 0 END,
+       CASE WHEN c.is_active = 1 AND c.deleted_at IS NULL THEN 1 ELSE 0 END
 FROM users u
-JOIN roles r ON r.id = u.role_id
+JOIN roles r     ON r.id = u.role_id
+JOIN positions p ON p.id = u.position_id
+JOIN units un    ON un.id = p.unit_id
+JOIN companies c ON c.code = un.company_code
 WHERE u.employee_number = @employeeNumber AND u.deleted_at IS NULL`
 
 	var rec LoginRecord
 	err := r.q.QueryRowContext(ctx, q, sql.Named("employeeNumber", employeeNumber)).
-		Scan(&rec.UserID, &rec.PasswordHash, &rec.IsActive, &rec.RoleIsActive)
+		Scan(&rec.UserID, &rec.PasswordHash, &rec.IsActive, &rec.RoleIsActive, &rec.CompanyIsActive)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, db.ErrNotFound
 	}
@@ -41,8 +45,8 @@ WHERE u.employee_number = @employeeNumber AND u.deleted_at IS NULL`
 	return &rec, nil
 }
 
-// FindActiveByID memuat user aktif (role aktif) beserta jabatan, level jabatan, unit, perusahaan,
-// permission, dan token_version dalam satu query (dipanggil di setiap request yang wajib login).
+// FindActiveByID memuat user aktif (role dan perusahaan aktif) beserta jabatan, level jabatan, unit,
+// perusahaan, permission (role + posisi, lihat hakakses.go), dan token_version dalam satu query (dipanggil di setiap request yang wajib login).
 func (r *Repository) FindActiveByID(ctx context.Context, userID int64) (*CurrentUser, error) {
 	const q = `
 SELECT u.id, u.employee_number, u.name, u.email, u.token_version,
@@ -61,7 +65,8 @@ JOIN roles r         ON r.id = u.role_id
 LEFT JOIN lookups lv ON lv.id = p.level_id AND lv.deleted_at IS NULL
 WHERE u.id = @userId
   AND u.is_active = 1 AND u.deleted_at IS NULL
-  AND r.is_active = 1 AND r.deleted_at IS NULL`
+  AND r.is_active = 1 AND r.deleted_at IS NULL
+  AND c.is_active = 1 AND c.deleted_at IS NULL`
 
 	var (
 		u                    CurrentUser
@@ -86,10 +91,11 @@ WHERE u.id = @userId
 	if levelCode.Valid {
 		u.Position.Level = &PositionLevel{Code: levelCode.String, Name: levelName.String}
 	}
-	u.Permissions = []string{}
+	var rolePerms []string
 	if perms.Valid && perms.String != "" {
-		u.Permissions = strings.Split(perms.String, ",")
+		rolePerms = strings.Split(perms.String, ",")
 	}
+	u.Permissions = mergePermissions(rolePerms, levelCode.String)
 	return &u, nil
 }
 

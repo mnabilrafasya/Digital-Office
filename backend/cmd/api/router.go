@@ -11,7 +11,9 @@ import (
 	"office.backend/internal/auth"
 	"office.backend/internal/inbox"
 	"office.backend/internal/masterdata"
+	"office.backend/internal/notifikasi"
 	"office.backend/internal/organisasi"
+	"office.backend/internal/perusahaan"
 	"office.backend/internal/platform/httpx"
 	"office.backend/internal/platform/middleware"
 	"office.backend/internal/platform/server"
@@ -24,9 +26,12 @@ type routerDeps struct {
 	Auth       *auth.Handler
 	MasterData *masterdata.Handler
 	Organisasi *organisasi.Handler
+	OrgAdmin   *organisasi.AdminHandler
+	Perusahaan *perusahaan.Handler
 	Surat      *surat.Handler
 	Inbox      *inbox.Handler
 	Audit      *audit.Handler
+	Notifikasi *notifikasi.Handler
 
 	Tokens auth.TokenVerifier
 	Users  auth.UserLoader
@@ -114,6 +119,58 @@ func newRouter(d routerDeps) http.Handler {
 				r.Get("/audit-logs/export", d.Audit.Export)
 				r.Get("/audit-logs/{logId}", d.Audit.Log)
 				r.Get("/monitoring/letters", d.Audit.Monitor)
+				r.Post("/notifications/test", d.Notifikasi.Test)
+			})
+
+			// Pengaturan perusahaan sendiri (ADMIN): format nomor surat dan watermark
+			r.Route("/company", func(r chi.Router) {
+				r.Use(auth.RequirePermission(auth.CompanySettings))
+				r.Get("/", d.Perusahaan.Settings)
+				r.Put("/", d.Perusahaan.UpdateSettings)
+				r.Get("/number-preview", d.Perusahaan.NumberPreview)
+				r.Get("/watermark-preview", d.Perusahaan.WatermarkPreview)
+			})
+
+			// Master data. Admin perusahaan selalu mengelola perusahaannya sendiri; SUPERADMIN
+			// mengelola perusahaan dan admin-nya.
+			r.Route("/admin", func(r chi.Router) {
+				r.Route("/companies", func(r chi.Router) {
+					r.Use(auth.RequirePermission(auth.CompanyManage))
+					r.Get("/", d.Perusahaan.Companies)
+					r.Post("/", d.Perusahaan.CreateCompany)
+					r.Get("/{code}", d.Perusahaan.Company)
+					r.Put("/{code}", d.Perusahaan.UpdateCompany)
+					r.Patch("/{code}/status", d.Perusahaan.CompanyStatus)
+					r.Get("/{code}/units", d.OrgAdmin.CompanyUnits)
+					r.Post("/{code}/admins", d.OrgAdmin.CreateCompanyAdmin)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(auth.RequirePermission(auth.OrgManage))
+					r.Get("/units", d.OrgAdmin.Units)
+					r.Post("/units", d.OrgAdmin.CreateUnit)
+					r.Put("/units/{unitId}", d.OrgAdmin.UpdateUnit)
+					r.Patch("/units/{unitId}/status", d.OrgAdmin.UnitStatus)
+					r.Get("/positions", d.OrgAdmin.Positions)
+					r.Post("/positions", d.OrgAdmin.CreatePosition)
+					r.Put("/positions/{positionId}", d.OrgAdmin.UpdatePosition)
+					r.Patch("/positions/{positionId}/status", d.OrgAdmin.PositionStatus)
+					r.Get("/position-levels", d.OrgAdmin.Levels)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(auth.RequirePermission(auth.UserManage))
+					r.Get("/users", d.OrgAdmin.Users)
+					r.Post("/users", d.OrgAdmin.CreateUser)
+					r.Get("/users/{userId}", d.OrgAdmin.User)
+					r.Put("/users/{userId}", d.OrgAdmin.UpdateUser)
+					r.Patch("/users/{userId}/status", d.OrgAdmin.UserStatus)
+					r.Post("/users/{userId}/reset-password", d.OrgAdmin.ResetPassword)
+					r.Get("/roles", d.OrgAdmin.Roles)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(auth.RequirePermission(auth.TemplateManage))
+					r.Get("/templates", d.Surat.AdminTemplates)
+					r.Patch("/templates/{templateId}/status", d.Surat.TemplateStatus)
+				})
 			})
 
 			// Inbox selalu milik user yang login. Disposisi butuh INBOX_DISPOSE (diperiksa service,

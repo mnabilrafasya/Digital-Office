@@ -2,41 +2,28 @@ package surat
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
-	"image"
-	"image/color"
 	"image/png"
-	"math"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
-	"golang.org/x/image/draw"
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/math/f64"
-	"golang.org/x/image/math/fixed"
+	"office.backend/internal/platform/watermark"
 )
 
-// Watermark naskah resmi: teks perusahaan diagonal, abu-abu transparan, di belakang isi surat pada
-// setiap halaman. Disisipkan ke naskah terisi (resmi.go) sebagai gambar mengambang di header, jadi
-// tampil sama di editor DevExpress dan ikut ke PDF resmi tanpa perubahan front-end. Hanya surat
-// terbit yang punya naskah terisi, jadi draf tidak pernah ber-watermark.
-
-// watermarkText adalah teks watermark.
-const watermarkText = "PUPUK SRIWIDJAJA"
+// Watermark naskah resmi: teks watermark perusahaan (companies.watermark_text, diatur admin
+// perusahaan) diagonal, abu-abu transparan, di belakang isi surat pada setiap halaman. Disisipkan ke
+// naskah terisi (resmi.go) sebagai gambar mengambang di header, jadi tampil sama di editor DevExpress
+// dan ikut ke PDF resmi tanpa perubahan front-end. Hanya surat terbit yang punya naskah terisi, jadi
+// draf tidak pernah ber-watermark. Gambarnya dibuat paket platform/watermark.
 
 // watermarkConfidentiality adalah sifat surat (kode lookup CONFIDENTIALITY) yang diberi watermark.
 var watermarkConfidentiality = map[string]bool{"BIASA": true, "TERBATAS": true, "RAHASIA": true}
 
-// Ukuran dan rupa watermark.
+// Ukuran dan letak watermark di naskah.
 const (
 	watermarkWidthEMU   = 5760000 // lebar gambar di halaman: 16 cm
-	watermarkFontPx     = 160     // ukuran huruf saat digambar (menentukan ketajaman)
-	watermarkAlpha      = 56      // ketebalan abu-abu (0-255), sekitar 22%
 	watermarkRelID      = "rIdWatermark"
 	watermarkHeaderRel  = "rIdWatermarkHeader"
 	watermarkHeaderPart = "word/header-watermark.xml"
@@ -50,58 +37,17 @@ const (
 	a4HeightTwip = 16838
 )
 
-//go:embed assets/LiberationSans-Bold.ttf
-var watermarkFont []byte
-
-// watermarkPNG adalah gambar watermark (dibuat sekali, teksnya tetap).
-var watermarkPNG = sync.OnceValues(func() ([]byte, error) { return renderWatermark(watermarkText) })
-
-// watermarkFor mengembalikan gambar watermark untuk surat d, atau nil bila sifat suratnya tidak
-// diberi watermark.
+// watermarkFor mengembalikan gambar watermark untuk surat d, atau nil bila perusahaannya tidak
+// memakai watermark atau sifat suratnya tidak diberi watermark.
 func watermarkFor(d *LetterDetail) ([]byte, error) {
-	if d.Confidentiality == nil || !watermarkConfidentiality[d.Confidentiality.Code] {
+	if d.WatermarkText == nil || d.Confidentiality == nil || !watermarkConfidentiality[d.Confidentiality.Code] {
 		return nil, nil
 	}
-	return watermarkPNG()
-}
-
-// renderWatermark menggambar teks miring 45 derajat (naik ke kanan) di atas latar transparan.
-func renderWatermark(text string) ([]byte, error) {
-	f, err := opentype.Parse(watermarkFont)
-	if err != nil {
-		return nil, fmt.Errorf("membaca font watermark: %w", err)
+	text := watermark.Normalize(*d.WatermarkText)
+	if text == "" {
+		return nil, nil
 	}
-	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: watermarkFontPx, DPI: 72, Hinting: font.HintingFull})
-	if err != nil {
-		return nil, fmt.Errorf("menyiapkan font watermark: %w", err)
-	}
-	defer face.Close()
-
-	m := face.Metrics()
-	pad := watermarkFontPx / 4
-	w := font.MeasureString(face, text).Ceil() + 2*pad
-	h := (m.Ascent + m.Descent).Ceil() + 2*pad
-	flat := image.NewNRGBA(image.Rect(0, 0, w, h))
-	(&font.Drawer{
-		Dst:  flat,
-		Src:  image.NewUniform(color.NRGBA{R: 128, G: 128, B: 128, A: watermarkAlpha}),
-		Face: face,
-		Dot:  fixed.P(pad, pad+m.Ascent.Ceil()),
-	}).DrawString(text)
-
-	// Putar 45 derajat berlawanan arah jarum jam di sekitar titik tengah
-	cos := math.Cos(math.Pi / 4)
-	side := int(math.Ceil(float64(w+h) * cos))
-	rotated := image.NewNRGBA(image.Rect(0, 0, side, side))
-	cx, cy, c := float64(w)/2, float64(h)/2, float64(side)/2
-	aff := f64.Aff3{cos, cos, c - cos*cx - cos*cy, -cos, cos, c + cos*cx - cos*cy}
-	draw.BiLinear.Transform(rotated, aff, flat, flat.Bounds(), draw.Over, nil)
-
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, rotated); err != nil {
-		return nil, fmt.Errorf("menyimpan gambar watermark: %w", err)
-	}
-	return buf.Bytes(), nil
+	return watermark.PNG(text)
 }
 
 // headerPartPattern adalah bagian header naskah .docx.

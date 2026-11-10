@@ -59,8 +59,9 @@ func (u *CurrentUser) HasPermission(code string) bool {
 
 // LoginRecord adalah data minimal untuk memeriksa login dengan NIK + password.
 type LoginRecord struct {
-	UserID       int64
-	PasswordHash *string
-	IsActive     bool
-	RoleIsActive bool
+	UserID          int64
+	PasswordHash    *string
+	IsActive        bool
+	RoleIsActive    bool
+	CompanyIsActive bool // perusahaan nonaktif: semua user-nya tidak bisa login
 }

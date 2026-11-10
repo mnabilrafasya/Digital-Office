@@ -13,6 +13,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/notifikasi"
 	"office.backend/internal/platform/db"
 )
 
@@ -85,6 +86,8 @@ type Templates interface {
 	ListTemplates(ctx context.Context, companyCode string, letterTypeID *int64) ([]Template, error)
 	FindTemplate(ctx context.Context, companyCode string, id int64) (*Template, error)
 	TemplateNameTaken(ctx context.Context, companyCode, name string, exceptID int64) (bool, error)
+	ListAdminTemplates(ctx context.Context, companyCode, status, search string) ([]AdminTemplate, error)
+	FindAdminTemplate(ctx context.Context, companyCode string, id int64, lock bool) (*AdminTemplate, error)
 }
 
 // TemplateWriter mengubah template surat di dalam transaksi.
@@ -92,6 +95,8 @@ type TemplateWriter interface {
 	LockTemplate(ctx context.Context, companyCode string, id int64) (*Template, error)
 	InsertTemplate(ctx context.Context, companyCode string, d TemplateData, objectKey string, createdBy int64) (int64, error)
 	UpdateTemplate(ctx context.Context, id int64, d TemplateData, objectKey string) error
+	LockAdminTemplate(ctx context.Context, companyCode string, id int64) (*AdminTemplate, error)
+	SetTemplateActive(ctx context.Context, id int64, active bool) error
 }
 
 // DocumentFiles menyimpan dan membaca file surat (naskah, lampiran) dan file template
@@ -117,9 +122,16 @@ type AuditStore interface {
 	Record(ctx context.Context, e audit.Entry) error
 }
 
+// Notifier mengantre pemberitahuan WhatsApp setelah aksi surat berhasil (dipenuhi
+// notifikasi.Notifier).
+type Notifier interface {
+	Notify(e notifikasi.Event)
+}
+
 // Repos adalah repository yang dibutuhkan Service. Letters, Audit, Inbox, dan TemplateWriter
 // dibuat di atas koneksi atau transaksi; Directory, Lookups, dan Templates hanya membaca di luar
 // transaksi. Files adalah penyimpanan file (MinIO); PDF tidak dipakai lagi (lihat PDFMaker).
+// Notify boleh nil (tanpa pemberitahuan).
 type Repos struct {
 	Letters        func(q db.DBTX) Store
 	Audit          func(q db.DBTX) AuditStore
@@ -130,6 +142,7 @@ type Repos struct {
 	Templates      Templates
 	Files          DocumentFiles
 	PDF            PDFMaker
+	Notify         Notifier
 }
 
 // Service mengelola surat: draf, alur persetujuan, daftar, dan riwayat. Semua surat
@@ -148,6 +161,16 @@ type Service struct {
 func NewService(tx db.TxRunner, conn db.DBTX, repos Repos, loc *time.Location) *Service {
 	return &Service{tx: tx, repos: repos, reader: repos.Letters(conn), inbox: repos.Inbox(conn),
 		audit: repos.Audit(conn), loc: loc}
+}
+
+// notify mengantre pemberitahuan (tidak ada apa-apa bila Repos.Notify nil).
+func (s *Service) notify(events ...notifikasi.Event) {
+	if s.repos.Notify == nil {
+		return
+	}
+	for _, e := range events {
+		s.repos.Notify.Notify(e)
+	}
 }
 
 // letterEntry menyiapkan baris audit untuk satu surat oleh user (IP diambil dari request).

@@ -1,4 +1,5 @@
-// Sinkronisasi unit kerja PSP dari HC PUSRI ke database. Jalankan dari folder backend:
+// Inisiasi unit kerja dari HC PUSRI ke database: hanya menambah unit yang belum ada; unit yang sudah
+// ada dikelola admin perusahaan dan tidak diubah. Jalankan dari folder backend:
 //
 //	go run ./cmd/sync-hc        -> dari snapshot data/hc/organization.json
 //	go run ./cmd/sync-hc -api   -> langsung dari API HC (PUSRI_HC_ORGANIZATION_URL + PUSRI_API_TOKEN di .env)
@@ -63,8 +64,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Sinkronisasi dibatalkan, tidak ada perubahan: %v", err)
 	}
-	fmt.Printf("Unit %s dari HC: %d unit | ditambah %d, diperbarui %d, tetap %d, dinonaktifkan %d\n",
-		*company, len(units), res.Added, res.Updated, res.Unchanged, res.Deactivated)
+	fmt.Printf("Unit %s dari HC: %d unit | ditambah %d, sudah ada %d (tidak diubah)\n",
+		*company, len(units), res.Added, res.Existing)
 }
 
 func readSnapshot(path string) ([]organisasi.HCUnit, error) {

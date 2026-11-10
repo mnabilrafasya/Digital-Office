@@ -58,8 +58,9 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        (SELECT TOP 1 ra.note FROM letter_actions ra
         WHERE ra.letter_id = l.id AND ra.action = 'RETURN'
         ORDER BY ra.id DESC),
-       l.current_version_number, l.created_at, l.updated_at, l.attachments
+       l.current_version_number, l.created_at, l.updated_at, l.attachments, co.watermark_text
 FROM letters l
+JOIN companies co           ON co.code = l.company_code
 JOIN units su               ON su.id = l.sender_unit_id
 JOIN users d                ON d.id = l.drafter_id
 JOIN positions dp           ON dp.id = d.position_id
@@ -94,7 +95,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		&d.Drafter.ID, &d.Drafter.Name, &d.Drafter.PositionName,
 		&assigneeID, &assigneeName, &assigneePos, &d.ForwardedByID,
 		&signerID, &signerName, &signerPos, &signerNIK, &d.LastReturnNote,
-		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt, &attachments,
+		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt, &attachments, &d.WatermarkText,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, db.ErrNotFound

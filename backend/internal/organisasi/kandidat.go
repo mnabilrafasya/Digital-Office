@@ -3,8 +3,10 @@ package organisasi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
+	"office.backend/internal/auth"
 	"office.backend/internal/platform/db"
 )
 
@@ -27,26 +29,44 @@ WHERE un.company_code = @companyCode
   AND u.is_active = 1 AND u.deleted_at IS NULL`
 
 // eligibleUserSQL adalah syarat user yang boleh dipilih sebagai reviewer/approver: user aktif yang
-// role-nya punya permission @permissionCode. Dipakai pencarian kandidat, validasi simpan surat, dan
-// alur persetujuan, sehingga yang muncul di dropdown pasti lolos validasi dan sebaliknya.
+// punya permission @permissionCode, dari role-nya atau dari posisinya (sama dengan hak saat login,
+// lihat auth/hakakses.go). Dipakai pencarian kandidat, validasi simpan surat, dan alur persetujuan,
+// sehingga yang muncul di dropdown pasti lolos validasi dan sebaliknya. Parameternya dari
+// eligibleArgs.
 const eligibleUserSQL = activeUserSQL + `
-  AND EXISTS (
-        SELECT 1 FROM permissions pm
-        WHERE pm.role_id = u.role_id AND pm.code = @permissionCode AND pm.deleted_at IS NULL
+  AND (
+        EXISTS (
+            SELECT 1 FROM permissions pm
+            WHERE pm.role_id = u.role_id AND pm.code = @permissionCode AND pm.deleted_at IS NULL
+        )
+        OR (@viaPosition = 1 AND EXISTS (
+            SELECT 1 FROM lookups lv
+            WHERE lv.id = p.level_id AND lv.deleted_at IS NULL
+              AND lv.code IN (SELECT [value] FROM OPENJSON(@officialLevels))
+        ))
   )`
 
-// ListCandidates mengambil user aktif di satu perusahaan yang role-nya punya permission tertentu
+// eligibleArgs adalah parameter eligibleUserSQL untuk permission tertentu.
+func eligibleArgs(permissionCode string) []any {
+	levels, _ := json.Marshal(auth.OfficialLevels()) // []string selalu bisa di-encode
+	return []any{
+		sql.Named("permissionCode", permissionCode),
+		sql.Named("viaPosition", auth.GrantedByPosition(permissionCode)),
+		sql.Named("officialLevels", string(levels)),
+	}
+}
+
+// ListCandidates mengambil user aktif di satu perusahaan yang punya permission tertentu (role atau posisi)
 func (r *Repository) ListCandidates(ctx context.Context, f CandidateFilter) ([]Candidate, error) {
 	q := `
 SELECT TOP (@limit)
        u.id, u.name, u.employee_number,
        p.name  AS position_name,
        un.name AS unit_name` + eligibleUserSQL
-	args := []any{
+	args := append([]any{
 		sql.Named("limit", f.Limit),
 		sql.Named("companyCode", f.CompanyCode),
-		sql.Named("permissionCode", f.PermissionCode),
-	}
+	}, eligibleArgs(f.PermissionCode)...)
 	if f.Search != "" {
 		q += "\n  AND (u.name LIKE @pattern ESCAPE '\\' OR p.name LIKE @pattern ESCAPE '\\' OR un.name LIKE @pattern ESCAPE '\\')"
 		args = append(args, sql.Named("pattern", db.ContainsPattern(f.Search)))
@@ -81,11 +101,9 @@ func (r *Repository) EligibleUserIDs(ctx context.Context, companyCode, permissio
 	}
 	const q = "SELECT u.id" + eligibleUserSQL + `
   AND u.id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))`
-	return r.idSet(ctx, "memeriksa reviewer/approver", q,
-		sql.Named("ids", db.JSONIDs(ids)),
-		sql.Named("companyCode", companyCode),
-		sql.Named("permissionCode", permissionCode),
-	)
+	args := append([]any{sql.Named("ids", db.JSONIDs(ids)), sql.Named("companyCode", companyCode)},
+		eligibleArgs(permissionCode)...)
+	return r.idSet(ctx, "memeriksa reviewer/approver", q, args...)
 }
 
 // ActiveUserIDs mengembalikan user aktif (activeUserSQL) di antara ids, tanpa syarat permission.
