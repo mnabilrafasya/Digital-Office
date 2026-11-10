@@ -322,15 +322,16 @@ func (s *Service) checkLookups(ctx context.Context, companyCode string, d *Lette
 	return nil
 }
 
-// checkTemplate memastikan template aktif milik perusahaan, dan kalau template dibuat untuk jenis
-// surat tertentu, jenisnya sama dengan jenis surat draf.
+// checkTemplate memastikan template milik perusahaan, dan kalau template dibuat untuk jenis surat
+// tertentu, jenisnya sama dengan jenis surat draf. Template yang dinonaktifkan admin tetap diterima,
+// supaya draf lama yang memakainya tetap bisa disimpan; form hanya menawarkan template aktif.
 func (s *Service) checkTemplate(ctx context.Context, companyCode string, d *LetterDraft) error {
 	if d.TemplateID == nil {
 		return nil
 	}
 	typeID, err := s.repos.Templates.TemplateLetterType(ctx, companyCode, *d.TemplateID)
 	if errors.Is(err, db.ErrNotFound) {
-		return apperr.Invalid("Template tidak ditemukan atau tidak aktif")
+		return apperr.Invalid("Template tidak ditemukan")
 	}
 	if err != nil {
 		return err

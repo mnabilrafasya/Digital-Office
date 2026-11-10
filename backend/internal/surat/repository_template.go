@@ -134,6 +134,86 @@ WHERE id = @id AND deleted_at IS NULL`
 	return nil
 }
 
+// adminTemplateColumns adalah templateColumns ditambah status aktif dan jumlah surat yang memakainya.
+const adminTemplateColumns = templateSelect + `, t.is_active,
+       (SELECT COUNT(*) FROM letters l WHERE l.template_id = t.id AND l.deleted_at IS NULL)
+FROM letter_templates t%s` + templateJoins
+
+func scanAdminTemplate(scan func(...any) error) (*AdminTemplate, error) {
+	var a AdminTemplate
+	t, err := scanTemplate(scanFunc(func(dest ...any) error {
+		return scan(append(dest, &a.IsActive, &a.UsedBy)...)
+	}))
+	if err != nil {
+		return nil, err
+	}
+	a.Template = *t
+	return &a, nil
+}
+
+// scanFunc menjadikan fungsi Scan sebagai penerima scanTemplate.
+type scanFunc func(dest ...any) error
+
+func (f scanFunc) Scan(dest ...any) error { return f(dest...) }
+
+// ListAdminTemplates mengambil semua template milik companyCode (aktif dan nonaktif), urut nama.
+func (r *Repository) ListAdminTemplates(ctx context.Context, companyCode, status, search string) ([]AdminTemplate, error) {
+	q := fmt.Sprintf(adminTemplateColumns, "") + `
+WHERE t.company_code = @companyCode AND t.deleted_at IS NULL
+  AND (@status = '' OR (@status = 'ACTIVE' AND t.is_active = 1) OR (@status = 'INACTIVE' AND t.is_active = 0))`
+	args := []any{sql.Named("companyCode", companyCode), sql.Named("status", status)}
+	if search != "" {
+		q += `
+  AND (t.name LIKE @pattern ESCAPE '\' OR t.description LIKE @pattern ESCAPE '\')`
+		args = append(args, sql.Named("pattern", db.ContainsPattern(search)))
+	}
+	q += "\nORDER BY t.name"
+	rows, err := r.q.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("mengambil template: %w", err)
+	}
+	defer rows.Close()
+	out := []AdminTemplate{}
+	for rows.Next() {
+		a, err := scanAdminTemplate(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, rows.Err()
+}
+
+// FindAdminTemplate mengambil satu template milik companyCode, aktif maupun nonaktif.
+// lock=true mengunci barisnya sampai transaksi selesai.
+func (r *Repository) FindAdminTemplate(ctx context.Context, companyCode string, id int64, lock bool) (*AdminTemplate, error) {
+	hint := ""
+	if lock {
+		hint = " WITH (UPDLOCK, ROWLOCK)"
+	}
+	q := fmt.Sprintf(adminTemplateColumns, hint) + `
+WHERE t.id = @id AND t.company_code = @companyCode AND t.deleted_at IS NULL`
+	a, err := scanAdminTemplate(r.q.QueryRowContext(ctx, q, sql.Named("id", id), sql.Named("companyCode", companyCode)).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, db.ErrNotFound
+	}
+	return a, err
+}
+
+// LockAdminTemplate mengunci satu template (aktif maupun nonaktif) di dalam transaksi.
+func (r *Repository) LockAdminTemplate(ctx context.Context, companyCode string, id int64) (*AdminTemplate, error) {
+	return r.FindAdminTemplate(ctx, companyCode, id, true)
+}
+
+// SetTemplateActive mengaktifkan/menonaktifkan template.
+func (r *Repository) SetTemplateActive(ctx context.Context, id int64, active bool) error {
+	const q = `UPDATE letter_templates SET is_active = @active, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", id), sql.Named("active", active)); err != nil {
+		return fmt.Errorf("mengubah status template: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) findTemplate(ctx context.Context, q string, args ...any) (*Template, error) {
 	t, err := scanTemplate(r.q.QueryRowContext(ctx, q, args...))
 	if errors.Is(err, sql.ErrNoRows) {

@@ -64,9 +64,13 @@ func (s *Service) Templates(ctx context.Context, user *auth.CurrentUser, letterT
 	return items, nil
 }
 
-// OpenTemplate membuka file .docx template untuk diunduh. Pemanggil wajib menutup Body.
+// OpenTemplate membuka file .docx template aktif untuk diunduh (pemegang TEMPLATE_MANAGE juga template
+// nonaktif). Pemanggil wajib menutup Body.
 func (s *Service) OpenTemplate(ctx context.Context, user *auth.CurrentUser, templateID string) (*DocumentFile, error) {
 	t, err := s.findTemplate(ctx, user, templateID)
+	if errors.Is(err, errTemplateNotFound) {
+		t, err = s.manageableTemplate(ctx, user, templateID) // admin: template nonaktif juga bisa diunduh
+	}
 	if err != nil {
 		return nil, err
 	}

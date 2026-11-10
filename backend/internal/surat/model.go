@@ -82,6 +82,7 @@ type LetterDetail struct {
 	InternalID      int64            `json:"-"`
 	ForwardedByID   int64            `json:"-"` // 0 = kosong
 	RowVersion      []byte           `json:"-"`
+	WatermarkText   *string          `json:"-"` // watermark perusahaan surat; nil = tanpa watermark
 	Status          string           `json:"status"`
 	LetterNumber    *string          `json:"letterNumber"`
 	LetterDate      *time.Time       `json:"letterDate"`
@@ -263,6 +264,14 @@ type Template struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
 	ObjectKey   string     `json:"-"`
+}
+
+// AdminTemplate adalah template untuk halaman kelola template (admin): termasuk yang nonaktif,
+// beserta jumlah surat yang memakainya.
+type AdminTemplate struct {
+	Template
+	IsActive bool `json:"isActive"`
+	UsedBy   int  `json:"usedBy"`
 }
 
 // TemplateData adalah isi template yang disimpan, sudah divalidasi.

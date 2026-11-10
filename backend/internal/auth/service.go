@@ -107,7 +107,7 @@ func (s *Service) authenticate(ctx context.Context, nik, password string) (*Curr
 	} else {
 		ok = s.passwords.CheckDummy(password)
 	}
-	if !ok || !rec.IsActive || !rec.RoleIsActive {
+	if !ok || !rec.IsActive || !rec.RoleIsActive || !rec.CompanyIsActive {
 		return nil, ErrInvalidCredentials
 	}
 

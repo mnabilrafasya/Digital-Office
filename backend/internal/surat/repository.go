@@ -169,7 +169,7 @@ func draftArgs(d *LetterDraft) []any {
 func (r *Repository) TemplateLetterType(ctx context.Context, companyCode string, templateID int64) (*int64, error) {
 	const q = `
 SELECT letter_type_id FROM letter_templates
-WHERE id = @id AND company_code = @companyCode AND is_active = 1 AND deleted_at IS NULL`
+WHERE id = @id AND company_code = @companyCode AND deleted_at IS NULL`
 	var typeID *int64
 	err := r.q.QueryRowContext(ctx, q, sql.Named("id", templateID), sql.Named("companyCode", companyCode)).Scan(&typeID)
 	if errors.Is(err, sql.ErrNoRows) {

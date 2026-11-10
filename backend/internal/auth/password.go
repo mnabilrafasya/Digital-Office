@@ -2,12 +2,36 @@ package auth
 
 import (
 	"fmt"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"office.backend/internal/platform/apperr"
 )
 
 // BcryptCost adalah cost hash password user (sama dengan cmd/seed).
 const BcryptCost = 12
+
+// Batas panjang password yang diatur admin. bcrypt hanya membaca 72 byte pertama.
+const (
+	MinPasswordLength = 8
+	maxPasswordBytes  = 72
+)
+
+// HashPassword memvalidasi panjang password lalu membuat hash bcrypt-nya.
+func HashPassword(password string) (string, error) {
+	if utf8.RuneCountInString(password) < MinPasswordLength {
+		return "", apperr.Invalid(fmt.Sprintf("Password minimal %d karakter", MinPasswordLength))
+	}
+	if len(password) > maxPasswordBytes {
+		return "", apperr.Invalid(fmt.Sprintf("Password maksimal %d byte", maxPasswordBytes))
+	}
+	h, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
+	if err != nil {
+		return "", fmt.Errorf("membuat hash password: %w", err)
+	}
+	return string(h), nil
+}
 
 // PasswordChecker memeriksa password bcrypt. Ia menyimpan hash palsu supaya kegagalan login
 // (NIK tidak ada, user nonaktif, belum punya password) memakan waktu yang sama dengan

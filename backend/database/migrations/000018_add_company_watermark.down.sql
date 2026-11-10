@@ -1,0 +1,7 @@
+-- 000018_add_company_watermark.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+ALTER TABLE companies DROP COLUMN IF EXISTS watermark_text;
+
+COMMIT TRANSACTION;

@@ -61,10 +61,11 @@ func TestLogin(t *testing.T) {
 	hash := "hash:benar123"
 	users := &fakeAuthUsers{
 		logins: map[string]*LoginRecord{
-			"1": {UserID: 1, PasswordHash: &hash, IsActive: true, RoleIsActive: true},
-			"2": {UserID: 2, PasswordHash: &hash, IsActive: false, RoleIsActive: true},
-			"3": {UserID: 3, PasswordHash: nil, IsActive: true, RoleIsActive: true},
-			"4": {UserID: 4, PasswordHash: &hash, IsActive: true, RoleIsActive: false},
+			"1": {UserID: 1, PasswordHash: &hash, IsActive: true, RoleIsActive: true, CompanyIsActive: true},
+			"2": {UserID: 2, PasswordHash: &hash, IsActive: false, RoleIsActive: true, CompanyIsActive: true},
+			"3": {UserID: 3, PasswordHash: nil, IsActive: true, RoleIsActive: true, CompanyIsActive: true},
+			"4": {UserID: 4, PasswordHash: &hash, IsActive: true, RoleIsActive: false, CompanyIsActive: true},
+			"5": {UserID: 5, PasswordHash: &hash, IsActive: true, RoleIsActive: true, CompanyIsActive: false},
 		},
 		active: map[int64]*CurrentUser{1: {ID: 1, Name: "Aktif", TokenVersion: 3}},
 	}
@@ -83,6 +84,7 @@ func TestLogin(t *testing.T) {
 		{"user nonaktif", "2", "benar123"},
 		{"belum punya password", "3", "benar123"},
 		{"role nonaktif", "4", "benar123"},
+		{"perusahaan nonaktif", "5", "benar123"},
 	}
 	for _, tt := range gagal {
 		if _, err := svc.Login(ctx, LoginInput{EmployeeNumber: tt.nik, Password: tt.pw}); !errors.Is(err, ErrInvalidCredentials) {
