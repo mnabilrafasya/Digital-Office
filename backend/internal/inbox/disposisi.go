@@ -11,7 +11,6 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
-	"office.backend/internal/notifikasi"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -159,7 +158,6 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 		return nil, err
 	}
 
-	var event notifikasi.Event // dikirim setelah transaksi berhasil
 	err = s.tx.InTx(ctx, func(q db.DBTX) error {
 		items := s.repos.Items(q)
 		it, err := items.LockItem(ctx, user.Company.Code, user.ID, id)
@@ -170,15 +168,15 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 			return errAlreadyForwarded
 		}
 
-		var received []int64 // satu orang cukup satu item inbox per permintaan
+		received := map[int64]bool{} // satu orang cukup satu item inbox per permintaan
 		add := func(targetType string, targetID, recipientID int64) error {
 			f := NewForward{
 				LetterID: it.LetterID, SourceItemID: it.ID, Type: kind,
 				FromUserID: user.ID, FromName: user.Name, FromPosition: user.Position.Name,
 				TargetType: targetType, TargetID: targetID, Note: note,
 			}
-			if !slices.Contains(received, recipientID) {
-				received = append(received, recipientID)
+			if !received[recipientID] {
+				received[recipientID] = true
 				f.RecipientID = recipientID
 			}
 			return items.AddForward(ctx, f)
@@ -201,7 +199,6 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 		if err := items.SetForwarded(ctx, it.ID, status); err != nil {
 			return err
 		}
-		event = forwardEvent(user, it.LetterID, kind, received, note)
 		return s.repos.Audit(q).Record(ctx, audit.Entry{
 			CompanyCode: user.Company.Code,
 			EntityType:  audit.EntityLetter,
@@ -217,20 +214,7 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 	if err != nil {
 		return nil, err
 	}
-	if s.repos.Notify != nil {
-		s.repos.Notify.Notify(event)
-	}
 	return s.detail(ctx, user, id)
-}
-
-// forwardEvent adalah pemberitahuan WhatsApp untuk penerima disposisi atau pengalihan.
-func forwardEvent(user *auth.CurrentUser, letterID int64, kind string, recipients []int64, note *string) notifikasi.Event {
-	event := notifikasi.EventDisposed
-	if kind == ForwardRedirect {
-		event = notifikasi.EventRedirected
-	}
-	return notifikasi.Event{Kind: event, LetterID: letterID, Recipients: recipients,
-		ActorID: user.ID, ActorName: user.Name, Note: note}
 }
 
 // errAlreadyForwarded: item sudah didisposisi atau dialihkan.

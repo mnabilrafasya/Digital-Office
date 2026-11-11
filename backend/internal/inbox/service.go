@@ -12,7 +12,6 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
-	"office.backend/internal/notifikasi"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -56,19 +55,12 @@ type AuditStore interface {
 	Record(ctx context.Context, e audit.Entry) error
 }
 
-// Notifier mengantre pemberitahuan WhatsApp setelah penerusan berhasil (dipenuhi
-// notifikasi.Notifier).
-type Notifier interface {
-	Notify(e notifikasi.Event)
-}
-
 // Repos adalah repository yang dibutuhkan Service. Items dan Audit dibuat di atas koneksi atau
-// transaksi; Directory hanya membaca di luar transaksi. Notify boleh nil (tanpa pemberitahuan).
+// transaksi; Directory hanya membaca di luar transaksi.
 type Repos struct {
 	Items     func(q db.DBTX) Store
 	Audit     func(q db.DBTX) AuditStore
 	Directory Directory
-	Notify    Notifier
 }
 
 // Service menyediakan inbox milik user yang login beserta disposisi dan pengalihannya.

@@ -11,7 +11,6 @@ import (
 	"office.backend/internal/auth"
 	"office.backend/internal/inbox"
 	"office.backend/internal/masterdata"
-	"office.backend/internal/notifikasi"
 	"office.backend/internal/organisasi"
 	"office.backend/internal/perusahaan"
 	"office.backend/internal/platform/httpx"
@@ -31,7 +30,6 @@ type routerDeps struct {
 	Surat      *surat.Handler
 	Inbox      *inbox.Handler
 	Audit      *audit.Handler
-	Notifikasi *notifikasi.Handler
 
 	Tokens auth.TokenVerifier
 	Users  auth.UserLoader
@@ -119,7 +117,6 @@ func newRouter(d routerDeps) http.Handler {
 				r.Get("/audit-logs/export", d.Audit.Export)
 				r.Get("/audit-logs/{logId}", d.Audit.Log)
 				r.Get("/monitoring/letters", d.Audit.Monitor)
-				r.Post("/notifications/test", d.Notifikasi.Test)
 			})
 
 			// Pengaturan perusahaan sendiri (ADMIN): format nomor surat dan watermark
