@@ -64,7 +64,7 @@ Semua di bawah `/api/v1`. Tidak ada hapus permanen (cukup nonaktif), semua perub
 | Endpoint | Fungsi |
 |---|---|
 | `GET /company` | Lihat pengaturan |
-| `PUT /company` `{letterNumberFormat, watermarkText}` | Simpan format nomor dan watermark (kosong = tanpa watermark) |
+| `PUT /company` `{letterNumberFormat, watermarkText}` | Simpan format nomor dan watermark (kosong = tanpa watermark). Watermark hanya ditempel di PDF resmi (unduh/cetak) surat yang sudah disetujui, tidak di tampilan layar |
 | `GET /company/number-preview?format=` | Contoh nomor surat |
 | `GET /company/watermark-preview?text=` | Gambar watermark |
 
