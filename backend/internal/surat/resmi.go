@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -21,16 +20,17 @@ import (
 )
 
 // PDF resmi dibuat oleh editor DevExpress di front-end, supaya PDF sama persis dengan tampilan di
-// layar (mesin tata letak dan font yang sama). Setiap orang melihat salinan miliknya (salinan.go):
+// layar (mesin tata letak dan font yang sama). Satu surat punya satu naskah resmi dan satu PDF resmi
+// yang sama untuk semua orang (drafter, peserta, penerima, penerima disposisi):
 //
-//  1. Setelah surat terbit, front-end mengambil naskah terisi salinannya (FilledDocument):
-//     penanda sistem sudah diisi dan QR sudah di posisinya (penanda.go). Naskah ini juga yang
-//     ditampilkan dalam mode baca, tanpa watermark.
-//  2. Bila PDF resmi salinan itu belum ada (OfficialStatus), editor mengekspor naskah tersebut ke
-//     PDF dan mengunggahnya (SaveFinalPDF). Backend menempel watermark perusahaan di setiap halaman
-//     (watermark.go), lalu menyimpannya. PDF pertama yang diterima dipakai dan tidak bisa diganti;
-//     naskah terisinya disimpan bersamanya.
-//  3. Unduhan dan cetak memakai PDF salinan yang tersimpan (OpenDocument), jadi selalu ber-watermark.
+//  1. Setelah surat terbit, front-end mengambil naskah terisi (FilledDocument): penanda sistem
+//     sudah diisi dan QR sudah di posisinya (penanda.go). Naskah ini juga yang ditampilkan dalam
+//     mode baca, tanpa watermark.
+//  2. Bila PDF resmi belum ada (OfficialStatus), editor mengekspor naskah tersebut ke PDF dan
+//     mengunggahnya (SaveFinalPDF). Backend menempel watermark perusahaan di setiap halaman
+//     (watermark.go), lalu menyimpannya sebagai versi FINAL. PDF pertama yang diterima dipakai dan
+//     tidak bisa diganti; naskah terisinya disimpan bersamanya (filledObjectKey).
+//  3. Unduhan dan cetak memakai PDF resmi yang tersimpan (OpenDocument), jadi selalu ber-watermark.
 
 // MaxFinalPDFBytes adalah batas ukuran PDF resmi yang diunggah editor.
 const MaxFinalPDFBytes = MaxUploadBytes
@@ -45,11 +45,21 @@ type FinalPDFInput struct {
 	ClientIP string // dicatat di audit
 }
 
+// OfficialStatus adalah keadaan naskah resmi surat terbit.
+type OfficialStatus struct {
+	PDFReady bool    `json:"pdfReady"` // PDF resmi sudah tersimpan
+	CopyFor  *string `json:"copyFor"`  // selalu null (fitur salinan per penerima sudah dihapus)
+}
+
+// filledObjectKey adalah nama objek MinIO (bucket documents) untuk naskah terisi yang disimpan
+// bersama PDF resmi. Nama "salinan/.../induk.docx" dipertahankan agar naskah lama tetap terbaca.
+func filledObjectKey(letterUUID string) string {
+	return "salinan/" + letterUUID + "/induk.docx"
+}
+
 // finalPDFSnapshot adalah isi audit_logs.snapshot saat PDF resmi disimpan.
 type finalPDFSnapshot struct {
-	VersionNumber int    `json:"versionNumber,omitempty"` // salinan induk
-	CopyFor       int64  `json:"copyFor,omitempty"`       // pemilik salinan penerima
-	CopyPosition  string `json:"copyPosition,omitempty"`
+	VersionNumber int    `json:"versionNumber"`
 	FileSize      int64  `json:"fileSize"`
 	Pages         int    `json:"pages"`
 	Checksum      string `json:"checksum"`
@@ -57,20 +67,15 @@ type finalPDFSnapshot struct {
 	Watermark     string `json:"watermark,omitempty"` // teks watermark yang ditempel; kosong = tanpa
 }
 
-// FilledDocument membuka naskah terisi (.docx) salinan milik user untuk surat terbit, untuk
-// ditampilkan editor dalam mode baca dan diekspor menjadi PDF resmi. Bila PDF salinan sudah ada,
-// naskah yang disimpan bersamanya yang dikirim. Tidak dicatat sebagai unduhan. Pemanggil wajib
-// menutup Body.
+// FilledDocument membuka naskah terisi (.docx) surat terbit, untuk ditampilkan editor dalam mode
+// baca dan diekspor menjadi PDF resmi. Bila PDF resmi sudah ada, naskah yang disimpan bersamanya
+// yang dikirim. Tidak dicatat sebagai unduhan. Pemanggil wajib menutup Body.
 func (s *Service) FilledDocument(ctx context.Context, user *auth.CurrentUser, letterID string) (*DocumentFile, error) {
 	d, err := s.sentDetail(ctx, user, letterID)
 	if err != nil {
 		return nil, err
 	}
-	c, err := s.copyFor(ctx, d, user)
-	if err != nil {
-		return nil, err
-	}
-	docx, err := s.copyDocx(ctx, d, c)
+	docx, err := s.officialDocx(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -79,10 +84,27 @@ func (s *Service) FilledDocument(ctx context.Context, user *auth.CurrentUser, le
 		Body: io.NopCloser(bytes.NewReader(docx))}, nil
 }
 
-// copyDocx mengambil naskah terisi salinan c: yang tersimpan bila ada, selain itu disusun dari
-// naskah .docx terakhir.
-func (s *Service) copyDocx(ctx context.Context, d *LetterDetail, c officialCopy) ([]byte, error) {
-	key := copyObjectKey(d.ID, c, "docx")
+// OfficialStatus mengembalikan keadaan naskah resmi surat terbit: apakah PDF resminya sudah ada
+// (bila belum, editor front-end membuatnya).
+func (s *Service) OfficialStatus(ctx context.Context, user *auth.CurrentUser, letterID string) (*OfficialStatus, error) {
+	d, err := s.sentDetail(ctx, user, letterID)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.finalVersion(ctx, d.InternalID)
+	if errors.Is(err, errFinalPDFNotReady) {
+		return &OfficialStatus{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &OfficialStatus{PDFReady: true}, nil
+}
+
+// officialDocx mengambil naskah terisi yang tersimpan bila ada, selain itu disusun dari naskah
+// .docx terakhir.
+func (s *Service) officialDocx(ctx context.Context, d *LetterDetail) ([]byte, error) {
+	key := filledObjectKey(d.ID)
 	stored, err := s.repos.Files.DocumentExists(ctx, key)
 	if err != nil {
 		return nil, err
@@ -90,11 +112,11 @@ func (s *Service) copyDocx(ctx context.Context, d *LetterDetail, c officialCopy)
 	if stored {
 		return s.readFile(ctx, key)
 	}
-	return s.fillCopy(ctx, d, c)
+	return s.fillOfficial(ctx, d)
 }
 
-// fillCopy menyusun naskah terisi salinan c dari naskah .docx terakhir surat.
-func (s *Service) fillCopy(ctx context.Context, d *LetterDetail, c officialCopy) ([]byte, error) {
+// fillOfficial menyusun naskah terisi dari naskah .docx terakhir surat.
+func (s *Service) fillOfficial(ctx context.Context, d *LetterDetail) ([]byte, error) {
 	src, err := s.reader.LatestVersion(ctx, d.InternalID, VersionDraft)
 	if errors.Is(err, db.ErrNotFound) {
 		return nil, &apperr.InvalidStateError{Message: "Naskah surat belum diunggah, sehingga naskah resmi belum bisa ditampilkan."}
@@ -110,19 +132,15 @@ func (s *Service) fillCopy(ctx context.Context, d *LetterDetail, c officialCopy)
 	if err != nil {
 		return nil, err
 	}
-	return fillPlaceholders(docx, letterPlaceholders(d, c), qrPNG)
+	return fillPlaceholders(docx, letterPlaceholders(d), qrPNG)
 }
 
-// SaveFinalPDF menyimpan PDF resmi salinan milik user, hasil ekspor editor. Yang boleh: siapa pun
-// yang boleh membuka surat. PDF pertama yang diterima dipakai; bila sudah ada, created=false
-// (unggahan ganda dari dua tab tidak dianggap error). Watermark perusahaan ditempel sebelum disimpan;
-// naskah terisinya ikut disimpan.
+// SaveFinalPDF menyimpan PDF resmi hasil ekspor editor. Yang boleh: siapa pun yang boleh membuka
+// surat. PDF pertama yang diterima dipakai; bila sudah ada, created=false (unggahan ganda dari dua
+// tab tidak dianggap error). Watermark perusahaan ditempel sebelum disimpan; naskah terisinya ikut
+// disimpan.
 func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in FinalPDFInput) (v *DocumentVersion, created bool, err error) {
 	d, err := s.sentDetail(ctx, user, in.LetterID)
-	if err != nil {
-		return nil, false, err
-	}
-	c, err := s.copyFor(ctx, d, user)
 	if err != nil {
 		return nil, false, err
 	}
@@ -134,48 +152,39 @@ func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in F
 	if err != nil {
 		return nil, false, err
 	}
-	in.Data = data
-	sum := sha256.Sum256(in.Data)
-	snap := finalPDFSnapshot{FileSize: int64(len(in.Data)), Pages: pages, Checksum: hex.EncodeToString(sum[:]),
+	sum := sha256.Sum256(data)
+	snap := finalPDFSnapshot{FileSize: int64(len(data)), Pages: pages, Checksum: hex.EncodeToString(sum[:]),
 		Generator: "DEVEXPRESS", Watermark: wmText}
 
 	err = s.tx.InTx(ctx, func(q db.DBTX) error {
 		letters := s.repos.Letters(q)
-		// Kunci baris surat: unggahan bersamaan untuk salinan yang sama menunggu, lalu memakai hasil pertama
+		// Kunci baris surat: unggahan bersamaan menunggu, lalu memakai hasil pertama
 		if _, err := letters.LockByUUID(ctx, user.Company.Code, d.ID); err != nil {
 			return notFoundAs(err)
 		}
-		exists, err := s.copyPDFExists(ctx, d, c)
-		if err != nil || exists {
+		if _, err := letters.LatestVersion(ctx, d.InternalID, VersionFinal); err == nil {
+			return nil // PDF resmi sudah ada
+		} else if !errors.Is(err, db.ErrNotFound) {
 			return err
 		}
-		docx, err := s.fillCopy(ctx, d, c)
+		docx, err := s.fillOfficial(ctx, d)
 		if err != nil {
 			return err
 		}
-		if err := s.repos.Files.PutDocument(ctx, copyObjectKey(d.ID, c, "docx"), docx, DocxContentType); err != nil {
+		if err := s.repos.Files.PutDocument(ctx, filledObjectKey(d.ID), docx, DocxContentType); err != nil {
 			return err
 		}
-
-		if c.isMaster() {
-			// Diulang saat deadlock: objek lama tertinggal tanpa baris versi (tidak pernah dirujuk)
-			key := uuid.NewString()
-			if err := s.repos.Files.PutDocument(ctx, key, in.Data, PDFContentType); err != nil {
-				return err
-			}
-			if snap.VersionNumber, _, err = letters.AddVersion(ctx, NewVersion{
-				LetterID: d.InternalID, Status: d.Status, Type: VersionFinal, ObjectKey: key,
-				FileName: finalFileName(*d.LetterNumber), FileExtension: "pdf",
-				FileSize: snap.FileSize, Checksum: snap.Checksum,
-				CreatedBy: d.Approval.ApprovedBy.ID, CreatedByRole: RoleApprover, // atas nama penandatangan
-			}); err != nil {
-				return err
-			}
-		} else {
-			if err := s.repos.Files.PutDocument(ctx, copyObjectKey(d.ID, c, "pdf"), in.Data, PDFContentType); err != nil {
-				return err
-			}
-			snap.CopyFor, snap.CopyPosition = c.OwnerID, c.PositionName
+		key := uuid.NewString()
+		if err := s.repos.Files.PutDocument(ctx, key, data, PDFContentType); err != nil {
+			return err
+		}
+		if snap.VersionNumber, _, err = letters.AddVersion(ctx, NewVersion{
+			LetterID: d.InternalID, Status: d.Status, Type: VersionFinal, ObjectKey: key,
+			FileName: finalFileName(*d.LetterNumber), FileExtension: "pdf",
+			FileSize: snap.FileSize, Checksum: snap.Checksum,
+			CreatedBy: d.Approval.ApprovedBy.ID, CreatedByRole: RoleApprover, // atas nama penandatangan
+		}); err != nil {
+			return err
 		}
 		created = true
 		e := letterEntry(user, d.InternalID, d.ID, audit.ActionFinalPDF, snap)
@@ -185,31 +194,11 @@ func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in F
 	if err != nil {
 		return nil, false, err
 	}
-	if v, err = s.copyVersion(ctx, d, c); err != nil {
+	if v, err = s.finalVersion(ctx, d.InternalID); err != nil {
 		return nil, false, err
 	}
-	if created && !c.isMaster() {
-		v.FileSize, v.Checksum = snap.FileSize, snap.Checksum
-	}
+	v.CreatedAt = v.CreatedAt.In(s.loc)
 	return v, created, nil
-}
-
-// copyVersion menggambarkan PDF resmi salinan c yang tersimpan. Salinan penerima tidak punya baris
-// letter_versions, jadi VersionNumber-nya 0.
-func (s *Service) copyVersion(ctx context.Context, d *LetterDetail, c officialCopy) (*DocumentVersion, error) {
-	if c.isMaster() {
-		v, err := s.finalVersion(ctx, d.InternalID)
-		if err != nil {
-			return nil, err
-		}
-		v.CreatedAt = v.CreatedAt.In(s.loc)
-		return v, nil
-	}
-	return &DocumentVersion{
-		Type: VersionFinal, FileName: finalFileName(*d.LetterNumber), FileExtension: "pdf",
-		CreatedBy: d.Approval.ApprovedBy, CreatedByRole: RoleApprover, CreatedAt: time.Now().In(s.loc),
-		ObjectKey: copyObjectKey(d.ID, c, "pdf"),
-	}, nil
 }
 
 // sentDetail memuat detail surat yang sudah terbit dan memeriksa aksesnya (termasuk penerima inbox).

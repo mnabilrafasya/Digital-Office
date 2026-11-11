@@ -220,37 +220,3 @@ func timePtr(t sql.NullTime) *time.Time {
 	}
 	return &t.Time
 }
-
-// CopyOwner menentukan salinan surat terbit milik siapa yang dilihat userID: item inbox langsung
-// (TO/CC) milik user sendiri didahulukan; item hasil disposisi/pengalihan ditelusuri lewat
-// letter_forwards sampai penerima langsung asalnya. Mengembalikan pemilik salinan, jenis
-// penerimaannya (TO/CC), dan jabatannya saat ini. ownerID 0 = user tidak punya item inbox surat ini.
-func (r *Repository) CopyOwner(ctx context.Context, letterID, userID int64) (ownerID int64, recipientType, positionName string, err error) {
-	const q = `
-WITH chain AS (
-    SELECT i.id AS start_id, i.user_id, i.source_type, i.recipient_type, i.forward_id, 0 AS depth
-    FROM inbox_items i
-    WHERE i.letter_id = @letterId AND i.user_id = @userId
-    UNION ALL
-    SELECT c.start_id, p.user_id, p.source_type, p.recipient_type, p.forward_id, c.depth + 1
-    FROM chain c
-    JOIN letter_forwards f ON f.id = c.forward_id
-    JOIN inbox_items p     ON p.id = f.source_inbox_item_id
-    WHERE c.source_type = 'FORWARD' AND c.depth < 50
-)
-SELECT TOP 1 c.user_id, c.recipient_type, p.name
-FROM chain c
-JOIN users u     ON u.id = c.user_id
-JOIN positions p ON p.id = u.position_id
-WHERE c.source_type = 'DIRECT'
-ORDER BY c.depth, c.start_id`
-	err = r.q.QueryRowContext(ctx, q, sql.Named("letterId", letterID), sql.Named("userId", userID)).
-		Scan(&ownerID, &recipientType, &positionName)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, "", "", nil
-	}
-	if err != nil {
-		return 0, "", "", fmt.Errorf("menelusuri salinan surat: %w", err)
-	}
-	return ownerID, recipientType, positionName, nil
-}

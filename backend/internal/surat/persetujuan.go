@@ -87,6 +87,9 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 			if err := s.checkSubmittable(ctx, letters, user.Company.Code, l.ID); err != nil {
 				return err
 			}
+			if err := s.checkQRPlaceholder(ctx, letters, l.ID, errNoQRPlaceholderSubmit); err != nil {
+				return err
+			}
 		}
 		if err := s.checkNextAssignee(ctx, user.Company.Code, dec); err != nil {
 			return err
@@ -94,6 +97,10 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 
 		var number *string
 		if dec.Action == Sign {
+			// Diperiksa ulang: reviewer bisa menyimpan naskah baru setelah surat diajukan
+			if err := s.checkQRPlaceholder(ctx, letters, l.ID, errNoQRPlaceholderSign); err != nil {
+				return err
+			}
 			n, err := s.publish(ctx, publishTarget{
 				letters: letters, inbox: s.repos.Inbox(q), audit: s.repos.Audit(q),
 				companyCode: user.Company.Code, letterID: l.ID, letterUUID: id, signerID: user.ID,

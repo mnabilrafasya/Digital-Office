@@ -65,13 +65,11 @@ type Directory interface {
 	AliasMemberIDs(ctx context.Context, companyCode string, aliasIDs []int64) (map[int64][]int64, error)
 }
 
-// InboxStore memasukkan surat terbit ke inbox penerima, mengecek apakah surat ada di inbox
-// seseorang (penerima boleh membuka surat terbit), dan menentukan salinan milik siapa yang dilihat
-// seseorang (salinan.go). Dipenuhi repository inbox.
+// InboxStore memasukkan surat terbit ke inbox penerima dan mengecek apakah surat ada di inbox
+// seseorang (penerima boleh membuka surat terbit). Dipenuhi repository inbox.
 type InboxStore interface {
 	DeliverDirect(ctx context.Context, letterID int64, to, cc []int64) error
 	HasItem(ctx context.Context, letterID, userID int64) (bool, error)
-	CopyOwner(ctx context.Context, letterID, userID int64) (ownerID int64, recipientType, positionName string, err error)
 }
 
 // Lookups memeriksa data acuan yang dirujuk surat (dipenuhi repository masterdata).

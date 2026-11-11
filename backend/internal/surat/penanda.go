@@ -13,13 +13,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"office.backend/internal/organisasi"
 )
 
 // Penanda naskah ditulis di template sebagai ###*Nama*### (format lama ###Nama### juga dikenali).
-// Saat PDF resmi dibuat, penanda sistem diisi dari data surat yang sudah disetujui; penanda lain
-// (isi surat seperti Poin1, IsiSurat) dibiarkan apa adanya karena ditulis sendiri oleh drafter.
+// Saat surat terbit, hanya 4 penanda sistem yang diisi otomatis: NoSurat, TglSurat, Sifat, dan
+// QRCode. Penanda lain (Kepada, Perihal, Poin1, dan seterusnya) dibiarkan apa adanya karena ditulis
+// sendiri oleh drafter. Penanda QRCode wajib ada di naskah (checkQRPlaceholder); QR hanya dipasang di
+// posisi penandanya, di bagian naskah mana pun (isi, tabel, header, footer).
 // Word sering memecah satu penanda ke beberapa potongan teks (<w:t>), misalnya karena riwayat
 // ketikan atau format, jadi pencarian dilakukan pada gabungan teks satu paragraf.
 
@@ -27,17 +27,8 @@ import (
 const (
 	phNoSurat     = "nosurat"
 	phTglSurat    = "tglsurat"
-	phPerihal     = "perihal"
 	phSifat       = "sifat"
-	phLampiran    = "lampiran"
-	phKepada      = "kepada"
-	phTembusan    = "tembusan"
-	phDari        = "dari"
-	phJabatanTTD  = "jabatanpenandatangan"
-	phNamaTTD     = "namapenandatangan"
-	phNoBadge     = "nobadge"
 	phQRCode      = "qrcode"
-	emptyValue    = "-"
 	qrSizeEMU     = 1080000 // 3 cm (1 cm = 360000 EMU)
 	qrMediaName   = "qr-persetujuan"
 	qrRelID       = "rIdQrPersetujuan"
@@ -59,82 +50,19 @@ var pngContentType = regexp.MustCompile(`(?i)Extension="png"`)
 var bulanIndonesia = [...]string{"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
 	"Agustus", "September", "Oktober", "November", "Desember"}
 
-// letterPlaceholders menyusun isi penanda sistem dari detail surat yang sudah disetujui, untuk
-// salinan c: salinan penerima menulis jabatan pemiliknya di "Kepada", salinan induk menulis semua
-// penerima. Nilai yang berisi beberapa baris (Kepada, Tembusan) dipisah "\n".
-func letterPlaceholders(d *LetterDetail, c officialCopy) map[string]string {
-	v := map[string]string{
-		phDari:     d.SenderUnit.Name,
-		phLampiran: attachmentCountText(len(d.Attachments)),
-		phKepada:   recipientLines(d.Recipients.To),
-		phTembusan: recipientLines(d.Recipients.CC),
-	}
-	if !c.isMaster() {
-		v[phKepada] = c.PositionName
-	}
+// letterPlaceholders menyusun isi penanda sistem (selain QR) dari detail surat yang sudah disetujui.
+func letterPlaceholders(d *LetterDetail) map[string]string {
+	v := map[string]string{}
 	if d.LetterNumber != nil {
 		v[phNoSurat] = *d.LetterNumber
-	}
-	if d.Title != nil {
-		v[phPerihal] = *d.Title
 	}
 	if d.Confidentiality != nil {
 		v[phSifat] = d.Confidentiality.Name
 	}
-	if a := d.Approval; a != nil {
-		v[phTglSurat] = tanggalIndonesia(a.ApprovedAt)
-		v[phJabatanTTD] = a.ApprovedBy.PositionName
-		v[phNamaTTD] = a.ApprovedBy.Name
-		v[phNoBadge] = a.EmployeeNumber
+	if d.Approval != nil {
+		v[phTglSurat] = tanggalIndonesia(d.Approval.ApprovedAt)
 	}
 	return v
-}
-
-// recipientLines menulis penerima satu per baris: unit ditulis dengan jabatan pimpinannya
-// (nama unit bila pimpinan tidak tercatat), alias sebagai "Para <level>" (contoh "Para VP").
-func recipientLines(list []LetterRecipient) string {
-	var lines []string
-	for _, r := range list {
-		switch {
-		case r.Alias != nil:
-			lines = append(lines, "Para "+strings.TrimPrefix(r.Alias.Label, organisasi.AliasLabel("")))
-		case r.ResolvedHead != nil && r.ResolvedHead.PositionName != "":
-			lines = append(lines, r.ResolvedHead.PositionName)
-		case r.Unit != nil:
-			lines = append(lines, r.Unit.Name)
-		}
-	}
-	if len(lines) == 0 {
-		return emptyValue
-	}
-	return strings.Join(lines, "\n")
-}
-
-// attachmentCountText menulis jumlah lampiran, contoh "2 (dua) berkas"; tanpa lampiran "-".
-func attachmentCountText(n int) string {
-	if n == 0 {
-		return emptyValue
-	}
-	return fmt.Sprintf("%d (%s) berkas", n, terbilang(n))
-}
-
-// terbilang menulis bilangan 1-99 dalam kata (cukup untuk jumlah lampiran).
-func terbilang(n int) string {
-	satuan := [...]string{"", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan",
-		"sepuluh", "sebelas"}
-	switch {
-	case n < 12:
-		return satuan[n]
-	case n < 20:
-		return satuan[n-10] + " belas"
-	case n < 100:
-		s := satuan[n/10] + " puluh"
-		if n%10 != 0 {
-			s += " " + satuan[n%10]
-		}
-		return s
-	}
-	return strconv.Itoa(n)
 }
 
 // tanggalIndonesia menulis tanggal tanpa jam, contoh "5 November 2026".
@@ -143,9 +71,8 @@ func tanggalIndonesia(t time.Time) string {
 }
 
 // fillPlaceholders mengisi penanda sistem di naskah .docx: teks dari values (kunci huruf kecil)
-// dan gambar QR di posisi ###*QRCode*###. Naskah tanpa penanda QR mendapat QR di akhir isi
-// surat (rata kanan), jadi QR selalu ikut tampil dan ikut diekspor ke PDF. File lain di dalam
-// .docx tidak diubah. Watermark tidak ditanam di sini, tetapi ditempel ke PDF resmi (watermark.go).
+// dan gambar QR di setiap posisi ###*QRCode*###. File lain di dalam .docx tidak diubah. Watermark
+// tidak ditanam di sini, tetapi ditempel ke PDF resmi (watermark.go).
 func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
 	if err != nil {
@@ -179,13 +106,6 @@ func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]by
 		files[f.Name] = filled
 		if placed {
 			qrParts = append(qrParts, f.Name)
-		}
-	}
-	if len(qrParts) == 0 {
-		docPrID++
-		if doc, ok := appendQRParagraph(files[mainDocumentPart], qrDrawingXML(docPrID)); ok {
-			files[mainDocumentPart] = doc
-			qrParts = append(qrParts, mainDocumentPart)
 		}
 	}
 
@@ -232,26 +152,6 @@ func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]by
 		return nil, fmt.Errorf("menulis naskah .docx: %w", err)
 	}
 	return buf.Bytes(), nil
-}
-
-// mainDocumentPart adalah isi utama naskah .docx.
-const mainDocumentPart = "word/document.xml"
-
-// appendQRParagraph menambah paragraf rata kanan berisi QR di akhir isi naskah: sebelum
-// pengaturan halaman terakhir (<w:sectPr> milik body) atau, bila tidak ada, sebelum </w:body>.
-// ok=false bila naskah tidak punya </w:body> (bukan naskah Word yang utuh).
-func appendQRParagraph(doc []byte, drawing string) (out []byte, ok bool) {
-	s := string(doc)
-	end := strings.LastIndex(s, "</w:body>")
-	if end < 0 {
-		return doc, false
-	}
-	at := end
-	if sect := strings.LastIndex(s[:end], "<w:sectPr"); sect > strings.LastIndex(s[:end], "</w:p>") {
-		at = sect
-	}
-	p := `<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r>` + drawing + `</w:r></w:p>`
-	return []byte(s[:at] + p + s[at:]), true
 }
 
 // textNode adalah satu <w:t> di XML: posisi isinya dan teksnya (sudah di-decode).
@@ -351,6 +251,49 @@ func fillPart(data []byte, values map[string]string, newQR func() string) (out [
 	}
 	b.WriteString(src[prev:])
 	return []byte(b.String()), placed
+}
+
+// hasQRPlaceholder mengecek apakah naskah .docx memuat penanda ###*QRCode*### di bagian teks mana
+// pun (isi, tabel, header, footer, catatan kaki). Penanda harus utuh dalam satu paragraf.
+func hasQRPlaceholder(docx []byte) (bool, error) {
+	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
+	if err != nil {
+		return false, fmt.Errorf("membuka naskah .docx: %w", err)
+	}
+	for _, f := range zr.File {
+		if !docxTextPart.MatchString(f.Name) {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return false, fmt.Errorf("membaca naskah .docx: %w", err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return false, fmt.Errorf("membaca naskah .docx: %w", err)
+		}
+		for _, m := range placeholderPattern.FindAllStringSubmatch(partText(string(data)), -1) {
+			if strings.EqualFold(m[1], phQRCode) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// partText menggabungkan teks satu bagian XML naskah per paragraf (dipisah baris baru), sama
+// dengan cara fillPart mencari penanda.
+func partText(src string) string {
+	var b strings.Builder
+	for _, m := range textNodePattern.FindAllStringSubmatchIndex(src, -1) {
+		if m[2] < 0 && m[4] < 0 { // </w:p>
+			b.WriteByte('\n')
+			continue
+		}
+		b.WriteString(html.UnescapeString(src[m[4]:m[5]]))
+	}
+	return b.String()
 }
 
 // textXML menulis nilai teks untuk diletakkan di dalam <w:t>; baris baru menjadi <w:br/>.
