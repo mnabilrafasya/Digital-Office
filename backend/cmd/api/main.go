@@ -13,7 +13,6 @@ import (
 	"office.backend/internal/auth"
 	"office.backend/internal/inbox"
 	"office.backend/internal/masterdata"
-	"office.backend/internal/notifikasi"
 	"office.backend/internal/organisasi"
 	"office.backend/internal/perusahaan"
 	"office.backend/internal/platform/config"
@@ -27,10 +26,6 @@ import (
 
 // deadlockAttempts adalah jumlah percobaan maksimal transaksi yang terkena deadlock SQL Server.
 const deadlockAttempts = 3
-
-// waSender adalah colokan layanan WhatsApp (lihat notifikasi.WhatsAppSender). Selama nil,
-// pemberitahuan WhatsApp nonaktif. Pasang implementasinya di sini, mis. waSender = whatsapp.NewClient(...).
-var waSender notifikasi.WhatsAppSender
 
 func main() {
 	if err := run(); err != nil {
@@ -82,15 +77,6 @@ func run() error {
 	masterRepo := masterdata.NewRepository(conn)
 	orgRepo := organisasi.NewRepository(conn)
 
-	// Pemberitahuan WhatsApp: diantre setelah aksi surat berhasil, dikirim di latar belakang
-	notifyRepo := notifikasi.NewRepository(conn)
-	notifier := notifikasi.New(notifyRepo, waSender)
-	if notifier.Enabled() {
-		go notifier.Run(ctx)
-	} else {
-		log.Println("Pemberitahuan WhatsApp nonaktif: layanan WhatsApp belum dipasang")
-	}
-
 	// Surat memakai fitur lain lewat interface miliknya sendiri (Directory, Lookups, Templates, Inbox)
 	suratService := surat.NewService(db.NewRunner(conn, deadlockAttempts), conn, surat.Repos{
 		Letters:        func(q db.DBTX) surat.Store { return surat.NewRepository(q) },
@@ -102,14 +88,12 @@ func run() error {
 		Templates:      surat.NewRepository(conn),
 		Files:          files,
 		PDF:            pdf.NewMaker(cfg.GotenbergURL),
-		Notify:         notifier,
 	}, cfg.Location)
 
 	inboxService := inbox.NewService(db.NewRunner(conn, deadlockAttempts), conn, inbox.Repos{
 		Items:     func(q db.DBTX) inbox.Store { return inbox.NewRepository(q) },
 		Audit:     func(q db.DBTX) inbox.AuditStore { return audit.NewRepository(q) },
 		Directory: orgRepo,
-		Notify:    notifier,
 	}, cfg.Location)
 
 	// Master data: perusahaan (SUPERADMIN, pengaturan oleh ADMIN) dan unit/jabatan/user (ADMIN)
@@ -135,7 +119,6 @@ func run() error {
 		}),
 		Inbox:             inbox.NewHandler(inboxService),
 		Audit:             audit.NewHandler(audit.NewService(conn, cfg.Location)),
-		Notifikasi:        notifikasi.NewHandler(notifyRepo, waSender),
 		Tokens:            tokens,
 		Users:             users,
 		CORSOrigins:       cfg.CORSAllowedOrigins,

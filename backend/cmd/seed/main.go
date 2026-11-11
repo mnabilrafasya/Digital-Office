@@ -3,7 +3,9 @@
 //
 //	go run ./cmd/seed reference   -> data acuan, idempoten, aman di semua environment
 //	go run ./cmd/seed dev         -> data dummy, hanya APP_ENV=development (butuh reference;
-//	                                 unit PSP diambil dari snapshot HC bila belum ada)
+//	                                 unit PSP diambil dari snapshot HC bila belum ada). Bila
+//	                                 database sudah berisi user, hanya seed lanjutan yang idempoten
+//	                                 (topUpDevSeeds) yang dijalankan.
 //	go run ./cmd/seed all         -> reference, dev, lalu templates (development)
 //	go run ./cmd/seed templates   -> template naskah bawaan ke MinIO, idempoten (butuh user admin)
 //
@@ -32,6 +34,10 @@ const (
 	minSeedPasswordLength = 8
 	bcryptCost            = 12 // sama dengan cost hash palsu di internal/auth
 )
+
+// topUpDevSeeds adalah seed dev yang idempoten (hanya menambah yang belum ada), sehingga juga
+// dijalankan pada database yang sudah berisi data dev.
+var topUpDevSeeds = []string{"005_pkg_alur_lengkap.sql"}
 
 // summaryTables adalah tabel yang jumlah barisnya dicetak di akhir (daftar tetap, bukan input).
 var summaryTables = []string{"companies", "roles", "permissions", "lookups", "units", "positions", "users", "letter_templates"}
@@ -90,18 +96,9 @@ SELECT (SELECT COUNT(*) FROM users),
 	if err != nil {
 		return fmt.Errorf("memeriksa data (sudah menjalankan go run ./cmd/migrate up?): %w", err)
 	}
-	if users > 0 {
-		fmt.Println("Seed dev dilewati: tabel users sudah berisi data.")
-		fmt.Println("Untuk mengulang dari nol (development saja): go run ./cmd/migrate reset --yes, lalu go run ./cmd/seed all")
-		return nil
-	}
 	if levels == 0 {
 		return fmt.Errorf("data acuan belum ada, jalankan dulu: go run ./cmd/seed reference")
 	}
-	if err := syncUnitsIfEmpty(ctx, conn); err != nil {
-		return err
-	}
-
 	password := os.Getenv("SEED_PASSWORD")
 	if len(password) < minSeedPasswordLength {
 		return fmt.Errorf("SEED_PASSWORD di .env wajib diisi, minimal %d karakter", minSeedPasswordLength)
@@ -110,7 +107,21 @@ SELECT (SELECT COUNT(*) FROM users),
 	if err != nil {
 		return fmt.Errorf("membuat hash password: %w", err)
 	}
-	if err := runSet(ctx, conn, "dev", database.DevSeeds, sql.Named("password_hash", string(hash))); err != nil {
+	hashArg := sql.Named("password_hash", string(hash))
+
+	if users > 0 {
+		fmt.Println("Data dev dasar sudah ada: hanya menambah data dev lanjutan yang belum ada.")
+		fmt.Println("Untuk mengulang dari nol (development saja): go run ./cmd/migrate reset --yes, lalu go run ./cmd/seed all")
+		if err := runFiles(ctx, conn, "dev", database.DevSeeds, topUpDevSeeds, hashArg); err != nil {
+			return err
+		}
+		fmt.Println("Seed dev lanjutan selesai.")
+		return nil
+	}
+	if err := syncUnitsIfEmpty(ctx, conn); err != nil {
+		return err
+	}
+	if err := runSet(ctx, conn, "dev", database.DevSeeds, hashArg); err != nil {
 		return err
 	}
 	fmt.Println("Seed dev selesai. Semua user dummy memakai password dari SEED_PASSWORD di .env.")
@@ -157,7 +168,11 @@ func runSet(ctx context.Context, conn *sql.DB, name string, fsys fs.FS, args ...
 		return err
 	}
 	sort.Strings(files)
+	return runFiles(ctx, conn, name, fsys, files, args...)
+}
 
+// runFiles menjalankan file .sql tertentu di fsys (urutan sesuai daftar) dalam satu transaksi.
+func runFiles(ctx context.Context, conn *sql.DB, name string, fsys fs.FS, files []string, args ...any) error {
 	return db.WithTx(ctx, conn, func(tx db.DBTX) error {
 		for _, f := range files {
 			body, err := fs.ReadFile(fsys, f)

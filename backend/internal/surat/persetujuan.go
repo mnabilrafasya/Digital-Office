@@ -8,7 +8,6 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
-	"office.backend/internal/notifikasi"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -54,7 +53,6 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 		return nil, err
 	}
 
-	var events []notifikasi.Event // dikirim setelah transaksi berhasil
 	err = s.tx.InTx(ctx, func(q db.DBTX) error {
 		letters := s.repos.Letters(q)
 		l, err := letters.LockByUUID(ctx, user.Company.Code, id)
@@ -95,21 +93,19 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 		}
 
 		var number *string
-		var pub published
 		if dec.Action == Sign {
-			pub, err = s.publish(ctx, publishTarget{
+			n, err := s.publish(ctx, publishTarget{
 				letters: letters, inbox: s.repos.Inbox(q), audit: s.repos.Audit(q),
 				companyCode: user.Company.Code, letterID: l.ID, letterUUID: id, signerID: user.ID,
 			})
 			if err != nil {
 				return err
 			}
-			number = &pub.number
+			number = &n
 		}
 		if err := letters.ApplyTransition(ctx, l.ID, user.ID, dec, note); err != nil {
 			return err
 		}
-		events = transitionEvents(user, l.ID, l.DrafterID, dec, note, pub)
 		return s.repos.Audit(q).Record(ctx, audit.Entry{
 			CompanyCode: user.Company.Code,
 			EntityType:  audit.EntityLetter,
@@ -125,7 +121,6 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 	if err != nil {
 		return nil, err
 	}
-	s.notify(events...)
 	return s.detail(ctx, user, id)
 }
 

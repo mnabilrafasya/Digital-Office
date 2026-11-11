@@ -118,52 +118,46 @@ type deliverSnapshot struct {
 	CC           []int64 `json:"cc,omitempty"`
 }
 
-// published adalah hasil publish: nomor surat dan penerima di inbox (Kepada dan Tembusan).
-type published struct {
-	number string
-	to, cc []int64
-}
-
 // publish menerbitkan surat yang sedang disetujui approver: memastikan penerima masih bisa
 // dijangkau, memberi nomor, mengirim ke inbox, lalu mencatat pengiriman (DELIVER, oleh sistem).
 // Wajib dipanggil di dalam transaksi, setelah surat dikunci dan sebelum ApplyTransition (CHECK
 // ck_letters_sent_complete mewajibkan nomor, tanggal, dan penandatangan sudah terisi saat status
 // menjadi SENT).
-func (s *Service) publish(ctx context.Context, t publishTarget) (published, error) {
+func (s *Service) publish(ctx context.Context, t publishTarget) (string, error) {
 	letters, companyCode, letterID := t.letters, t.companyCode, t.letterID
 	d, err := letters.LoadDraft(ctx, letterID)
 	if err != nil {
-		return published{}, err
+		return "", err
 	}
 	if err := s.checkReachable(ctx, companyCode, d.Recipients); err != nil {
-		return published{}, err
+		return "", err
 	}
 	to, cc, heads, err := s.resolveRecipients(ctx, companyCode, d.Recipients)
 	if err != nil {
-		return published{}, err
+		return "", err
 	}
 
 	now := time.Now().In(s.loc)
 	seq, unitCode, format, err := letters.NextNumber(ctx, letterID, now.Year())
 	if err != nil {
-		return published{}, err
+		return "", err
 	}
 	number := FormatLetterNumber(format, seq, unitCode, companyCode, now)
 	if err := letters.Publish(ctx, letterID, Publication{
 		Number: number, Seq: seq, Year: now.Year(), ApprovedAt: now, SignerID: t.signerID, UnitHeads: heads,
 	}); err != nil {
-		return published{}, err
+		return "", err
 	}
 	if err := t.inbox.DeliverDirect(ctx, letterID, to, cc); err != nil {
-		return published{}, err
+		return "", err
 	}
 	if err := t.audit.Record(ctx, audit.Entry{
 		CompanyCode: companyCode, EntityType: audit.EntityLetter, EntityID: letterID, EntityUUID: t.letterUUID,
 		Action: audit.ActionDeliver, Snapshot: deliverSnapshot{LetterNumber: number, To: to, CC: cc},
 	}); err != nil {
-		return published{}, err
+		return "", err
 	}
-	return published{number: number, to: to, cc: cc}, nil
+	return number, nil
 }
 
 // resolveRecipients mengubah penerima surat menjadi user: unit -> satu pimpinan aktif, alias ->
