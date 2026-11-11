@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"office.backend/internal/masterdata"
 	"office.backend/internal/organisasi"
 )
 
@@ -15,8 +16,10 @@ const (
 	StatusInReview           = "IN_REVIEW"
 	StatusReturnedToDrafter  = "RETURNED_TO_DRAFTER"
 	StatusInApproval         = "IN_APPROVAL"
-	StatusReturnedToReviewer = "RETURNED_TO_REVIEWER"
+	StatusReturnedToReviewer = "RETURNED_TO_REVIEWER" // hanya data lama (sekarang pengembalian selalu ke drafter)
+	StatusApproved           = "APPROVED"             // surat eksternal keluar: menunggu scan bertanda tangan basah
 	StatusSent               = "SENT"
+	StatusReceived           = "RECEIVED" // surat masuk eksternal yang sudah diunggah dan didisposisikan
 	StatusCancelled          = "CANCELLED"
 )
 
@@ -55,8 +58,29 @@ type LetterDraft struct {
 	Summary           *string
 	SpecialNote       *string
 	ReviewerIDs       []int64 // urutan = step_order
-	ApproverID        *int64
+	ApproverIDs       []int64 // urutan = step_order
 	Recipients        []RecipientRef
+	ExternalRecipient *ExternalParty // tujuan surat eksternal keluar
+	TypeCode          string         // kode jenis surat (diisi saat validasi rujukan/dibaca dari database)
+}
+
+// IsExternal: surat eksternal keluar.
+func (d *LetterDraft) IsExternal() bool { return d.TypeCode == masterdata.TypeExternalOut }
+
+// ExternalParty adalah perusahaan/instansi tujuan surat eksternal keluar.
+type ExternalParty struct {
+	Name      string  `json:"name"`      // nama perusahaan/instansi
+	Address   *string `json:"address"`   // alamat
+	Attention *string `json:"attention"` // UP (untuk perhatian)
+}
+
+// ExternalInfo adalah isi kolom letters.external_info: tujuan surat eksternal keluar, atau data asal
+// surat masuk eksternal.
+type ExternalInfo struct {
+	Recipient       *ExternalParty `json:"recipient,omitempty"`       // surat eksternal keluar
+	Sender          string         `json:"sender,omitempty"`          // surat masuk: pengirim
+	ReferenceNumber string         `json:"referenceNumber,omitempty"` // surat masuk: nomor surat asal
+	LetterDate      string         `json:"letterDate,omitempty"`      // surat masuk: tanggal surat asal (YYYY-MM-DD)
 }
 
 // RecipientRef adalah satu penerima surat: tepat satu dari UnitID atau AliasLevelID terisi.
@@ -68,22 +92,23 @@ type RecipientRef struct {
 
 // LetterLock adalah data surat yang dibaca sambil mengunci barisnya untuk diubah. ID user 0 = kosong.
 type LetterLock struct {
-	ID            int64
-	DrafterID     int64
-	AssigneeID    int64
-	ForwardedByID int64
-	Status        string
-	RowVersion    []byte
+	ID         int64
+	DrafterID  int64
+	AssigneeID int64
+	Status     string
+	TypeCode   string // kode jenis surat ("" = belum dipilih)
+	RowVersion []byte
 }
 
 // LetterDetail adalah detail surat untuk pembuat dan peserta (Lampiran A).
 type LetterDetail struct {
 	ID              string           `json:"id"`
 	InternalID      int64            `json:"-"`
-	ForwardedByID   int64            `json:"-"` // 0 = kosong
 	RowVersion      []byte           `json:"-"`
 	WatermarkText   *string          `json:"-"` // watermark perusahaan surat; nil = tanpa watermark
 	Status          string           `json:"status"`
+	Direction       string           `json:"direction"` // INTERNAL, OUTGOING (Pusri ke luar), INCOMING (luar ke Pusri)
+	External        *ExternalInfo    `json:"external"`  // data eksternal; null untuk surat internal
 	LetterNumber    *string          `json:"letterNumber"`
 	LetterDate      *time.Time       `json:"letterDate"`
 	Title           *string          `json:"title"`
@@ -293,7 +318,7 @@ type LetterListItem struct {
 	SenderUnit      UnitRef    `json:"senderUnit"`
 	CurrentAssignee *PersonRef `json:"currentAssignee"`
 	CurrentStep     *StepRef   `json:"currentStep"`
-	AssigneeStep    int        `json:"-"` // step reviewer milik assignee; 0 bila assignee bukan reviewer
+	AssigneeStep    int        `json:"-"` // step assignee di perannya (reviewer/approver); 0 = tidak ada
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }

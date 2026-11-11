@@ -53,16 +53,16 @@ func TestSaveDocumentAccess(t *testing.T) {
 		wantRole string // "" = ditolak
 		check    func(error) bool
 	}{
-		{"drafter saat draf", letterAt(StatusDraft, 0, 0), andiUser, RoleDrafter, nil},
-		{"drafter saat dikembalikan", letterAt(StatusReturnedToDrafter, 15, 0), andiUser, RoleDrafter, nil},
-		{"reviewer yang memegang", letterAt(StatusInReview, 9, 0), fajarUser, RoleReviewer, nil},
-		{"reviewer dikembalikan approver", letterAt(StatusReturnedToReviewer, 4, 4), dewiUser, RoleReviewer, nil},
-		{"drafter saat direview", letterAt(StatusInReview, 9, 0), andiUser, "", isState},
-		{"reviewer bukan giliran", letterAt(StatusInReview, 9, 0), dewiUser, "", isState},
-		{"approver hanya membaca", letterAt(StatusInApproval, 3, 4), agusUser, "", isState},
-		{"permission review dicabut", letterAt(StatusInReview, 9, 0), &auth.CurrentUser{ID: 9},
+		{"drafter saat draf", letterAt(StatusDraft, 0), andiUser, RoleDrafter, nil},
+		{"drafter saat dikembalikan", letterAt(StatusReturnedToDrafter, 15), andiUser, RoleDrafter, nil},
+		{"reviewer yang memegang", letterAt(StatusInReview, 9), fajarUser, RoleReviewer, nil},
+		{"reviewer dikembalikan approver", letterAt(StatusReturnedToReviewer, 4), dewiUser, RoleReviewer, nil},
+		{"drafter saat direview", letterAt(StatusInReview, 9), andiUser, "", isState},
+		{"reviewer bukan giliran", letterAt(StatusInReview, 9), dewiUser, "", isState},
+		{"approver hanya membaca", letterAt(StatusInApproval, 3), agusUser, "", isState},
+		{"permission review dicabut", letterAt(StatusInReview, 9), &auth.CurrentUser{ID: 9},
 			"", func(err error) bool { return errors.Is(err, apperr.ErrForbidden) }},
-		{"orang luar", letterAt(StatusDraft, 0, 0), outsiderUser, "", func(err error) bool { return errors.Is(err, ErrLetterNotFound) }},
+		{"orang luar", letterAt(StatusDraft, 0), outsiderUser, "", func(err error) bool { return errors.Is(err, ErrLetterNotFound) }},
 	} {
 		err := save(tc.store, tc.user)
 		if tc.wantRole != "" {
@@ -78,7 +78,7 @@ func TestSaveDocumentAccess(t *testing.T) {
 }
 
 func TestSaveAndDownloadDocument(t *testing.T) {
-	store := letterAt(StatusDraft, 0, 0)
+	store := letterAt(StatusDraft, 0)
 	store.participants = map[int64]bool{9: true}
 	svc, audit, _ := newTestLetterServiceFull(store, newFakeRefs())
 	ctx := context.Background()

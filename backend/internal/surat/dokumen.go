@@ -84,11 +84,11 @@ func (s *Service) SaveDocument(ctx context.Context, user *auth.CurrentUser, in D
 		if err != nil {
 			return notFoundAs(err)
 		}
-		reviewers, approverID, err := letters.Participants(ctx, l.ID)
+		reviewers, approvers, err := letters.Participants(ctx, l.ID)
 		if err != nil {
 			return err
 		}
-		if !involves(l.DrafterID, approverID, reviewers, user.ID) {
+		if !involves(l.DrafterID, approvers, reviewers, user.ID) {
 			return ErrLetterNotFound
 		}
 		role := documentEditorRole(l, reviewers, user.ID)
@@ -175,8 +175,8 @@ func (s *Service) readable(ctx context.Context, user *auth.CurrentUser, letterID
 }
 
 // involves: user adalah drafter, reviewer, atau approver surat.
-func involves(drafterID, approverID int64, reviewers []int64, userID int64) bool {
-	return userID == drafterID || userID == approverID || slices.Contains(reviewers, userID)
+func involves(drafterID int64, approvers, reviewers []int64, userID int64) bool {
+	return userID == drafterID || slices.Contains(approvers, userID) || slices.Contains(reviewers, userID)
 }
 
 // documentEditorRole adalah peran user yang boleh mengubah naskah saat ini, atau "" bila tidak boleh.

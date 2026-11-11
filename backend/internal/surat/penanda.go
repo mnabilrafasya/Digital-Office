@@ -71,7 +71,8 @@ func tanggalIndonesia(t time.Time) string {
 }
 
 // fillPlaceholders mengisi penanda sistem di naskah .docx: teks dari values (kunci huruf kecil)
-// dan gambar QR di setiap posisi ###*QRCode*###. File lain di dalam .docx tidak diubah. Watermark
+// dan gambar QR di setiap posisi ###*QRCode*### (qrPNG nil = penanda QR dikosongkan, untuk surat
+// eksternal). File lain di dalam .docx tidak diubah. Watermark
 // tidak ditanam di sini, tetapi ditempel ke PDF resmi (watermark.go).
 func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
@@ -95,14 +96,18 @@ func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]by
 	qrMedia := uniqueMediaFile(files, qrMediaName)
 	docPrID := qrDocPrIDBase
 	var qrParts []string // bagian naskah yang memuat QR (butuh relasi ke gambar)
+	var newQR func() string
+	if qrPNG != nil { // tanpa gambar QR (surat eksternal): penanda QR dikosongkan
+		newQR = func() string {
+			docPrID++
+			return qrDrawingXML(docPrID)
+		}
+	}
 	for _, f := range zr.File {
 		if !docxTextPart.MatchString(f.Name) {
 			continue
 		}
-		filled, placed := fillPart(files[f.Name], values, func() string {
-			docPrID++
-			return qrDrawingXML(docPrID)
-		})
+		filled, placed := fillPart(files[f.Name], values, newQR)
 		files[f.Name] = filled
 		if placed {
 			qrParts = append(qrParts, f.Name)
@@ -168,7 +173,7 @@ type nodeEdit struct {
 }
 
 // fillPart mengisi penanda di satu bagian XML naskah. newQR menghasilkan XML gambar QR untuk
-// setiap kemunculan penanda QR. placed=true bila ada penanda QR yang diganti.
+// setiap kemunculan penanda QR (nil = penanda QR dikosongkan). placed=true bila ada QR yang dipasang.
 func fillPart(data []byte, values map[string]string, newQR func() string) (out []byte, placed bool) {
 	src := string(data)
 	var (
@@ -198,10 +203,11 @@ func fillPart(data []byte, values map[string]string, newQR func() string) (out [
 		var repl string
 		if name == phQRCode {
 			if newQR == nil {
-				continue
+				repl = "" // tanpa QR: penanda dikosongkan supaya tidak tercetak
+			} else {
+				repl = `</w:t>` + newQR() + `<w:t xml:space="preserve">`
+				placed = true
 			}
-			repl = `</w:t>` + newQR() + `<w:t xml:space="preserve">`
-			placed = true
 		} else {
 			value, ok := values[name]
 			if !ok {

@@ -35,11 +35,11 @@ func (r *Repository) Create(ctx context.Context, n NewLetter) (string, error) {
 	const q = `
 INSERT INTO letters (company_code, sender_unit_id, drafter_id,
     letter_type_id, template_id, classification_id, confidentiality_level_id, urgency_level_id,
-    title, summary, special_note)
+    title, summary, special_note, external_info)
 OUTPUT inserted.id, CONVERT(char(36), inserted.uuid)
 VALUES (@companyCode, @senderUnitId, @drafterId,
     @letterTypeId, @templateId, @classificationId, @confidentialityId, @urgencyId,
-    @title, @summary, @specialNote)`
+    @title, @summary, @specialNote, @externalInfo)`
 
 	args := append(draftArgs(n.Draft),
 		sql.Named("companyCode", n.CompanyCode),
@@ -61,7 +61,8 @@ VALUES (@companyCode, @senderUnitId, @drafterId,
 
 // letterLockColumns adalah kolom surat yang dibutuhkan untuk pengecekan akses dan alur persetujuan.
 const letterLockColumns = `
-SELECT id, drafter_id, ISNULL(current_assignee_id, 0), ISNULL(forwarded_by_id, 0), status, row_ver`
+SELECT id, drafter_id, ISNULL(current_assignee_id, 0), status,
+       ISNULL((SELECT lt.code FROM lookups lt WHERE lt.id = letters.letter_type_id), ''), row_ver`
 
 // LockByUUID membaca surat milik companyCode sambil mengunci barisnya (UPDLOCK) sampai transaksi
 // selesai, sehingga perubahan lain pada surat yang sama menunggu. Wajib di dalam transaksi.
@@ -81,7 +82,7 @@ WHERE uuid = @uuid AND company_code = @companyCode AND deleted_at IS NULL`, comp
 func (r *Repository) findLock(ctx context.Context, q, companyCode, uuid string) (*LetterLock, error) {
 	var l LetterLock
 	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode)).
-		Scan(&l.ID, &l.DrafterID, &l.AssigneeID, &l.ForwardedByID, &l.Status, &l.RowVersion)
+		Scan(&l.ID, &l.DrafterID, &l.AssigneeID, &l.Status, &l.TypeCode, &l.RowVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, db.ErrNotFound
 	}
@@ -99,7 +100,7 @@ UPDATE letters
 SET letter_type_id = @letterTypeId, template_id = @templateId,
     classification_id = @classificationId, confidentiality_level_id = @confidentialityId,
     urgency_level_id = @urgencyId, title = @title, summary = @summary, special_note = @specialNote,
-    updated_at = SYSDATETIMEOFFSET()
+    external_info = @externalInfo, updated_at = SYSDATETIMEOFFSET()
 WHERE id = @id`
 
 	if _, err := r.q.ExecContext(ctx, q, append(draftArgs(d), sql.Named("id", letterID))...); err != nil {
@@ -111,20 +112,31 @@ WHERE id = @id`
 // LoadDraft membaca isi draf yang tersimpan (untuk validasi kelengkapan saat submit).
 func (r *Repository) LoadDraft(ctx context.Context, letterID int64) (*LetterDraft, error) {
 	const q = `
-SELECT letter_type_id, template_id, classification_id, confidentiality_level_id, urgency_level_id,
-       title, summary, special_note
-FROM letters
-WHERE id = @id AND deleted_at IS NULL`
+SELECT l.letter_type_id, l.template_id, l.classification_id, l.confidentiality_level_id, l.urgency_level_id,
+       l.title, l.summary, l.special_note, l.external_info, ISNULL(lt.code, '')
+FROM letters l
+LEFT JOIN lookups lt ON lt.id = l.letter_type_id
+WHERE l.id = @id AND l.deleted_at IS NULL`
 
-	var d LetterDraft
+	var (
+		d        LetterDraft
+		external sql.NullString
+	)
 	err := r.q.QueryRowContext(ctx, q, sql.Named("id", letterID)).Scan(
 		&d.LetterTypeID, &d.TemplateID, &d.ClassificationID, &d.ConfidentialityID, &d.UrgencyID,
-		&d.Title, &d.Summary, &d.SpecialNote)
+		&d.Title, &d.Summary, &d.SpecialNote, &external, &d.TypeCode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, db.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("membaca draf surat: %w", err)
+	}
+	info, err := parseExternalInfo(external)
+	if err != nil {
+		return nil, err
+	}
+	if info != nil {
+		d.ExternalRecipient = info.Recipient
 	}
 
 	ps, err := r.loadParticipants(ctx, letterID)
@@ -132,7 +144,7 @@ WHERE id = @id AND deleted_at IS NULL`
 		return nil, err
 	}
 	parts := draftParticipants(ps)
-	d.ReviewerIDs, d.ApproverID = parts.ReviewerIDs, parts.ApproverID
+	d.ReviewerIDs, d.ApproverIDs = parts.ReviewerIDs, parts.ApproverIDs
 
 	rs, err := r.loadRecipients(ctx, letterID)
 	if err != nil {
@@ -151,8 +163,30 @@ func (r *Repository) saveParts(ctx context.Context, letterID int64, d *LetterDra
 	return r.saveRecipients(ctx, letterID, d.Recipients)
 }
 
+// externalInfoJSON menyusun isi kolom external_info dari draf (NULL bila tanpa tujuan eksternal).
+func externalInfoJSON(d *LetterDraft) any {
+	if d.ExternalRecipient == nil {
+		return sql.NullString{}
+	}
+	raw, _ := json.Marshal(ExternalInfo{Recipient: d.ExternalRecipient}) // struct teks selalu berhasil
+	return string(raw)
+}
+
+// parseExternalInfo membaca kolom external_info (nil bila NULL).
+func parseExternalInfo(raw sql.NullString) (*ExternalInfo, error) {
+	if !raw.Valid || raw.String == "" {
+		return nil, nil
+	}
+	var info ExternalInfo
+	if err := json.Unmarshal([]byte(raw.String), &info); err != nil {
+		return nil, fmt.Errorf("membaca data eksternal surat: %w", err)
+	}
+	return &info, nil
+}
+
 func draftArgs(d *LetterDraft) []any {
 	return []any{
+		sql.Named("externalInfo", externalInfoJSON(d)),
 		sql.Named("letterTypeId", d.LetterTypeID),
 		sql.Named("templateId", d.TemplateID),
 		sql.Named("classificationId", d.ClassificationID),

@@ -31,10 +31,12 @@ type letterCore struct {
 const lastMoveSQL = `COALESCE((SELECT MAX(x.created_at) FROM letter_actions x
           WHERE x.letter_id = l.id AND x.action NOT IN ('READ', 'SAVE')), l.created_at)`
 
-// holderStepSQL adalah step reviewer milik pemegang surat l (NULL bila pemegangnya bukan reviewer).
+// holderStepSQL adalah step pemegang surat l di perannya: approver saat IN_APPROVAL/APPROVED,
+// selain itu reviewer (NULL bila pemegangnya bukan peserta di peran itu).
 const holderStepSQL = `(SELECT TOP 1 lp.step_order FROM letter_participants lp
           WHERE lp.letter_id = l.id AND lp.user_id = l.current_assignee_id
-            AND lp.role = 'REVIEWER' AND lp.deleted_at IS NULL)`
+            AND lp.role = CASE WHEN l.status IN ('IN_APPROVAL', 'APPROVED') THEN 'APPROVER' ELSE 'REVIEWER' END
+            AND lp.deleted_at IS NULL)`
 
 // findLetter memuat data pelacakan satu surat milik companyCode (db.ErrNotFound bila tidak ada).
 func (r *Repository) findLetter(ctx context.Context, companyCode, uuid string) (*letterCore, error) {

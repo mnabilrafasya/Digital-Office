@@ -14,6 +14,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 	"office.backend/internal/platform/pdf"
@@ -31,6 +32,10 @@ import (
 //     (watermark.go), lalu menyimpannya sebagai versi FINAL. PDF pertama yang diterima dipakai dan
 //     tidak bisa diganti; naskah terisinya disimpan bersamanya (filledObjectKey).
 //  3. Unduhan dan cetak memakai PDF resmi yang tersimpan (OpenDocument), jadi selalu ber-watermark.
+//
+// Surat eksternal keluar (eksternal.go): langkah 1-2 terjadi saat status APPROVED dan PDF-nya
+// adalah PDF cetak untuk ditandatangani basah (tanpa QR). Setelah approver terakhir mengunggah scan
+// bertanda tangan (SENT), scan itulah PDF resmi surat.
 
 // MaxFinalPDFBytes adalah batas ukuran PDF resmi yang diunggah editor.
 const MaxFinalPDFBytes = MaxUploadBytes
@@ -87,9 +92,16 @@ func (s *Service) FilledDocument(ctx context.Context, user *auth.CurrentUser, le
 // OfficialStatus mengembalikan keadaan naskah resmi surat terbit: apakah PDF resminya sudah ada
 // (bila belum, editor front-end membuatnya).
 func (s *Service) OfficialStatus(ctx context.Context, user *auth.CurrentUser, letterID string) (*OfficialStatus, error) {
-	d, err := s.sentDetail(ctx, user, letterID)
+	id, ok := parseLetterID(letterID)
+	if !ok {
+		return nil, ErrLetterNotFound
+	}
+	d, err := s.detail(ctx, user, id)
 	if err != nil {
 		return nil, err
+	}
+	if !hasOfficialPDF(d.Status) {
+		return nil, errNotOfficialYet
 	}
 	_, err = s.finalVersion(ctx, d.InternalID)
 	if errors.Is(err, errFinalPDFNotReady) {
@@ -128,9 +140,11 @@ func (s *Service) fillOfficial(ctx context.Context, d *LetterDetail) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	qrPNG, err := approvalQRPNG(d)
-	if err != nil {
-		return nil, err
+	var qrPNG []byte // surat eksternal ditandatangani basah: penanda QR dikosongkan
+	if d.Direction == masterdata.DirectionInternal {
+		if qrPNG, err = approvalQRPNG(d); err != nil {
+			return nil, err
+		}
 	}
 	return fillPlaceholders(docx, letterPlaceholders(d), qrPNG)
 }
@@ -143,6 +157,9 @@ func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in F
 	d, err := s.sentDetail(ctx, user, in.LetterID)
 	if err != nil {
 		return nil, false, err
+	}
+	if d.Direction == masterdata.DirectionOutgoing && d.Status == StatusSent {
+		return nil, false, &apperr.InvalidStateError{Message: "Surat eksternal sudah ditandatangani; PDF resminya adalah scan yang diunggah approver."}
 	}
 	pages, err := parseFinalPDF(ctx, in.Data)
 	if err != nil {
@@ -201,7 +218,16 @@ func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in F
 	return v, created, nil
 }
 
-// sentDetail memuat detail surat yang sudah terbit dan memeriksa aksesnya (termasuk penerima inbox).
+// errNotOfficialYet: naskah resmi belum ada karena surat belum disetujui approver terakhir.
+var errNotOfficialYet = &apperr.InvalidStateError{Message: "Naskah resmi baru tersedia setelah surat disetujui approver."}
+
+// hasOfficialPDF: status surat yang punya PDF resmi (atau PDF cetak, untuk surat eksternal APPROVED).
+func hasOfficialPDF(status string) bool {
+	return status == StatusSent || status == StatusApproved || status == StatusReceived
+}
+
+// sentDetail memuat detail surat yang sudah disetujui approver terakhir (SENT, atau APPROVED untuk
+// surat eksternal keluar) dan memeriksa aksesnya (termasuk penerima inbox).
 func (s *Service) sentDetail(ctx context.Context, user *auth.CurrentUser, letterID string) (*LetterDetail, error) {
 	id, ok := parseLetterID(letterID)
 	if !ok {
@@ -211,11 +237,11 @@ func (s *Service) sentDetail(ctx context.Context, user *auth.CurrentUser, letter
 	if err != nil {
 		return nil, err
 	}
-	if d.Status != StatusSent {
-		return nil, &apperr.InvalidStateError{Message: "Naskah resmi baru tersedia setelah surat disetujui approver."}
+	if d.Status != StatusSent && d.Status != StatusApproved {
+		return nil, errNotOfficialYet
 	}
-	if d.Approval == nil || d.LetterNumber == nil { // tidak terjadi untuk SENT (dijaga CHECK)
-		return nil, fmt.Errorf("surat %s berstatus SENT tanpa data persetujuan", d.ID)
+	if d.Approval == nil || d.LetterNumber == nil { // tidak terjadi untuk SENT/APPROVED (dijaga CHECK)
+		return nil, fmt.Errorf("surat %s berstatus %s tanpa data persetujuan", d.ID, d.Status)
 	}
 	return d, nil
 }

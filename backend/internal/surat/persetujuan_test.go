@@ -19,21 +19,21 @@ var (
 	outsiderUser = &auth.CurrentUser{ID: 77, Name: "Luar", Company: auth.UserCompany{Code: "PSP"}}
 )
 
-// letterAt menyiapkan surat lengkap (reviewer [9, 4], approver 3) pada status dan assignee tertentu.
-func letterAt(status string, assignee, forwardedBy int64) *fakeLetterStore {
+// letterAt menyiapkan surat lengkap (reviewer [9, 4], approver [3]) pada status dan assignee tertentu.
+func letterAt(status string, assignee int64) *fakeLetterStore {
 	d, _ := parseDraft(completeInput())
 	var current *PersonRef
 	if assignee != 0 {
 		current = &PersonRef{ID: assignee}
 	}
 	return &fakeLetterStore{
-		lock:       &LetterLock{ID: 1, DrafterID: 15, AssigneeID: assignee, ForwardedByID: forwardedBy, Status: status, RowVersion: testRowVersion},
-		reviewers:  []int64{9, 4},
-		approverID: 3,
-		draft:      d,
+		lock:      &LetterLock{ID: 1, DrafterID: 15, AssigneeID: assignee, Status: status, TypeCode: "NOTA_DINAS", RowVersion: testRowVersion},
+		reviewers: []int64{9, 4},
+		approvers: []int64{3},
+		draft:     d,
 		detail: &LetterDetail{
-			ID: testLetterID, InternalID: 1, Status: status, Drafter: PersonRef{ID: 15},
-			CurrentAssignee: current, ForwardedByID: forwardedBy,
+			ID: testLetterID, InternalID: 1, Status: status, Direction: "INTERNAL", Drafter: PersonRef{ID: 15},
+			CurrentAssignee: current,
 			Steps: []LetterStep{
 				{Role: RoleReviewer, Order: 1, User: StepUser{ID: 9}},
 				{Role: RoleReviewer, Order: 2, User: StepUser{ID: 4}},
@@ -44,7 +44,7 @@ func letterAt(status string, assignee, forwardedBy int64) *fakeLetterStore {
 }
 
 func TestSubmitRecordsTransitionAndAudit(t *testing.T) {
-	store := letterAt(StatusDraft, 0, 0)
+	store := letterAt(StatusDraft, 0)
 	svc, audit := newTestLetterServiceWithAudit(store, newFakeRefs())
 
 	_, err := svc.Submit(context.Background(), andiUser, TransitionInput{LetterID: testLetterID, Note: ptr("diabaikan"), ClientIP: "10.0.0.5"})
@@ -65,13 +65,45 @@ func TestSubmitRecordsTransitionAndAudit(t *testing.T) {
 	}
 }
 
+// Approver bertingkat: approver 1 meneruskan ke approver 2; nomor baru terbit di approver terakhir.
+func TestMultipleApprovers(t *testing.T) {
+	ratnaUser := &auth.CurrentUser{ID: 2, Name: "Ratna", Company: auth.UserCompany{Code: "PSP"}, Permissions: []string{auth.LetterApprove}}
+	store := letterAt(StatusInApproval, 3)
+	store.approvers = []int64{3, 2}
+	store.detail.Steps = append(store.detail.Steps, LetterStep{Role: RoleApprover, Order: 2, User: StepUser{ID: 2}})
+	refs := newFakeRefs()
+	refs.approvers[2] = true
+	refs.unitHeads = map[int64]int64{7: 50, 9: 51}
+	refs.aliasMembers = map[int64][]int64{60: {52}}
+	svc := newTestLetterService(store, refs)
+	ctx := context.Background()
+
+	if _, err := svc.Approve(ctx, ratnaUser, TransitionInput{LetterID: testLetterID}); err == nil {
+		t.Error("approver 2 menyetujui sebelum gilirannya")
+	}
+	if _, err := svc.Approve(ctx, agusUser, TransitionInput{LetterID: testLetterID}); err != nil {
+		t.Fatal(err)
+	}
+	if d := store.applied; d.Action != Approve || d.To != StatusInApproval || d.AssigneeID != 2 || store.published != nil {
+		t.Errorf("approver 1: %+v published=%v", d, store.published)
+	}
+	store.lock.AssigneeID = 2
+	if _, err := svc.Approve(ctx, ratnaUser, TransitionInput{LetterID: testLetterID}); err != nil {
+		t.Fatal(err)
+	}
+	if d := store.applied; d.Action != Sign || d.To != StatusSent || store.published == nil || store.published.SignerID != 2 {
+		t.Errorf("approver terakhir: %+v published=%+v", d, store.published)
+	}
+}
+
 func TestReturnPassesNote(t *testing.T) {
-	store := letterAt(StatusInApproval, 3, 4)
+	store := letterAt(StatusInApproval, 3)
 	if _, err := newTestLetterService(store, newFakeRefs()).Return(context.Background(), agusUser,
 		TransitionInput{LetterID: testLetterID, Note: ptr("  Perbaiki lampiran  ")}); err != nil {
 		t.Fatalf("Return: %v", err)
 	}
-	if store.applied.To != StatusReturnedToReviewer || store.applied.AssigneeID != 4 || *store.appliedNote != "Perbaiki lampiran" {
+	// Pengembalian oleh approver selalu ke drafter
+	if store.applied.To != StatusReturnedToDrafter || store.applied.AssigneeID != 15 || *store.appliedNote != "Perbaiki lampiran" {
 		t.Errorf("transisi salah: %+v note=%q", store.applied, *store.appliedNote)
 	}
 }
@@ -117,31 +149,31 @@ func TestTransitionRejected(t *testing.T) {
 		run   run
 		check func(error) bool
 	}{
-		{"bukan peserta", letterAt(StatusDraft, 0, 0), nil, submit(outsiderUser), notFound},
+		{"bukan peserta", letterAt(StatusDraft, 0), nil, submit(outsiderUser), notFound},
 		{"surat tidak ada", &fakeLetterStore{}, nil, submit(andiUser), notFound},
-		{"submit dua kali", letterAt(StatusInReview, 9, 0), nil, submit(andiUser), isState("sudah diproses")},
-		{"bukan giliran reviewer", letterAt(StatusInReview, 4, 9), nil, approve(fajarUser), isState("bukan giliran")},
-		{"reviewer mencoba submit", letterAt(StatusDraft, 0, 0), nil, submit(fajarUser), isState("bukan giliran")},
-		{"permission review dicabut", letterAt(StatusInReview, 9, 0), nil,
+		{"submit dua kali", letterAt(StatusInReview, 9), nil, submit(andiUser), isState("sudah diproses")},
+		{"bukan giliran reviewer", letterAt(StatusInReview, 4), nil, approve(fajarUser), isState("bukan giliran")},
+		{"reviewer mencoba submit", letterAt(StatusDraft, 0), nil, submit(fajarUser), isState("bukan giliran")},
+		{"permission review dicabut", letterAt(StatusInReview, 9), nil,
 			approve(&auth.CurrentUser{ID: 9, Company: auth.UserCompany{Code: "PSP"}}),
 			func(err error) bool { return errors.Is(err, apperr.ErrForbidden) }},
 		{"submit belum lengkap", func() *fakeLetterStore {
-			s := letterAt(StatusDraft, 0, 0)
+			s := letterAt(StatusDraft, 0)
 			s.draft.Title = nil
 			return s
 		}(), nil, submit(andiUser), isValidation("perihal")},
-		{"submit unit tanpa pimpinan", letterAt(StatusDraft, 0, 0),
+		{"submit unit tanpa pimpinan", letterAt(StatusDraft, 0),
 			func(r *fakeRefs) { r.headlessUnits = []string{"Departemen SDM"} }, submit(andiUser), isState("Departemen SDM")},
-		{"submit alias tanpa anggota", letterAt(StatusDraft, 0, 0),
+		{"submit alias tanpa anggota", letterAt(StatusDraft, 0),
 			func(r *fakeRefs) { r.emptyAliases = []string{"Seluruh Staf"} }, submit(andiUser), isState("Seluruh Staf")},
-		{"submit reviewer sudah nonaktif", letterAt(StatusDraft, 0, 0),
+		{"submit reviewer sudah nonaktif", letterAt(StatusDraft, 0),
 			func(r *fakeRefs) { r.inactiveUsers = map[int64]bool{4: true} }, submit(andiUser), isValidation("Reviewer tidak ditemukan")},
-		{"reviewer berikutnya nonaktif", letterAt(StatusInReview, 9, 0),
+		{"reviewer berikutnya nonaktif", letterAt(StatusInReview, 9),
 			func(r *fakeRefs) { r.inactiveUsers = map[int64]bool{4: true} }, approve(fajarUser), isState("Reviewer berikutnya")},
-		{"drafter nonaktif saat dikembalikan", letterAt(StatusInReview, 9, 0),
+		{"drafter nonaktif saat dikembalikan", letterAt(StatusInReview, 9),
 			func(r *fakeRefs) { r.inactiveUsers = map[int64]bool{15: true} }, returnWith(fajarUser, ptr("revisi")), isState("Pembuat surat")},
-		{"return tanpa catatan", letterAt(StatusInReview, 9, 0), nil, returnWith(fajarUser, ptr("   ")), isValidation("Catatan wajib")},
-		{"catatan terlalu panjang", letterAt(StatusInReview, 9, 0), nil,
+		{"return tanpa catatan", letterAt(StatusInReview, 9), nil, returnWith(fajarUser, ptr("   ")), isValidation("Catatan wajib")},
+		{"catatan terlalu panjang", letterAt(StatusInReview, 9), nil,
 			returnWith(fajarUser, ptr(strings.Repeat("a", 1001))), isValidation("maksimal 1000")},
 	}
 	for _, tt := range tests {
@@ -160,7 +192,7 @@ func TestTransitionRejected(t *testing.T) {
 }
 
 func TestGetRecordsReadForAssignee(t *testing.T) {
-	store := letterAt(StatusInReview, 9, 0)
+	store := letterAt(StatusInReview, 9)
 	svc := newTestLetterService(store, newFakeRefs())
 	ctx := context.Background()
 
@@ -188,7 +220,7 @@ func TestPresentLastReturnNote(t *testing.T) {
 		status string
 		want   bool
 	}{{StatusReturnedToDrafter, true}, {StatusInReview, false}} {
-		store := letterAt(tc.status, 15, 0)
+		store := letterAt(tc.status, 15)
 		store.detail.LastReturnNote = ptr("revisi")
 		d, err := newTestLetterService(store, newFakeRefs()).Get(context.Background(), andiUser, testLetterID)
 		if err != nil || (d.LastReturnNote != nil) != tc.want {
@@ -233,7 +265,7 @@ func TestLetterList(t *testing.T) {
 }
 
 func TestHistoryAccess(t *testing.T) {
-	store := letterAt(StatusInReview, 9, 0)
+	store := letterAt(StatusInReview, 9)
 	store.participants = map[int64]bool{9: true}
 	svc := newTestLetterService(store, newFakeRefs())
 	for _, tc := range []struct {

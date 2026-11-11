@@ -23,6 +23,7 @@ const ActionEdit = "EDIT"
 type Store interface {
 	// Draf
 	Create(ctx context.Context, n NewLetter) (string, error)
+	CreateIncoming(ctx context.Context, n NewIncoming) (id int64, uuid string, err error)
 	UpdateDraft(ctx context.Context, letterID int64, d *LetterDraft) error
 	LoadDraft(ctx context.Context, letterID int64) (*LetterDraft, error)
 
@@ -30,7 +31,7 @@ type Store interface {
 	LockByUUID(ctx context.Context, companyCode, uuid string) (*LetterLock, error)
 	FindByUUID(ctx context.Context, companyCode, uuid string) (*LetterLock, error)
 	IsParticipant(ctx context.Context, letterID, userID int64) (bool, error)
-	Participants(ctx context.Context, letterID int64) (reviewers []int64, approverID int64, err error)
+	Participants(ctx context.Context, letterID int64) (reviewers, approvers []int64, err error)
 	ApplyTransition(ctx context.Context, letterID, actorID int64, d Decision, note *string) error
 	RecordRead(ctx context.Context, letterID, userID int64, role string) error
 
@@ -69,12 +70,17 @@ type Directory interface {
 // seseorang (penerima boleh membuka surat terbit). Dipenuhi repository inbox.
 type InboxStore interface {
 	DeliverDirect(ctx context.Context, letterID int64, to, cc []int64) error
+	// DeliverIncoming memasukkan surat masuk eksternal ke inbox pengunggah (sudah didisposisikan) dan
+	// mendisposisikannya ke setiap penerima.
+	DeliverIncoming(ctx context.Context, letterID, fromUserID int64, fromName, fromPosition string, recipients []int64, note *string) error
 	HasItem(ctx context.Context, letterID, userID int64) (bool, error)
 }
 
 // Lookups memeriksa data acuan yang dirujuk surat (dipenuhi repository masterdata).
 type Lookups interface {
 	LookupCategories(ctx context.Context, companyCode string, ids []int64) (map[int64]string, error)
+	LookupCode(ctx context.Context, companyCode string, id int64) (string, error)
+	LookupID(ctx context.Context, companyCode, category, code string) (int64, error)
 }
 
 // Templates membaca template surat: daftar, satu template, dan pemeriksaan template yang dirujuk draf.

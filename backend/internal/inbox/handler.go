@@ -82,7 +82,7 @@ func (h *Handler) Redirect(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, d)
 }
 
-// List menangani GET /api/v1/inbox?status=&q=&page=&pageSize=
+// List menangani GET /api/v1/inbox?status=&category=INTERNAL|EXTERNAL&q=&page=&pageSize=
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	page, err := httpx.ParsePage(query)
@@ -92,6 +92,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.List(r.Context(), auth.CurrentUserFrom(r.Context()), ListQuery{
 		Status:   query.Get("status"),
+		Category: query.Get("category"),
 		Search:   query.Get("q"),
 		Page:     page.Page,
 		PageSize: page.PageSize,

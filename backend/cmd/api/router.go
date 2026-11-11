@@ -77,6 +77,8 @@ func newRouter(d routerDeps) http.Handler {
 			r.Route("/letters", func(r chi.Router) {
 				r.Get("/", d.Surat.List)
 				r.With(auth.RequirePermission(auth.LetterCreate)).Post("/", d.Surat.Create)
+				// Surat masuk eksternal: siapa pun mencatat scan + data asal + tujuan disposisi
+				r.With(auth.RequirePermission(auth.LetterCreate)).Post("/incoming", d.Surat.CreateIncoming)
 
 				// Akses per surat (drafter/peserta) dan permission peran diperiksa service
 				r.Route("/{letterId}", func(r chi.Router) {
@@ -90,6 +92,7 @@ func newRouter(d routerDeps) http.Handler {
 					r.Get("/document/filled", d.Surat.FilledDocument)
 					r.Get("/document/status", d.Surat.OfficialStatus)
 					r.Put("/document/final", d.Surat.SaveFinalPDF)
+					r.Put("/document/signed", d.Surat.UploadSigned)
 					r.Post("/attachments", d.Surat.AddAttachment)
 					r.Get("/attachments/{attachmentId}", d.Surat.Attachment)
 					r.Delete("/attachments/{attachmentId}", d.Surat.RemoveAttachment)

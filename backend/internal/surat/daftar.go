@@ -20,14 +20,15 @@ const (
 func allStatuses() []string {
 	return []string{
 		StatusDraft, StatusInReview, StatusReturnedToDrafter, StatusInApproval,
-		StatusReturnedToReviewer, StatusSent, StatusCancelled,
+		StatusReturnedToReviewer, StatusApproved, StatusSent, StatusReceived, StatusCancelled,
 	}
 }
 
-// taskStatuses adalah status yang berarti surat menunggu tindakan penerima tugasnya.
+// taskStatuses adalah status yang berarti surat menunggu tindakan penerima tugasnya (APPROVED:
+// approver terakhir surat eksternal mengunggah scan bertanda tangan).
 func taskStatuses() []string {
 	return []string{
-		StatusInReview, StatusInApproval, StatusReturnedToReviewer, StatusReturnedToDrafter,
+		StatusInReview, StatusInApproval, StatusApproved, StatusReturnedToReviewer, StatusReturnedToDrafter,
 	}
 }
 
@@ -89,14 +90,16 @@ func (s *Service) List(ctx context.Context, user *auth.CurrentUser, lq LetterLis
 }
 
 // currentStep adalah tahap yang sedang berjalan, atau nil bila surat tidak sedang di reviewer/approver.
-func currentStep(status string, reviewerStep int) *StepRef {
+// step adalah urutan penerima tugas di perannya (0 = tidak diketahui).
+func currentStep(status string, step int) *StepRef {
+	if step == 0 {
+		return nil
+	}
 	switch status {
 	case StatusInReview, StatusReturnedToReviewer:
-		if reviewerStep > 0 {
-			return &StepRef{Role: RoleReviewer, Order: reviewerStep}
-		}
-	case StatusInApproval:
-		return &StepRef{Role: RoleApprover, Order: 1}
+		return &StepRef{Role: RoleReviewer, Order: step}
+	case StatusInApproval, StatusApproved:
+		return &StepRef{Role: RoleApprover, Order: step}
 	}
 	return nil
 }

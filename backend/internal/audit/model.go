@@ -46,6 +46,8 @@ const (
 	ActionTemplateUpdate   = "TEMPLATE_UPDATE"   // data atau file template surat diganti
 	ActionExport           = "AUDIT_EXPORT"      // audit log diekspor
 	ActionTemplateStatus   = "TEMPLATE_STATUS"   // template diaktifkan/dinonaktifkan admin
+	ActionSignedUpload     = "UPLOAD_SIGNED"     // scan surat eksternal bertanda tangan basah diunggah
+	ActionIncoming         = "INCOMING_RECEIVE"  // surat masuk eksternal dicatat dan didisposisikan
 )
 
 // Aksi master data (kolom action). Snapshot berisi data baru, dan data lama untuk perubahan.

@@ -37,3 +37,28 @@ FROM OPENJSON(@items) WITH (user_id BIGINT '$.user', recipient_type VARCHAR(10) 
 	}
 	return nil
 }
+
+// DeliverIncoming memasukkan surat masuk eksternal ke inbox pengunggahnya (DIRECT, langsung
+// DISPOSED: ia mencatat sekaligus mendisposisikan) lalu mendisposisikannya ke setiap penerima
+// (FORWARD, UNREAD). Dipanggil alur surat di dalam transaksi pencatatan surat masuk.
+func (r *Repository) DeliverIncoming(ctx context.Context, letterID, fromUserID int64, fromName, fromPosition string,
+	recipients []int64, note *string) error {
+	const source = `
+INSERT INTO inbox_items (letter_id, user_id, source_type, recipient_type, status, read_at)
+OUTPUT inserted.id
+VALUES (@letterId, @userId, 'DIRECT', 'TO', 'DISPOSED', SYSDATETIMEOFFSET())`
+	var itemID int64
+	if err := r.q.QueryRowContext(ctx, source, sql.Named("letterId", letterID), sql.Named("userId", fromUserID)).Scan(&itemID); err != nil {
+		return fmt.Errorf("mencatat surat masuk di inbox pengunggah: %w", err)
+	}
+	for _, id := range recipients {
+		if err := r.AddForward(ctx, NewForward{
+			LetterID: letterID, SourceItemID: itemID, Type: ForwardDisposition,
+			FromUserID: fromUserID, FromName: fromName, FromPosition: fromPosition,
+			TargetType: TargetUser, TargetID: id, RecipientID: id, Note: note,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}

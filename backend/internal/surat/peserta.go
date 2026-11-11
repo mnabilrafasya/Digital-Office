@@ -17,14 +17,12 @@ func (s *Service) checkParticipants(ctx context.Context, companyCode string, d *
 	if !allIn(d.ReviewerIDs, reviewers) {
 		return apperr.Invalid("Reviewer tidak ditemukan, tidak aktif, atau tidak berwenang memaraf surat")
 	}
-	if d.ApproverID != nil {
-		approver, err := s.repos.Directory.EligibleUserIDs(ctx, companyCode, auth.LetterApprove, []int64{*d.ApproverID})
-		if err != nil {
-			return err
-		}
-		if !approver[*d.ApproverID] {
-			return apperr.Invalid("Approver tidak ditemukan, tidak aktif, atau tidak berwenang menandatangani surat")
-		}
+	approvers, err := s.repos.Directory.EligibleUserIDs(ctx, companyCode, auth.LetterApprove, d.ApproverIDs)
+	if err != nil {
+		return err
+	}
+	if !allIn(d.ApproverIDs, approvers) {
+		return apperr.Invalid("Approver tidak ditemukan, tidak aktif, atau tidak berwenang menandatangani surat")
 	}
 	return nil
 }

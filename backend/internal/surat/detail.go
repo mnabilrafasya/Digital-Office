@@ -5,6 +5,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/db"
 )
 
@@ -38,14 +39,15 @@ func (s *Service) Get(ctx context.Context, user *auth.CurrentUser, letterID stri
 }
 
 // detail memuat detail surat (uuid sudah baku) dan memeriksa akses, tanpa mencatat READ. Yang
-// boleh: drafter, peserta, dan penerima inbox surat yang sudah terbit (langsung atau penerusan).
+// boleh: drafter, peserta, dan pemilik inbox surat yang sudah terbit atau surat masuk eksternal
+// (langsung atau penerusan).
 func (s *Service) detail(ctx context.Context, user *auth.CurrentUser, id string) (*LetterDetail, error) {
 	d, err := s.reader.FindDetail(ctx, user.Company.Code, id)
 	if err != nil {
 		return nil, notFoundAs(err)
 	}
 	if !d.IsParticipant(user.ID) {
-		if d.Status != StatusSent {
+		if d.Status != StatusSent && d.Status != StatusReceived {
 			return nil, ErrLetterNotFound
 		}
 		received, err := s.inbox.HasItem(ctx, d.InternalID, user.ID)
@@ -98,13 +100,13 @@ func (s *Service) present(d *LetterDetail, user *auth.CurrentUser) {
 
 // detailState menyusun state workflow dari detail surat.
 func detailState(d *LetterDetail) State {
-	s := State{Status: d.Status, DrafterID: d.Drafter.ID, ForwardedByID: d.ForwardedByID}
+	s := State{Status: d.Status, DrafterID: d.Drafter.ID, External: d.Direction == masterdata.DirectionOutgoing}
 	if d.CurrentAssignee != nil {
 		s.AssigneeID = d.CurrentAssignee.ID
 	}
-	for _, step := range d.Steps { // repository mengurutkan reviewer sesuai step
+	for _, step := range d.Steps { // repository mengurutkan reviewer lalu approver, sesuai step
 		if step.Role == RoleApprover {
-			s.ApproverID = step.User.ID
+			s.Approvers = append(s.Approvers, step.User.ID)
 		} else {
 			s.Reviewers = append(s.Reviewers, step.User.ID)
 		}

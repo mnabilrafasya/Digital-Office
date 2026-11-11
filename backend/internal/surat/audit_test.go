@@ -6,7 +6,7 @@ import (
 )
 
 func TestCreateRecordsAudit(t *testing.T) {
-	store := letterAt(StatusDraft, 0, 0)
+	store := letterAt(StatusDraft, 0)
 	svc, audit := newTestLetterServiceWithAudit(store, newFakeRefs())
 	if _, err := svc.Create(context.Background(), andiUser, completeInput()); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -24,7 +24,7 @@ func TestOpeningSecretLetterIsRecorded(t *testing.T) {
 		code string
 		want int
 	}{{ConfidentialitySecret, 1}, {"TERBATAS", 0}, {"BIASA", 0}} {
-		store := letterAt(StatusDraft, 0, 0)
+		store := letterAt(StatusDraft, 0)
 		store.detail.Confidentiality = &LookupRef{Code: tc.code}
 		svc, audit := newTestLetterServiceWithAudit(store, newFakeRefs())
 		if _, err := svc.Get(context.Background(), andiUser, testLetterID); err != nil {
@@ -37,7 +37,7 @@ func TestOpeningSecretLetterIsRecorded(t *testing.T) {
 }
 
 func TestDraftDownloadIsRecorded(t *testing.T) {
-	store := letterAt(StatusDraft, 0, 0)
+	store := letterAt(StatusDraft, 0)
 	svc, audit := newTestLetterServiceWithAudit(store, newFakeRefs())
 	ctx := context.Background()
 	if _, _, err := svc.SaveDocument(ctx, andiUser, DocumentInput{LetterID: testLetterID, FileName: "Naskah.docx", Data: testDocx}); err != nil {

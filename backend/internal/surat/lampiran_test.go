@@ -60,7 +60,7 @@ func TestAttachmentAccess(t *testing.T) {
 		return err
 	}
 	isState := func(err error) bool { var e *apperr.InvalidStateError; return errors.As(err, &e) }
-	reviewerStore := letterAt(StatusDraft, 0, 0)
+	reviewerStore := letterAt(StatusDraft, 0)
 	reviewerStore.participants = map[int64]bool{9: true}
 
 	for _, tc := range []struct {
@@ -69,12 +69,12 @@ func TestAttachmentAccess(t *testing.T) {
 		user  *auth.CurrentUser
 		check func(error) bool // nil = berhasil
 	}{
-		{"drafter saat draf", letterAt(StatusDraft, 0, 0), andiUser, nil},
-		{"drafter saat dikembalikan", letterAt(StatusReturnedToDrafter, 15, 0), andiUser, nil},
-		{"drafter saat direview", letterAt(StatusInReview, 9, 0), andiUser, isState},
-		{"surat terbit", letterAt(StatusSent, 0, 4), andiUser, isState},
+		{"drafter saat draf", letterAt(StatusDraft, 0), andiUser, nil},
+		{"drafter saat dikembalikan", letterAt(StatusReturnedToDrafter, 15), andiUser, nil},
+		{"drafter saat direview", letterAt(StatusInReview, 9), andiUser, isState},
+		{"surat terbit", letterAt(StatusSent, 0), andiUser, isState},
 		{"reviewer", reviewerStore, fajarUser, func(err error) bool { return errors.Is(err, apperr.ErrForbidden) }},
-		{"orang luar", letterAt(StatusDraft, 0, 0), outsiderUser, func(err error) bool { return errors.Is(err, ErrLetterNotFound) }},
+		{"orang luar", letterAt(StatusDraft, 0), outsiderUser, func(err error) bool { return errors.Is(err, ErrLetterNotFound) }},
 		{"surat tidak ada", &fakeLetterStore{}, andiUser, func(err error) bool { return errors.Is(err, ErrLetterNotFound) }},
 	} {
 		err := add(tc.store, tc.user)
@@ -89,7 +89,7 @@ func TestAttachmentAccess(t *testing.T) {
 		}
 	}
 
-	full := letterAt(StatusDraft, 0, 0)
+	full := letterAt(StatusDraft, 0)
 	for i := range MaxAttachments {
 		full.attachments = append(full.attachments, Attachment{ID: fmt.Sprintf("a-%d", i)})
 	}
@@ -100,7 +100,7 @@ func TestAttachmentAccess(t *testing.T) {
 }
 
 func TestAttachmentLifecycle(t *testing.T) {
-	store := letterAt(StatusDraft, 0, 0)
+	store := letterAt(StatusDraft, 0)
 	svc, audit, inbox := newTestLetterServiceFull(store, newFakeRefs())
 	files := svc.repos.Files.(*fakeFiles)
 	ctx := context.Background()

@@ -19,7 +19,7 @@ import (
 // sentLetter menyiapkan surat terbit (nomor 015/PSP/X/2026, disetujui Agus) yang naskah
 // .docx-nya sudah tersimpan sebagai versi 1, beserta service dengan pembuat PDF palsu.
 func sentLetter(withDraft bool) (*Service, *fakeLetterStore, *fakePDF, *fakeInbox, *fakeAudit) {
-	store := letterAt(StatusSent, 0, 4)
+	store := letterAt(StatusSent, 0)
 	store.detail.LetterNumber = ptr("015/PSP/X/2026")
 	store.detail.Approval = &Approval{ApprovedAt: time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC),
 		ApprovedBy: PersonRef{ID: 3, Name: "Agus", PositionName: "SVP"}}
@@ -162,7 +162,7 @@ func TestFinalPDFRejected(t *testing.T) {
 		t.Errorf("tanpa naskah: error = %v", err)
 	}
 
-	draft := letterAt(StatusInApproval, 3, 4)
+	draft := letterAt(StatusInApproval, 3)
 	svcDraft := newTestLetterService(draft, newFakeRefs())
 	if _, err := svcDraft.FilledDocument(ctx, andiUser, testLetterID); !errors.As(err, &is) {
 		t.Errorf("surat belum terbit (naskah terisi): error = %v", err)

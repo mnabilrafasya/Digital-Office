@@ -17,14 +17,14 @@ type participant struct {
 	Step   int    `json:"step"`
 }
 
-// wantParticipants menyusun peserta dari draf: reviewer berurutan mulai step 1, approver step 1.
+// wantParticipants menyusun peserta dari draf: reviewer dan approver masing-masing berurutan mulai step 1.
 func wantParticipants(d *LetterDraft) []participant {
-	out := make([]participant, 0, len(d.ReviewerIDs)+1)
+	out := make([]participant, 0, len(d.ReviewerIDs)+len(d.ApproverIDs))
 	for i, id := range d.ReviewerIDs {
 		out = append(out, participant{UserID: id, Role: RoleReviewer, Step: i + 1})
 	}
-	if d.ApproverID != nil {
-		out = append(out, participant{UserID: *d.ApproverID, Role: RoleApprover, Step: 1})
+	for i, id := range d.ApproverIDs {
+		out = append(out, participant{UserID: id, Role: RoleApprover, Step: i + 1})
 	}
 	return out
 }
@@ -78,7 +78,7 @@ WHERE letter_id = @letterId AND deleted_at IS NULL
   AND id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))`
 )
 
-// loadParticipants membaca peserta aktif: reviewer urut step, lalu approver.
+// loadParticipants membaca peserta aktif: reviewer urut step, lalu approver urut step.
 func (r *Repository) loadParticipants(ctx context.Context, letterID int64) ([]participant, error) {
 	rows, err := r.q.QueryContext(ctx, selectParticipantsSQL, sql.Named("letterId", letterID))
 	if err != nil {
@@ -104,7 +104,7 @@ func draftParticipants(ps []participant) LetterDraft {
 	var d LetterDraft
 	for _, p := range ps {
 		if p.Role == RoleApprover {
-			d.ApproverID = &p.UserID
+			d.ApproverIDs = append(d.ApproverIDs, p.UserID)
 		} else {
 			d.ReviewerIDs = append(d.ReviewerIDs, p.UserID)
 		}
@@ -145,15 +145,12 @@ SELECT CASE WHEN EXISTS (
 	return ok, nil
 }
 
-// Participants mengembalikan reviewer (urut step) dan approver surat (0 bila belum dipilih).
-func (r *Repository) Participants(ctx context.Context, letterID int64) (reviewers []int64, approverID int64, err error) {
+// Participants mengembalikan reviewer dan approver surat, masing-masing urut step.
+func (r *Repository) Participants(ctx context.Context, letterID int64) (reviewers, approvers []int64, err error) {
 	ps, err := r.loadParticipants(ctx, letterID)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	d := draftParticipants(ps)
-	if d.ApproverID != nil {
-		approverID = *d.ApproverID
-	}
-	return d.ReviewerIDs, approverID, nil
+	return d.ReviewerIDs, d.ApproverIDs, nil
 }

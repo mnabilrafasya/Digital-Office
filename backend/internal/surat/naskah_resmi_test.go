@@ -87,7 +87,7 @@ func TestQRPlaceholderRequired(t *testing.T) {
 	withQR := makeDocx(docWith(`<w:p><w:r><w:t>TTD ###*QRCode*###</w:t></w:r></w:p>`))
 	noQR := makeDocx(docWith(`<w:p><w:r><w:t>TTD tanpa QR</w:t></w:r></w:p>`))
 	letterWith := func(status string, assignee, forwardedBy int64, docx []byte) (*Service, *fakeLetterStore) {
-		store := letterAt(status, assignee, forwardedBy)
+		store := letterAt(status, assignee)
 		refs := newFakeRefs()
 		refs.unitHeads = map[int64]int64{7: 50, 9: 51} // penerima surat uji punya pimpinan (syarat terbit)
 		refs.aliasMembers = map[int64][]int64{60: {52}}

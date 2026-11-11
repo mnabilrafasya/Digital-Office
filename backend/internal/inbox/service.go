@@ -81,6 +81,7 @@ func NewService(tx db.TxRunner, conn db.DBTX, repos Repos, loc *time.Location) *
 // PageSize sudah divalidasi handler.
 type ListQuery struct {
 	Status   string // opsional, beberapa status dipisah koma
+	Category string // opsional: INTERNAL atau EXTERNAL
 	Search   string
 	Page     int
 	PageSize int
@@ -104,10 +105,15 @@ func (s *Service) List(ctx context.Context, user *auth.CurrentUser, lq ListQuery
 	if err != nil {
 		return Page{}, err
 	}
+	category := strings.ToUpper(strings.TrimSpace(lq.Category))
+	if category != "" && category != CategoryInternal && category != CategoryExternal {
+		return Page{}, apperr.Invalid("Parameter category wajib INTERNAL atau EXTERNAL")
+	}
 	f := Filter{
 		CompanyCode: user.Company.Code,
 		UserID:      user.ID,
 		Statuses:    statuses,
+		Category:    category,
 		Search:      search,
 		Offset:      (lq.Page - 1) * lq.PageSize,
 		Limit:       lq.PageSize,

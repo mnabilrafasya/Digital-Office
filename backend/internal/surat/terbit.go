@@ -109,6 +109,7 @@ type publishTarget struct {
 	letterID    int64
 	letterUUID  string
 	signerID    int64
+	external    bool // surat eksternal keluar: hanya diberi nomor, tidak dikirim ke inbox penerima
 }
 
 // deliverSnapshot adalah isi audit_logs.snapshot saat surat terkirim ke inbox penerima.
@@ -118,42 +119,53 @@ type deliverSnapshot struct {
 	CC           []int64 `json:"cc,omitempty"`
 }
 
-// publish menerbitkan surat yang sedang disetujui approver: memastikan penerima masih bisa
+// publish menerbitkan surat yang disetujui approver terakhir: memastikan penerima masih bisa
 // dijangkau, memberi nomor, mengirim ke inbox, lalu mencatat pengiriman (DELIVER, oleh sistem).
+// Surat eksternal keluar hanya diberi nomor (penerimanya di luar sistem; lihat eksternal.go).
 // Wajib dipanggil di dalam transaksi, setelah surat dikunci dan sebelum ApplyTransition (CHECK
 // ck_letters_sent_complete mewajibkan nomor, tanggal, dan penandatangan sudah terisi saat status
 // menjadi SENT).
 func (s *Service) publish(ctx context.Context, t publishTarget) (string, error) {
-	letters, companyCode, letterID := t.letters, t.companyCode, t.letterID
-	d, err := letters.LoadDraft(ctx, letterID)
+	if t.external {
+		return s.assignNumber(ctx, t, nil) // surat eksternal: tidak ada penerima internal
+	}
+	d, err := t.letters.LoadDraft(ctx, t.letterID)
 	if err != nil {
 		return "", err
 	}
-	if err := s.checkReachable(ctx, companyCode, d.Recipients); err != nil {
+	if err := s.checkReachable(ctx, t.companyCode, d.Recipients); err != nil {
 		return "", err
 	}
-	to, cc, heads, err := s.resolveRecipients(ctx, companyCode, d.Recipients)
+	to, cc, heads, err := s.resolveRecipients(ctx, t.companyCode, d.Recipients)
 	if err != nil {
 		return "", err
 	}
-
-	now := time.Now().In(s.loc)
-	seq, unitCode, format, err := letters.NextNumber(ctx, letterID, now.Year())
+	number, err := s.assignNumber(ctx, t, heads)
 	if err != nil {
 		return "", err
 	}
-	number := FormatLetterNumber(format, seq, unitCode, companyCode, now)
-	if err := letters.Publish(ctx, letterID, Publication{
-		Number: number, Seq: seq, Year: now.Year(), ApprovedAt: now, SignerID: t.signerID, UnitHeads: heads,
-	}); err != nil {
-		return "", err
-	}
-	if err := t.inbox.DeliverDirect(ctx, letterID, to, cc); err != nil {
+	if err := t.inbox.DeliverDirect(ctx, t.letterID, to, cc); err != nil {
 		return "", err
 	}
 	if err := t.audit.Record(ctx, audit.Entry{
-		CompanyCode: companyCode, EntityType: audit.EntityLetter, EntityID: letterID, EntityUUID: t.letterUUID,
+		CompanyCode: t.companyCode, EntityType: audit.EntityLetter, EntityID: t.letterID, EntityUUID: t.letterUUID,
 		Action: audit.ActionDeliver, Snapshot: deliverSnapshot{LetterNumber: number, To: to, CC: cc},
+	}); err != nil {
+		return "", err
+	}
+	return number, nil
+}
+
+// assignNumber memberi nomor, tanggal, dan penandatangan surat (heads: pimpinan penerima tiap unit).
+func (s *Service) assignNumber(ctx context.Context, t publishTarget, heads map[int64]int64) (string, error) {
+	now := time.Now().In(s.loc)
+	seq, unitCode, format, err := t.letters.NextNumber(ctx, t.letterID, now.Year())
+	if err != nil {
+		return "", err
+	}
+	number := FormatLetterNumber(format, seq, unitCode, t.companyCode, now)
+	if err := t.letters.Publish(ctx, t.letterID, Publication{
+		Number: number, Seq: seq, Year: now.Year(), ApprovedAt: now, SignerID: t.signerID, UnitHeads: heads,
 	}); err != nil {
 		return "", err
 	}

@@ -16,8 +16,10 @@ import (
 
 // Unduhan naskah mengikuti status surat:
 //
-//	belum disetujui approver   .docx (versi DRAFT terbaru, atau ?version=N)   drafter dan peserta
-//	sudah terbit (SENT)        PDF resmi ber-QR (versi FINAL)                 drafter, peserta, penerima inbox
+//	belum disetujui approver        .docx (versi DRAFT terbaru, atau ?version=N)   drafter dan peserta
+//	sudah terbit (SENT)             PDF resmi (versi FINAL terbaru)                drafter, peserta, penerima inbox
+//	eksternal menunggu TTD (APPROVED) PDF cetak ber-watermark (versi FINAL)        drafter dan peserta
+//	surat masuk eksternal (RECEIVED)  scan yang diunggah (versi FINAL)             pengunggah dan penerima disposisi
 //
 // PDF resmi dibuat oleh editor DevExpress di front-end dari naskah terisi, supaya sama persis dengan
 // tampilan di layar, lalu disimpan sekali sebagai versi FINAL (lihat resmi.go). Unduhan berikutnya
@@ -52,7 +54,7 @@ func (s *Service) openDocument(ctx context.Context, user *auth.CurrentUser, lett
 		v           *DocumentVersion
 		contentType = DocxContentType
 	)
-	if d.Status == StatusSent {
+	if hasOfficialPDF(d.Status) {
 		if version != 0 {
 			return nil, &apperr.InvalidStateError{Message: "Surat sudah disetujui. Yang bisa diunduh hanya PDF resmi ber-QR."}
 		}

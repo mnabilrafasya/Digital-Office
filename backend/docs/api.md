@@ -35,7 +35,123 @@ Pertama kali: isi `.env` (dari `.env.example`), simpan snapshot HC di `data/hc/o
 
 Semua seed aman diulang dan tidak menimpa pengaturan admin. Password akun dummy = `SEED_PASSWORD` di `.env`.
 
-## Master data
+## Konvensi API
+
+- Semua endpoint di bawah `/api/v1`, kecuali `GET /health`. Selain login, wajib header `Authorization: Bearer <accessToken>`.
+- Response sukses `{"data": ...}` (daftar: `+ "meta": {page, pageSize, total}`); error `{"error": {"code", "message"}}`.
+- Kode HTTP: 400 isian salah, 401 belum login, 403 tidak punya hak, 404 tidak ada/tidak boleh dilihat, 409 tidak sesuai status/giliran, 412 `If-Match` kedaluwarsa, 428 `If-Match` tidak dikirim.
+- Semua ID dikirim sebagai string; surat memakai uuid. Paginasi `page` (≥1) dan `pageSize` (1–100, bawaan 20).
+- Unggahan `multipart/form-data`, field `file`, maks 25 MB.
+- Ubah draf wajib `If-Match: <ETag>` dari response terakhir.
+
+## Akun dan data acuan
+
+| Endpoint | Fungsi |
+|---|---|
+| `POST /auth/login` `{employeeNumber, password}` | Login → `accessToken`, `expiresIn`, `user` |
+| `POST /auth/logout` | Logout dari semua perangkat |
+| `GET /auth/me` | User login: jabatan, unit, perusahaan, role, `permissions` |
+| `GET /lookups?category=` | Pilihan: `LETTER_TYPE`, `LETTER_STATUS`, `CLASSIFICATION`, `CONFIDENTIALITY`, `URGENCY` |
+| `GET /units?q=` | Unit aktif perusahaan (pilihan penerima) |
+| `GET /users/candidates?type=REVIEWER\|APPROVER&q=&limit=` | Calon reviewer/approver |
+| `GET /recipients/aliases` | Alias penerima per posisi (VP, AVP, ...) beserta `levelId` |
+
+## Surat
+
+**Jenis surat** (`letterType.code`) dan arah (`direction`):
+
+| Jenis | `direction` | Ringkas |
+|---|---|---|
+| Nota dinas, surat edaran, dll. | `INTERNAL` | Penerima unit/alias, wajib penanda QR, terkirim otomatis saat approver terakhir setuju |
+| `SURAT_EKSTERNAL` | `OUTGOING` | Satu tujuan luar, tanpa tembusan, tanpa QR, ditandatangani basah lalu scan diunggah |
+| `SURAT_MASUK_EKSTERNAL` | `INCOMING` | Scan surat dari luar dicatat lalu langsung didisposisikan |
+
+**Status:** `DRAFT` → `IN_REVIEW` → `IN_APPROVAL` → `SENT` (internal) atau `APPROVED` → `SENT` (eksternal keluar). Dikembalikan = `RETURNED_TO_DRAFTER`. Surat masuk = `RECEIVED`.
+
+**Draf**
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /letters?scope=mine\|tasks&status=&q=` | Surat saya / tugas saya (menunggu tindakan saya, termasuk `APPROVED` milik approver terakhir) |
+| `POST /letters` | Buat draf (body boleh kosong). 201 + ETag |
+| `GET /letters/{id}` | Detail: `steps`, `currentAssignee`, `allowedActions`, `approval`, `external`, ETag |
+| `PUT /letters/{id}` + `If-Match` | Ganti seluruh isi draf (hanya drafter, saat `DRAFT`/`RETURNED_TO_DRAFTER`) |
+| `GET /letters/{id}/history` | Riwayat aksi alur |
+
+Isi draf: `letterTypeId, templateId, classificationId, confidentialityId, urgencyId, title, summary, specialNote, reviewerIds[], approverIds[]`, ditambah:
+- internal: `recipients: {to: [{unitId} | {aliasLevelId}], cc: [...]}`;
+- eksternal keluar: `externalRecipient: {name, address, attention}` (`recipients` harus kosong).
+
+Syarat ajukan: semua isian wajib terisi, minimal 1 reviewer dan 1 approver (maks 10, berurutan), naskah sudah diunggah, dan untuk internal naskah berisi `###QRCode###`.
+
+**Alur** (tombol mengikuti `allowedActions`)
+
+| Endpoint | Siapa | Hasil |
+|---|---|---|
+| `POST /letters/{id}/submit` | Drafter | Ke reviewer 1 (ajukan ulang juga mulai dari reviewer 1) |
+| `POST /letters/{id}/approve` `{note?}` | Reviewer/approver yang mendapat giliran | Ke reviewer/approver berikutnya. Approver terakhir: nomor + tanggal terbit, internal → `SENT`, eksternal → `APPROVED` |
+| `POST /letters/{id}/return` `{note}` | Reviewer/approver yang mendapat giliran | Selalu kembali ke drafter (`RETURNED_TO_DRAFTER`) |
+
+**Naskah dan PDF**
+
+| Endpoint | Fungsi |
+|---|---|
+| `PUT /letters/{id}/document` (file .docx) | Unggah naskah (drafter, saat draf). 201 + versi baru |
+| `GET /letters/{id}/versions` | Daftar versi naskah |
+| `GET /letters/{id}/document?version=&inline=1` | Unduh: .docx sebelum terbit, PDF resmi sesudahnya. `inline=1` untuk tampil di browser |
+| `GET /letters/{id}/document/filled` | .docx terisi otomatis (NoSurat, TglSurat, Sifat, QR) untuk diekspor editor |
+| `GET /letters/{id}/document/status` | `pdfReady`: apakah PDF resmi sudah disimpan |
+| `PUT /letters/{id}/document/final` (file PDF) | Simpan PDF hasil ekspor editor (sekali; 201 baru, 200 sudah ada) |
+| `GET /letters/{id}/qr` | PNG QR persetujuan (internal saja) |
+| `POST /letters/{id}/attachments` (file) | Tambah lampiran (saat draf). 201 + ETag |
+| `GET /letters/{id}/attachments/{attachmentId}` | Unduh lampiran |
+| `DELETE /letters/{id}/attachments/{attachmentId}` | Hapus lampiran (saat draf). 204 + ETag |
+
+Penanda naskah: `###NoSurat###`, `###TglSurat###`, `###Sifat###`, `###QRCode###` (huruf besar/kecil bebas, posisi bebas). Pada surat eksternal penanda QR dikosongkan. PDF resmi yang diunduh/dicetak diberi watermark perusahaan, kecuali scan bertanda tangan.
+
+**Surat eksternal**
+
+| Endpoint | Fungsi |
+|---|---|
+| `PUT /letters/{id}/document/signed` (file PDF) | Approver terakhir mengunggah scan bertanda tangan basah saat `APPROVED` → `SENT`. Scan menjadi PDF resmi dan arsipnya masuk inbox drafter, reviewer, dan approver (tab Eksternal, hanya dibaca) |
+| `POST /letters/incoming` (multipart) | Siapa pun mencatat surat masuk. Field: `file` (PDF), `title`, `sender`, `referenceNumber`, `letterDate` (YYYY-MM-DD), `userIds` dan/atau `aliasLevelIds` (dipisah koma, total 1–50), `note`. 201, status `RECEIVED` |
+
+Surat masuk: pengunggah mendapat item `DISPOSED`, tiap tujuan (alias dipecah ke anggotanya) mendapat item disposisi `UNREAD` berisi `note`. Selanjutnya diteruskan seperti surat biasa lewat inbox.
+
+Cara cetak surat eksternal keluar: `GET document/filled` → ekspor PDF di editor → `PUT document/final` → `GET document` (ber-watermark) → cetak, tanda tangan basah, scan → `PUT document/signed`.
+
+## Template naskah
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /templates?letterTypeId=` | Template aktif perusahaan |
+| `GET /templates/{id}/file` | Unduh .docx |
+| `POST /templates` (multipart: `file`, `name`, `description`, `letterTypeId`) | Tambah template |
+| `PUT /templates/{id}` (multipart, file opsional) | Ganti data template (pembuat) |
+
+## Inbox
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /inbox?status=&category=INTERNAL\|EXTERNAL&q=` | Surat yang saya terima + `counts` per status. `category` kosong = semua |
+| `GET /inbox/{itemId}` | Detail item + riwayat penerusan + `allowedActions`. `UNREAD` otomatis menjadi `READ` |
+| `POST /inbox/{itemId}/disposition` `{userIds[], unitIds[], note?}` | Disposisi (butuh hak disposisi) → `DISPOSED` |
+| `POST /inbox/{itemId}/redirect` `{userId, note?}` | Alihkan ke orang lain → `REDIRECTED` |
+
+Status item: `UNREAD`, `READ`, `DISPOSED`, `REDIRECTED`. Tiap item membawa `letter.direction` (`INTERNAL`/`OUTGOING`/`INCOMING`) dan `letter.external` (tujuan atau pengirim, nomor, tanggal surat luar). Arsip `OUTGOING` tidak bisa didisposisi atau dialihkan (409).
+
+## Lacak dan audit
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /letters/{id}/tracking` | Posisi surat sekarang, linimasa, dan distribusi penerima |
+| `GET /letters/{id}/audit` | Audit log satu surat (`AUDIT_VIEW`) |
+| `GET /audit-logs?from=&to=&actorId=&action=&entityType=&q=` | Audit log perusahaan (`AUDIT_VIEW`) |
+| `GET /audit-logs/{logId}` | Detail log |
+| `GET /audit-logs/export?...` | Unduh CSV (filter sama) |
+| `GET /monitoring/letters?status=&minWaitingHours=` | Surat yang tertahan di satu orang |
+
+## Master data (admin)
 
 Hak = **role** + **posisi**. Posisi DIREKTUR, SVP, VP, AVP otomatis bisa approve dan disposisi, apa pun role-nya.
 
