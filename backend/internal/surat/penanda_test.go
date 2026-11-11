@@ -103,7 +103,7 @@ func TestFillPlaceholdersText(t *testing.T) {
 	zw.Close()
 
 	values := map[string]string{phNoSurat: "015/PSP/X/2026", phPerihal: "Rapat <Q4> & evaluasi", phKepada: "VP Akuntansi\nSeluruh VP"}
-	out, err := fillPlaceholders(buf.Bytes(), values, []byte("png"), nil)
+	out, err := fillPlaceholders(buf.Bytes(), values, []byte("png"))
 	if err != nil {
 		t.Fatalf("fillPlaceholders: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestFillPlaceholdersText(t *testing.T) {
 		t.Errorf("bagian lain tidak boleh berubah (yang bertambah hanya gambar QR dan relasinya): %d file", len(files))
 	}
 
-	if _, err := fillPlaceholders([]byte("bukan zip"), values, nil, nil); err == nil {
+	if _, err := fillPlaceholders([]byte("bukan zip"), values, nil); err == nil {
 		t.Error("naskah rusak harus error")
 	}
 }
@@ -149,7 +149,7 @@ func TestFillPlaceholdersQR(t *testing.T) {
 	}
 	zw.Close()
 
-	out, err := fillPlaceholders(buf.Bytes(), nil, []byte("\x89PNG-qr"), nil)
+	out, err := fillPlaceholders(buf.Bytes(), nil, []byte("\x89PNG-qr"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestFillPlaceholdersQR(t *testing.T) {
 
 	// Tanpa penanda QR: QR ditambahkan rata kanan di akhir isi, sebelum pengaturan halaman
 	sect := `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>`
-	out, _ = fillPlaceholders(makeDocx(docWith(`<w:p><w:pPr>`+sect+`</w:pPr><w:r><w:t>Bab 1</w:t></w:r></w:p><w:p><w:r><w:t>Tanpa QR</w:t></w:r></w:p>`+sect)), nil, []byte("png"), nil)
+	out, _ = fillPlaceholders(makeDocx(docWith(`<w:p><w:pPr>`+sect+`</w:pPr><w:r><w:t>Bab 1</w:t></w:r></w:p><w:p><w:r><w:t>Tanpa QR</w:t></w:r></w:p>`+sect)), nil, []byte("png"))
 	files = docxFiles(t, out)
 	d = files["word/document.xml"]
 	qrAt, lastSect := strings.Index(d, `<w:jc w:val="right"/></w:pPr><w:r><w:drawing>`), strings.LastIndex(d, "<w:sectPr>")
@@ -247,7 +247,7 @@ func TestFillTemplateFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err := fillPlaceholders(src, values, []byte("\x89PNG"), nil)
+		out, err := fillPlaceholders(src, values, []byte("\x89PNG"))
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 			continue

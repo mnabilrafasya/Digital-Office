@@ -144,9 +144,9 @@ func tanggalIndonesia(t time.Time) string {
 
 // fillPlaceholders mengisi penanda sistem di naskah .docx: teks dari values (kunci huruf kecil)
 // dan gambar QR di posisi ###*QRCode*###. Naskah tanpa penanda QR mendapat QR di akhir isi
-// surat (rata kanan), jadi QR selalu ikut tampil dan ikut diekspor ke PDF. watermarkPNG yang
-// tidak nil disisipkan di setiap halaman (watermark.go). File lain di dalam .docx tidak diubah.
-func fillPlaceholders(docx []byte, values map[string]string, qrPNG, watermarkPNG []byte) ([]byte, error) {
+// surat (rata kanan), jadi QR selalu ikut tampil dan ikut diekspor ke PDF. File lain di dalam
+// .docx tidak diubah. Watermark tidak ditanam di sini, tetapi ditempel ke PDF resmi (watermark.go).
+func fillPlaceholders(docx []byte, values map[string]string, qrPNG []byte) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
 	if err != nil {
 		return nil, fmt.Errorf("membuka naskah .docx: %w", err)
@@ -200,15 +200,6 @@ func fillPlaceholders(docx []byte, values map[string]string, qrPNG, watermarkPNG
 				added[rels] = true
 			}
 			files[rels] = addRelationship(files[rels], qrRelID, imageRelType, strings.TrimPrefix(qrMedia, "word/"))
-		}
-	}
-	if watermarkPNG != nil {
-		names, err := addWatermark(files, watermarkPNG)
-		if err != nil {
-			return nil, err
-		}
-		for _, name := range names {
-			added[name] = true
 		}
 	}
 

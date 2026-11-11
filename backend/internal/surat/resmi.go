@@ -25,11 +25,12 @@ import (
 //
 //  1. Setelah surat terbit, front-end mengambil naskah terisi salinannya (FilledDocument):
 //     penanda sistem sudah diisi dan QR sudah di posisinya (penanda.go). Naskah ini juga yang
-//     ditampilkan dalam mode baca.
+//     ditampilkan dalam mode baca, tanpa watermark.
 //  2. Bila PDF resmi salinan itu belum ada (OfficialStatus), editor mengekspor naskah tersebut ke
-//     PDF dan mengunggahnya (SaveFinalPDF). PDF pertama yang diterima dipakai dan tidak bisa
-//     diganti; naskah terisinya disimpan bersamanya.
-//  3. Unduhan memakai PDF salinan yang tersimpan (OpenDocument).
+//     PDF dan mengunggahnya (SaveFinalPDF). Backend menempel watermark perusahaan di setiap halaman
+//     (watermark.go), lalu menyimpannya. PDF pertama yang diterima dipakai dan tidak bisa diganti;
+//     naskah terisinya disimpan bersamanya.
+//  3. Unduhan dan cetak memakai PDF salinan yang tersimpan (OpenDocument), jadi selalu ber-watermark.
 
 // MaxFinalPDFBytes adalah batas ukuran PDF resmi yang diunggah editor.
 const MaxFinalPDFBytes = MaxUploadBytes
@@ -52,7 +53,8 @@ type finalPDFSnapshot struct {
 	FileSize      int64  `json:"fileSize"`
 	Pages         int    `json:"pages"`
 	Checksum      string `json:"checksum"`
-	Generator     string `json:"generator"` // pembuat PDF, saat ini selalu DEVEXPRESS
+	Generator     string `json:"generator"`           // pembuat PDF, saat ini selalu DEVEXPRESS
+	Watermark     string `json:"watermark,omitempty"` // teks watermark yang ditempel; kosong = tanpa
 }
 
 // FilledDocument membuka naskah terisi (.docx) salinan milik user untuk surat terbit, untuk
@@ -108,16 +110,13 @@ func (s *Service) fillCopy(ctx context.Context, d *LetterDetail, c officialCopy)
 	if err != nil {
 		return nil, err
 	}
-	watermark, err := watermarkFor(d)
-	if err != nil {
-		return nil, err
-	}
-	return fillPlaceholders(docx, letterPlaceholders(d, c), qrPNG, watermark)
+	return fillPlaceholders(docx, letterPlaceholders(d, c), qrPNG)
 }
 
 // SaveFinalPDF menyimpan PDF resmi salinan milik user, hasil ekspor editor. Yang boleh: siapa pun
 // yang boleh membuka surat. PDF pertama yang diterima dipakai; bila sudah ada, created=false
-// (unggahan ganda dari dua tab tidak dianggap error). Naskah terisinya ikut disimpan.
+// (unggahan ganda dari dua tab tidak dianggap error). Watermark perusahaan ditempel sebelum disimpan;
+// naskah terisinya ikut disimpan.
 func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in FinalPDFInput) (v *DocumentVersion, created bool, err error) {
 	d, err := s.sentDetail(ctx, user, in.LetterID)
 	if err != nil {
@@ -131,8 +130,14 @@ func (s *Service) SaveFinalPDF(ctx context.Context, user *auth.CurrentUser, in F
 	if err != nil {
 		return nil, false, err
 	}
+	data, wmText, err := addPDFWatermark(ctx, d, in.Data)
+	if err != nil {
+		return nil, false, err
+	}
+	in.Data = data
 	sum := sha256.Sum256(in.Data)
-	snap := finalPDFSnapshot{FileSize: int64(len(in.Data)), Pages: pages, Checksum: hex.EncodeToString(sum[:]), Generator: "DEVEXPRESS"}
+	snap := finalPDFSnapshot{FileSize: int64(len(in.Data)), Pages: pages, Checksum: hex.EncodeToString(sum[:]),
+		Generator: "DEVEXPRESS", Watermark: wmText}
 
 	err = s.tx.InTx(ctx, func(q db.DBTX) error {
 		letters := s.repos.Letters(q)

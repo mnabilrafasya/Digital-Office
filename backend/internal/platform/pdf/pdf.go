@@ -30,6 +30,10 @@ const (
 // ditulis lengkap: singkatan seperti "sc" ambigu di pdfcpu v0.16.
 const stampDesc = "position:br, offset:-36 36, scalefactor:0.15 rel, rotation:0"
 
+// watermarkDesc menaruh gambar watermark di tengah halaman, lebarnya 76% lebar halaman (16 cm di
+// A4). Gambarnya sudah miring dan transparan (platform/watermark), jadi tidak diputar lagi.
+const watermarkDesc = "position:c, scalefactor:0.76 rel, rotation:0"
+
 // unavailableMessage adalah pesan untuk pengguna saat Gotenberg tidak bisa dihubungi.
 const unavailableMessage = "Layanan pembuat PDF sedang tidak tersedia. Coba beberapa saat lagi."
 
@@ -103,6 +107,22 @@ func (m *Maker) StampLastPage(ctx context.Context, pdf, png []byte) ([]byte, err
 	var out bytes.Buffer
 	if err := api.AddWatermarks(ctx, bytes.NewReader(pdf), &out, []string{fmt.Sprint(pages)}, wm, conf); err != nil {
 		return nil, fmt.Errorf("menempel QR ke PDF: %w", err)
+	}
+	return out.Bytes(), nil
+}
+
+// AddWatermark menempel gambar watermark (PNG transparan) di tengah setiap halaman PDF, di belakang
+// isi halaman: teks surat tetap di atas dan terbaca. (Ditempel di atas isi, gambar bisa terbalik
+// karena PDF dari editor menyisakan transformasi koordinat di akhir isi halaman.) Jumlah dan ukuran
+// halaman tidak berubah.
+func AddWatermark(ctx context.Context, data, png []byte) ([]byte, error) {
+	wm, err := api.ImageWatermarkForReader(ctx, bytes.NewReader(png), watermarkDesc, false, false, types.POINTS)
+	if err != nil {
+		return nil, fmt.Errorf("menyiapkan watermark PDF: %w", err)
+	}
+	var out bytes.Buffer
+	if err := api.AddWatermarks(ctx, bytes.NewReader(data), &out, nil, wm, model.NewDefaultConfiguration()); err != nil {
+		return nil, fmt.Errorf("menempel watermark ke PDF: %w", err)
 	}
 	return out.Bytes(), nil
 }
