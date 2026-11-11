@@ -11,6 +11,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -217,6 +218,9 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 	return s.detail(ctx, user, id)
 }
 
+// errOutgoingArchive: arsip surat eksternal keluar tidak bisa didisposisi atau dialihkan.
+var errOutgoingArchive = &apperr.InvalidStateError{Message: "Surat eksternal keluar hanya arsip dan tidak bisa didisposisi atau dialihkan."}
+
 // errAlreadyForwarded: item sudah didisposisi atau dialihkan.
 var errAlreadyForwarded = &apperr.InvalidStateError{Message: "Surat ini sudah didisposisi atau dialihkan. Muat ulang halaman untuk melihat status terbaru."}
 
@@ -229,6 +233,9 @@ func (s *Service) checkForwardable(ctx context.Context, user *auth.CurrentUser, 
 	it, err := s.findItem(ctx, user, id)
 	if err != nil {
 		return 0, err
+	}
+	if it.Letter.Direction == masterdata.DirectionOutgoing {
+		return 0, errOutgoingArchive
 	}
 	if !forwardable(it.Status) {
 		return 0, errAlreadyForwarded
@@ -290,7 +297,7 @@ func (s *Service) detail(ctx context.Context, user *auth.CurrentUser, id int64) 
 	for i := range forwards {
 		forwards[i].CreatedAt = forwards[i].CreatedAt.In(s.loc)
 	}
-	return &ItemDetail{Item: *it, Forwards: forwards, AllowedActions: allowedActions(it.Status, user)}, nil
+	return &ItemDetail{Item: *it, Forwards: forwards, AllowedActions: allowedActions(it, user)}, nil
 }
 
 func (s *Service) findItem(ctx context.Context, user *auth.CurrentUser, id int64) (*Item, error) {
@@ -301,10 +308,11 @@ func (s *Service) findItem(ctx context.Context, user *auth.CurrentUser, id int64
 	return it, nil
 }
 
-// allowedActions adalah tombol yang boleh ditampilkan untuk item berstatus status.
-func allowedActions(status string, user *auth.CurrentUser) []string {
+// allowedActions adalah tombol yang boleh ditampilkan untuk item. Arsip surat eksternal keluar tidak
+// bisa diteruskan.
+func allowedActions(it *Item, user *auth.CurrentUser) []string {
 	out := []string{}
-	if !forwardable(status) {
+	if !forwardable(it.Status) || it.Letter.Direction == masterdata.DirectionOutgoing {
 		return out
 	}
 	if user.HasPermission(auth.InboxDispose) {

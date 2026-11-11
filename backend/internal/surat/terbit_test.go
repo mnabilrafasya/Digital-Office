@@ -32,7 +32,7 @@ func TestFormatLetterNumber(t *testing.T) {
 }
 
 func TestApproverPublishesLetter(t *testing.T) {
-	store := letterAt(StatusInApproval, 3, 4)
+	store := letterAt(StatusInApproval, 3)
 	refs := newFakeRefs()
 	// Kepada: unit 7 dan alias 60; Tembusan: unit 9 (lihat completeInput)
 	refs.unitHeads = map[int64]int64{7: 50, 9: 51}
@@ -70,7 +70,7 @@ func TestApproverPublishesLetter(t *testing.T) {
 }
 
 func TestPublishRejectedWhenRecipientUnreachable(t *testing.T) {
-	store := letterAt(StatusInApproval, 3, 4)
+	store := letterAt(StatusInApproval, 3)
 	refs := newFakeRefs()
 	refs.headlessUnits = []string{"Departemen SDM"}
 	_, err := newTestLetterService(store, refs).Approve(context.Background(), agusUser, TransitionInput{LetterID: testLetterID})
@@ -84,7 +84,7 @@ func TestPublishRejectedWhenRecipientUnreachable(t *testing.T) {
 }
 
 func TestRecipientCanOpenSentLetter(t *testing.T) {
-	store := letterAt(StatusInApproval, 3, 4)
+	store := letterAt(StatusInApproval, 3)
 	svc, _, inbox := newTestLetterServiceFull(store, newFakeRefs())
 	inbox.holders = map[int64]bool{50: true}
 	recipient := &auth.CurrentUser{ID: 50, Company: auth.UserCompany{Code: "PSP"}}
@@ -120,7 +120,7 @@ func TestApprovalQRText(t *testing.T) {
 }
 
 func TestApprovalQRRequiresApproval(t *testing.T) {
-	store := letterAt(StatusInApproval, 3, 4)
+	store := letterAt(StatusInApproval, 3)
 	svc := newTestLetterService(store, newFakeRefs())
 	var e *apperr.InvalidStateError
 	if _, err := svc.ApprovalQR(context.Background(), agusUser, testLetterID); !errors.As(err, &e) {

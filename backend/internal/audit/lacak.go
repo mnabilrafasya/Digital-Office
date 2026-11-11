@@ -44,7 +44,7 @@ func (s *Service) Tracking(ctx context.Context, user *auth.CurrentUser, letterID
 	}
 	scope := ScopeFull
 	if user.ID != c.Drafter.ID && !participant {
-		if !recipient || c.Status != statusSent {
+		if !recipient || (c.Status != statusSent && c.Status != statusReceived) {
 			return nil, ErrLetterNotFound // keberadaan surat tidak dibocorkan
 		}
 		scope = ScopeRecipient
@@ -60,7 +60,7 @@ func (s *Service) Tracking(ctx context.Context, user *auth.CurrentUser, letterID
 		Timeline:     timeline(c, acts, scope),
 		Distribution: []DistributionNode{},
 	}
-	if c.Status == statusSent {
+	if c.Status == statusSent || c.Status == statusReceived {
 		rows, err := s.repo.distribution(ctx, c.ID)
 		if err != nil {
 			return nil, err
@@ -92,12 +92,18 @@ func position(c *letterCore, now time.Time) Position {
 		if c.HolderStep != nil {
 			p.Label = fmt.Sprintf("Sedang diperiksa Reviewer %d", *c.HolderStep)
 		}
-		if c.Status == statusReturnedToReviewer {
-			p.Label += " (dikembalikan approver)"
-		}
 	case statusInApproval:
+		p.Role, p.Step = role("APPROVER"), c.HolderStep
 		p.Label = "Menunggu persetujuan approver"
-		p.Role = role("APPROVER")
+		if c.HolderStep != nil {
+			p.Label = fmt.Sprintf("Menunggu persetujuan Approver %d", *c.HolderStep)
+		}
+	case statusApproved:
+		p.Role, p.Step = role("APPROVER"), c.HolderStep
+		p.Label = "Disetujui, menunggu tanda tangan basah dan unggahan scan"
+	case statusReceived:
+		p.Label = "Surat masuk eksternal, sudah didisposisikan"
+		p.Holder = nil
 	case statusSent:
 		p.Label = "Sudah terbit dan dikirim ke penerima"
 		p.Holder = nil
@@ -128,7 +134,7 @@ func timeline(c *letterCore, acts []letterAction, scope string) []TimelineEvent 
 			Actor: c.Drafter, Role: &drafter})
 	}
 	for _, a := range acts {
-		if scope == ScopeRecipient && a.Action != "SIGN" {
+		if scope == ScopeRecipient && a.Action != "SIGN" && a.Action != "RECEIVE" && a.Action != "UPLOAD_SIGNED" {
 			continue
 		}
 		role := a.ActorRole
@@ -144,17 +150,30 @@ func actionLabel(a letterAction) string {
 	case "SUBMIT":
 		return "Dikirim untuk diperiksa"
 	case "APPROVE":
-		if a.ToStatus == statusInApproval {
+		switch {
+		case a.ActorRole == "APPROVER":
+			return "Disetujui approver, diteruskan ke approver berikutnya"
+		case a.ToStatus == statusInApproval:
 			return "Disetujui reviewer, diteruskan ke approver"
 		}
 		return "Disetujui reviewer, diteruskan ke reviewer berikutnya"
 	case "RETURN":
-		if a.ActorRole == "APPROVER" {
+		if a.ToStatus == statusReturnedToReviewer { // data lama
 			return "Dikembalikan approver ke reviewer"
+		}
+		if a.ActorRole == "APPROVER" {
+			return "Dikembalikan approver ke pembuat surat"
 		}
 		return "Dikembalikan ke pembuat surat"
 	case "SIGN":
+		if a.ToStatus == statusApproved {
+			return "Disetujui approver terakhir, menunggu tanda tangan basah"
+		}
 		return "Disetujui approver, surat terbit"
+	case "UPLOAD_SIGNED":
+		return "Scan bertanda tangan diunggah, surat terkirim"
+	case "RECEIVE":
+		return "Surat masuk eksternal dicatat dan didisposisikan"
 	case "READ":
 		return "Membuka surat"
 	case "SAVE":

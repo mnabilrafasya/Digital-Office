@@ -1,6 +1,15 @@
 package inbox
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
+
+// Kategori inbox (tab): surat internal atau surat eksternal (keluar dan masuk).
+const (
+	CategoryInternal = "INTERNAL"
+	CategoryExternal = "EXTERNAL"
+)
 
 // Semua ID numerik dikirim ke klien sebagai string (tag `json:",string"`).
 
@@ -55,6 +64,11 @@ type Letter struct {
 	Urgency         *LookupRef `json:"urgency"`
 	SenderUnit      UnitRef    `json:"senderUnit"`
 	Approver        *PersonRef `json:"approver"` // penandatangan surat
+	// Direction: INTERNAL, OUTGOING (surat eksternal keluar, arsip), INCOMING (surat masuk eksternal)
+	Direction string `json:"direction"`
+	// External: tujuan surat eksternal keluar {recipient}, atau asal surat masuk {sender,
+	// referenceNumber, letterDate}; null untuk surat internal
+	External json.RawMessage `json:"external"`
 }
 
 // LookupRef adalah ringkasan data acuan (jenis surat, sifat, kecepatan).

@@ -8,6 +8,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -59,15 +60,15 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 		if err != nil {
 			return notFoundAs(err)
 		}
-		reviewers, approverID, err := letters.Participants(ctx, l.ID)
+		reviewers, approvers, err := letters.Participants(ctx, l.ID)
 		if err != nil {
 			return err
 		}
 		state := State{
 			Status: l.Status, DrafterID: l.DrafterID, AssigneeID: l.AssigneeID,
-			ForwardedByID: l.ForwardedByID, Reviewers: reviewers, ApproverID: approverID,
+			Reviewers: reviewers, Approvers: approvers, External: l.TypeCode == masterdata.TypeExternalOut,
 		}
-		if !involves(l.DrafterID, approverID, reviewers, user.ID) {
+		if !involves(l.DrafterID, approvers, reviewers, user.ID) {
 			return ErrLetterNotFound
 		}
 
@@ -87,8 +88,11 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 			if err := s.checkSubmittable(ctx, letters, user.Company.Code, l.ID); err != nil {
 				return err
 			}
-			if err := s.checkQRPlaceholder(ctx, letters, l.ID, errNoQRPlaceholderSubmit); err != nil {
-				return err
+			// Penanda QR wajib hanya untuk surat internal (surat eksternal ditandatangani basah)
+			if !state.External {
+				if err := s.checkQRPlaceholder(ctx, letters, l.ID, errNoQRPlaceholderSubmit); err != nil {
+					return err
+				}
 			}
 		}
 		if err := s.checkNextAssignee(ctx, user.Company.Code, dec); err != nil {
@@ -98,12 +102,15 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 		var number *string
 		if dec.Action == Sign {
 			// Diperiksa ulang: reviewer bisa menyimpan naskah baru setelah surat diajukan
-			if err := s.checkQRPlaceholder(ctx, letters, l.ID, errNoQRPlaceholderSign); err != nil {
-				return err
+			if !state.External {
+				if err := s.checkQRPlaceholder(ctx, letters, l.ID, errNoQRPlaceholderSign); err != nil {
+					return err
+				}
 			}
 			n, err := s.publish(ctx, publishTarget{
 				letters: letters, inbox: s.repos.Inbox(q), audit: s.repos.Audit(q),
 				companyCode: user.Company.Code, letterID: l.ID, letterUUID: id, signerID: user.ID,
+				external: state.External,
 			})
 			if err != nil {
 				return err

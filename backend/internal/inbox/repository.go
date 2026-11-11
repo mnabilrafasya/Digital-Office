@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/db"
 )
 
@@ -27,6 +28,7 @@ type Filter struct {
 	CompanyCode string
 	UserID      int64
 	Statuses    []string
+	Category    string // "" = semua, INTERNAL, atau EXTERNAL (surat eksternal keluar dan masuk)
 	Search      string // dicari di perihal dan nomor surat
 	Offset      int
 	Limit       int
@@ -45,6 +47,15 @@ WHERE i.user_id = @userId
 		sb.WriteString("\n  AND i.status IN (SELECT [value] FROM OPENJSON(@statuses))")
 		args = append(args, sql.Named("statuses", string(statuses)))
 	}
+	switch f.Category {
+	case CategoryExternal:
+		sb.WriteString("\n  AND lt.code IN (@typeOut, @typeIn)")
+	case CategoryInternal:
+		sb.WriteString("\n  AND (lt.code IS NULL OR lt.code NOT IN (@typeOut, @typeIn))")
+	}
+	if f.Category != "" {
+		args = append(args, sql.Named("typeOut", masterdata.TypeExternalOut), sql.Named("typeIn", masterdata.TypeExternalIn))
+	}
 	if f.Search != "" {
 		sb.WriteString("\n  AND (l.title LIKE @pattern ESCAPE '\\' OR l.letter_number LIKE @pattern ESCAPE '\\')")
 		args = append(args, sql.Named("pattern", db.ContainsPattern(f.Search)))
@@ -56,7 +67,7 @@ WHERE i.user_id = @userId
 const itemColumns = `
 SELECT i.id, i.status, i.created_at, i.read_at,
        i.source_type, i.recipient_type, fw.type, fw.from_user_id, fw.from_user_name, fw.from_position, fw.note,
-       CONVERT(char(36), l.uuid), l.letter_number, l.title, l.approved_at,
+       CONVERT(char(36), l.uuid), l.letter_number, l.title, l.approved_at, l.external_info,
        lt.id, lt.code, lt.name, cf.id, cf.code, cf.name, ug.id, ug.code, ug.name,
        su.id, su.code, COALESCE(l.sender_unit_name, su.name),
        sb.id, sb.name, sp.name
@@ -119,10 +130,11 @@ func scanItem(row interface{ Scan(...any) error }) (*Item, error) {
 		fwName, fwPos, signerName sql.NullString
 		signerPos                 sql.NullString
 		letterType, conf, urgency nullRef
+		external                  sql.NullString
 	)
 	err := row.Scan(&it.ID, &it.Status, &it.ReceivedAt, &readAt,
 		&it.Source.Type, &recipientType, &fwType, &fwUserID, &fwName, &fwPos, &it.Source.Note,
-		&it.Letter.ID, &it.Letter.LetterNumber, &it.Letter.Title, &letterDate,
+		&it.Letter.ID, &it.Letter.LetterNumber, &it.Letter.Title, &letterDate, &external,
 		&letterType.ID, &letterType.Code, &letterType.Name, &conf.ID, &conf.Code, &conf.Name,
 		&urgency.ID, &urgency.Code, &urgency.Name,
 		&it.Letter.SenderUnit.ID, &it.Letter.SenderUnit.Code, &it.Letter.SenderUnit.Name,
@@ -143,6 +155,10 @@ func scanItem(row interface{ Scan(...any) error }) (*Item, error) {
 	it.Letter.ID = strings.ToLower(it.Letter.ID)
 	it.Letter.LetterDate = timePtr(letterDate)
 	it.Letter.LetterType, it.Letter.Confidentiality, it.Letter.Urgency = letterType.lookup(), conf.lookup(), urgency.lookup()
+	it.Letter.Direction = masterdata.Direction(letterType.Code.String)
+	if external.Valid && external.String != "" {
+		it.Letter.External = json.RawMessage(external.String)
+	}
 	if signerID.Valid {
 		it.Letter.Approver = &PersonRef{ID: signerID.Int64, Name: signerName.String, PositionName: signerPos.String}
 	}
@@ -155,7 +171,8 @@ func (r *Repository) Counts(ctx context.Context, f Filter) (Counts, error) {
 	q := `
 SELECT i.status, COUNT(*)
 FROM inbox_items i
-JOIN letters l ON l.id = i.letter_id` + where + `
+JOIN letters l       ON l.id = i.letter_id
+LEFT JOIN lookups lt ON lt.id = l.letter_type_id` + where + `
 GROUP BY i.status`
 	rows, err := r.q.QueryContext(ctx, q, args...)
 	if err != nil {

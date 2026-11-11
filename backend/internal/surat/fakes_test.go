@@ -25,7 +25,7 @@ type fakeLetterStore struct {
 	lock         *LetterLock
 	participants map[int64]bool // untuk IsParticipant
 	reviewers    []int64
-	approverID   int64
+	approvers    []int64
 	draft        *LetterDraft
 	detail       *LetterDetail
 	list         []LetterListItem
@@ -39,6 +39,12 @@ type fakeLetterStore struct {
 	published   *Publication
 	versions    []DocumentVersion
 	attachments []Attachment
+	incoming    *NewIncoming
+}
+
+func (f *fakeLetterStore) CreateIncoming(_ context.Context, n NewIncoming) (int64, string, error) {
+	f.incoming = &n
+	return 1, testLetterID, nil
 }
 
 func (f *fakeLetterStore) Attachments(context.Context, int64) ([]Attachment, error) {
@@ -121,8 +127,8 @@ func (f *fakeLetterStore) IsParticipant(_ context.Context, _, userID int64) (boo
 	return f.participants[userID], nil
 }
 
-func (f *fakeLetterStore) Participants(context.Context, int64) ([]int64, int64, error) {
-	return f.reviewers, f.approverID, nil
+func (f *fakeLetterStore) Participants(context.Context, int64) ([]int64, []int64, error) {
+	return f.reviewers, f.approvers, nil
 }
 
 func (f *fakeLetterStore) ApplyTransition(_ context.Context, _, _ int64, d Decision, note *string) error {
@@ -167,7 +173,8 @@ type fakeRefs struct {
 	unitHeads     map[int64]int64   // unit -> pimpinan
 	aliasMembers  map[int64][]int64 // level -> anggota
 	templates     map[int64]*Template
-	inactive      map[int64]bool // template nonaktif
+	inactive      map[int64]bool   // template nonaktif
+	codes         map[int64]string // id lookup -> kode (jenis surat); kosong = jenis surat biasa
 }
 
 // fakeRefs juga menjadi penyimpan template (baca dan tulis).
@@ -272,6 +279,19 @@ func newFakeRefs() *fakeRefs {
 	}
 }
 
+func (f *fakeRefs) LookupCode(_ context.Context, _ string, id int64) (string, error) {
+	return f.codes[id], nil
+}
+
+func (f *fakeRefs) LookupID(_ context.Context, _, _, code string) (int64, error) {
+	for id, c := range f.codes {
+		if c == code {
+			return id, nil
+		}
+	}
+	return 0, db.ErrNotFound
+}
+
 func (f *fakeRefs) LookupCategories(_ context.Context, _ string, ids []int64) (map[int64]string, error) {
 	out := map[int64]string{}
 	for _, id := range ids {
@@ -323,8 +343,21 @@ func (f *fakeRefs) UnreachableRecipients(context.Context, string, []int64, []int
 
 // fakeInbox mencatat surat yang dikirim ke inbox; holders adalah user yang memiliki surat di inbox.
 type fakeInbox struct {
-	to, cc  []int64
-	holders map[int64]bool
+	to, cc   []int64
+	holders  map[int64]bool
+	incoming *fakeIncoming
+}
+
+// fakeIncoming adalah surat masuk eksternal yang dikirim ke inbox.
+type fakeIncoming struct {
+	letterID, from int64
+	recipients     []int64
+	note           *string
+}
+
+func (f *fakeInbox) DeliverIncoming(_ context.Context, letterID, fromUserID int64, _, _ string, recipients []int64, note *string) error {
+	f.incoming = &fakeIncoming{letterID: letterID, from: fromUserID, recipients: recipients, note: note}
+	return nil
 }
 
 func (f *fakeInbox) HasItem(_ context.Context, _, userID int64) (bool, error) {

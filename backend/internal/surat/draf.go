@@ -12,6 +12,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -22,7 +23,11 @@ const (
 	maxSpecialNoteLength = 500
 	maxSummaryLength     = 1000
 	maxReviewers         = 10
+	maxApprovers         = 10
 	maxRecipients        = 50
+	maxExternalName      = 200
+	maxExternalAddress   = 500
+	maxExternalAttention = 200
 )
 
 // LetterInput adalah isi form surat apa adanya dari request POST/PUT. Semua field opsional;
@@ -37,11 +42,19 @@ type LetterInput struct {
 	Summary           *string  `json:"summary"`
 	SpecialNote       *string  `json:"specialNote"`
 	ReviewerIDs       []string `json:"reviewerIds"`
-	ApproverID        *string  `json:"approverId"`
+	ApproverIDs       []string `json:"approverIds"`
 	Recipients        struct {
 		To []RecipientInput `json:"to"`
 		CC []RecipientInput `json:"cc"`
 	} `json:"recipients"`
+	ExternalRecipient *ExternalPartyInput `json:"externalRecipient"` // hanya surat eksternal keluar
+}
+
+// ExternalPartyInput adalah tujuan surat eksternal keluar apa adanya dari request.
+type ExternalPartyInput struct {
+	Name      *string `json:"name"`
+	Address   *string `json:"address"`
+	Attention *string `json:"attention"`
 }
 
 // RecipientInput adalah satu penerima: isi tepat satu dari UnitID atau AliasLevelID.
@@ -68,7 +81,6 @@ func parseDraft(in LetterInput) (*LetterDraft, error) {
 		{&d.ClassificationID, in.ClassificationID, "Klasifikasi"},
 		{&d.ConfidentialityID, in.ConfidentialityID, "Sifat surat"},
 		{&d.UrgencyID, in.UrgencyID, "Kecepatan"},
-		{&d.ApproverID, in.ApproverID, "Approver"},
 	}
 	for _, f := range ids {
 		if *f.dst, err = optionalID(f.src, f.label); err != nil {
@@ -104,11 +116,53 @@ func parseDraft(in LetterInput) (*LetterDraft, error) {
 		}
 		d.ReviewerIDs = append(d.ReviewerIDs, id)
 	}
+	if len(in.ApproverIDs) > maxApprovers {
+		return nil, apperr.Invalid(fmt.Sprintf("Approver maksimal %d orang", maxApprovers))
+	}
+	for _, raw := range in.ApproverIDs {
+		id, err := parseID(raw, "Approver")
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(d.ApproverIDs, id) {
+			return nil, apperr.Invalid("Approver yang sama tidak boleh dipilih lebih dari sekali")
+		}
+		d.ApproverIDs = append(d.ApproverIDs, id)
+	}
 
 	if d.Recipients, err = parseRecipients(in.Recipients.To, in.Recipients.CC); err != nil {
 		return nil, err
 	}
+	if d.ExternalRecipient, err = parseExternalParty(in.ExternalRecipient); err != nil {
+		return nil, err
+	}
 	return &d, nil
+}
+
+// parseExternalParty merapikan tujuan surat eksternal; tanpa nama berarti kosong.
+func parseExternalParty(in *ExternalPartyInput) (*ExternalParty, error) {
+	if in == nil {
+		return nil, nil
+	}
+	name, err := optionalText(in.Name, maxExternalName, "Nama perusahaan/instansi tujuan")
+	if err != nil {
+		return nil, err
+	}
+	address, err := optionalText(in.Address, maxExternalAddress, "Alamat tujuan")
+	if err != nil {
+		return nil, err
+	}
+	attention, err := optionalText(in.Attention, maxExternalAttention, "UP tujuan")
+	if err != nil {
+		return nil, err
+	}
+	if name == nil {
+		if address != nil || attention != nil {
+			return nil, apperr.Invalid("Nama perusahaan/instansi tujuan wajib diisi")
+		}
+		return nil, nil
+	}
+	return &ExternalParty{Name: *name, Address: address, Attention: attention}, nil
 }
 
 // checkComplete memastikan surat siap diproses (dipakai saat submit dan saat menyimpan surat
@@ -126,9 +180,13 @@ func checkComplete(d *LetterDraft) error {
 	add(d.UrgencyID == nil, "kecepatan")
 	add(d.Title == nil, "perihal")
 	add(len(d.ReviewerIDs) == 0, "minimal 1 reviewer")
-	add(d.ApproverID == nil, "approver")
-	add(!slices.ContainsFunc(d.Recipients, func(r RecipientRef) bool { return r.Type == RecipientTo }),
-		"minimal 1 penerima Kepada")
+	add(len(d.ApproverIDs) == 0, "minimal 1 approver")
+	if d.IsExternal() {
+		add(d.ExternalRecipient == nil, "tujuan perusahaan/instansi")
+	} else {
+		add(!slices.ContainsFunc(d.Recipients, func(r RecipientRef) bool { return r.Type == RecipientTo }),
+			"minimal 1 penerima Kepada")
+	}
 	if len(missing) > 0 {
 		return apperr.Invalid("Surat belum lengkap: " + strings.Join(missing, ", "))
 	}
@@ -271,6 +329,9 @@ func (s *Service) checkRefs(ctx context.Context, companyCode string, d *LetterDr
 	if err := s.checkLookups(ctx, companyCode, d); err != nil {
 		return err
 	}
+	if err := s.checkLetterType(ctx, companyCode, d); err != nil {
+		return err
+	}
 	if err := s.checkTemplate(ctx, companyCode, d); err != nil {
 		return err
 	}
@@ -278,6 +339,29 @@ func (s *Service) checkRefs(ctx context.Context, companyCode string, d *LetterDr
 		return err
 	}
 	return s.checkParticipants(ctx, companyCode, d)
+}
+
+// checkLetterType mengisi kode jenis surat draf, menolak jenis surat masuk eksternal (dicatat lewat
+// form surat masuk), dan memastikan isian penerima sesuai arah surat: surat eksternal keluar memakai
+// tujuan perusahaan/instansi (tanpa penerima internal), surat internal sebaliknya.
+func (s *Service) checkLetterType(ctx context.Context, companyCode string, d *LetterDraft) error {
+	d.TypeCode = ""
+	if d.LetterTypeID != nil {
+		code, err := s.repos.Lookups.LookupCode(ctx, companyCode, *d.LetterTypeID)
+		if err != nil {
+			return err
+		}
+		d.TypeCode = code
+	}
+	switch {
+	case d.TypeCode == masterdata.TypeExternalIn:
+		return apperr.Invalid("Surat masuk eksternal dicatat lewat form surat masuk, bukan dibuat sebagai draf")
+	case d.IsExternal() && len(d.Recipients) > 0:
+		return apperr.Invalid("Surat eksternal ditujukan ke perusahaan/instansi; penerima internal tidak dipakai")
+	case !d.IsExternal() && d.ExternalRecipient != nil:
+		return apperr.Invalid("Tujuan perusahaan/instansi hanya untuk jenis Surat Eksternal")
+	}
+	return nil
 }
 
 // checkLookups memeriksa semua lookup draf (termasuk alias penerima) dengan satu query.

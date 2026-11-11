@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"office.backend/internal/masterdata"
 	"office.backend/internal/organisasi"
 	"office.backend/internal/platform/db"
 )
@@ -53,7 +54,7 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        tp.id, tp.name,
        su.id, su.code, COALESCE(l.sender_unit_name, su.name),
        d.id, d.name, dp.name,
-       a.id, a.name, ap.name, ISNULL(l.forwarded_by_id, 0),
+       a.id, a.name, ap.name, l.external_info,
        sb.id, sb.name, sbp.name, sb.employee_number,
        (SELECT TOP 1 ra.note FROM letter_actions ra
         WHERE ra.letter_id = l.id AND ra.action = 'RETURN'
@@ -83,7 +84,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		assigneeName, assigneePos        sql.NullString
 		signerID                         sql.NullInt64
 		signerName, signerPos, signerNIK sql.NullString
-		attachments                      sql.NullString
+		attachments, externalInfo        sql.NullString
 	)
 	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode)).Scan(
 		&d.InternalID, &d.ID, &d.RowVersion, &d.Status,
@@ -93,7 +94,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		&templateID, &templateName,
 		&d.SenderUnit.ID, &d.SenderUnit.Code, &d.SenderUnit.Name,
 		&d.Drafter.ID, &d.Drafter.Name, &d.Drafter.PositionName,
-		&assigneeID, &assigneeName, &assigneePos, &d.ForwardedByID,
+		&assigneeID, &assigneeName, &assigneePos, &externalInfo,
 		&signerID, &signerName, &signerPos, &signerNIK, &d.LastReturnNote,
 		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt, &attachments, &d.WatermarkText,
 	)
@@ -107,8 +108,13 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		return nil, err
 	}
 
+	if d.External, err = parseExternalInfo(externalInfo); err != nil {
+		return nil, err
+	}
+
 	d.ID = strings.ToLower(d.ID)
 	d.LetterType, d.Classification = letterType.lookup(), class.lookup()
+	d.Direction = masterdata.Direction(letterType.Code.String)
 	d.Confidentiality, d.Urgency = conf.lookup(), urgency.lookup()
 	if templateID.Valid {
 		d.Template = &TemplateRef{ID: templateID.Int64, Name: templateName.String}
@@ -121,7 +127,9 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 			ApprovedAt:     *d.LetterDate,
 			ApprovedBy:     PersonRef{ID: signerID.Int64, Name: signerName.String, PositionName: signerPos.String},
 			EmployeeNumber: signerNIK.String,
-			QRURL:          "/api/v1/letters/" + d.ID + "/qr",
+		}
+		if d.Direction == masterdata.DirectionInternal { // surat eksternal ditandatangani basah, tanpa QR
+			d.Approval.QRURL = "/api/v1/letters/" + d.ID + "/qr"
 		}
 	}
 	return &d, nil

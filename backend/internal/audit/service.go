@@ -19,13 +19,15 @@ const (
 	statusReturnedToDrafter  = "RETURNED_TO_DRAFTER"
 	statusInApproval         = "IN_APPROVAL"
 	statusReturnedToReviewer = "RETURNED_TO_REVIEWER"
+	statusApproved           = "APPROVED" // surat eksternal keluar menunggu scan bertanda tangan
 	statusSent               = "SENT"
+	statusReceived           = "RECEIVED" // surat masuk eksternal
 	statusCancelled          = "CANCELLED"
 )
 
 // inProcessStatuses adalah status surat yang sedang menunggu tindakan seseorang.
 func inProcessStatuses() []string {
-	return []string{statusInReview, statusReturnedToDrafter, statusInApproval, statusReturnedToReviewer}
+	return []string{statusInReview, statusReturnedToDrafter, statusInApproval, statusReturnedToReviewer, statusApproved}
 }
 
 // Error yang aman ditampilkan ke pengguna.

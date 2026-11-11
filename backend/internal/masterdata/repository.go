@@ -3,6 +3,7 @@ package masterdata
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"office.backend/internal/platform/db"
@@ -84,4 +85,41 @@ WHERE id IN (SELECT CAST([value] AS BIGINT) FROM OPENJSON(@ids))
 		return nil, fmt.Errorf("membaca lookup: %w", err)
 	}
 	return out, nil
+}
+
+// LookupCode mengembalikan kode lookup aktif (global atau milik companyCode); "" bila tidak ada.
+func (r *Repository) LookupCode(ctx context.Context, companyCode string, id int64) (string, error) {
+	const q = `
+SELECT code FROM lookups
+WHERE id = @id AND is_active = 1 AND deleted_at IS NULL
+  AND (company_code IS NULL OR company_code = @companyCode)`
+	var code string
+	err := r.q.QueryRowContext(ctx, q, sql.Named("id", id), sql.Named("companyCode", companyCode)).Scan(&code)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("membaca lookup: %w", err)
+	}
+	return code, nil
+}
+
+// LookupID mengembalikan ID lookup aktif berdasarkan kategori dan kodenya (global atau milik
+// companyCode); db.ErrNotFound bila tidak ada.
+func (r *Repository) LookupID(ctx context.Context, companyCode, category, code string) (int64, error) {
+	const q = `
+SELECT TOP 1 id FROM lookups
+WHERE category = @category AND code = @code AND is_active = 1 AND deleted_at IS NULL
+  AND (company_code IS NULL OR company_code = @companyCode)
+ORDER BY CASE WHEN company_code IS NULL THEN 1 ELSE 0 END`
+	var id int64
+	err := r.q.QueryRowContext(ctx, q, sql.Named("category", category), sql.Named("code", code),
+		sql.Named("companyCode", companyCode)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, db.ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("membaca lookup %s %s: %w", category, code, err)
+	}
+	return id, nil
 }

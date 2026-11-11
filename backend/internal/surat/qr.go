@@ -9,6 +9,7 @@ import (
 	"rsc.io/qr"
 
 	"office.backend/internal/auth"
+	"office.backend/internal/masterdata"
 	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
@@ -27,14 +28,18 @@ func (s *Service) ApprovalQR(ctx context.Context, user *auth.CurrentUser, letter
 	if err != nil {
 		return nil, err
 	}
+	if d.Direction != masterdata.DirectionInternal {
+		return nil, &apperr.InvalidStateError{Message: "Surat eksternal ditandatangani basah dan tidak memakai QR persetujuan"}
+	}
 	if d.Approval == nil {
 		return nil, &apperr.InvalidStateError{Message: "QR persetujuan baru tersedia setelah surat disetujui approver"}
 	}
 	return approvalQRPNG(d)
 }
 
-// Penanda QR wajib ada di naskah surat yang sudah diunggah, karena QR persetujuan hanya dipasang di
-// posisi penandanya (penanda.go). Surat tanpa naskah tidak diperiksa.
+// Penanda QR wajib ada di naskah surat internal yang sudah diunggah, karena QR persetujuan hanya
+// dipasang di posisi penandanya (penanda.go). Surat tanpa naskah dan surat eksternal (ditandatangani
+// basah) tidak diperiksa.
 var (
 	errNoQRPlaceholderSubmit = apperr.Invalid("Naskah belum memuat penanda QR Code (###*QRCode*###). Tambahkan penanda di posisi tanda tangan sebelum mengajukan.")
 	errNoQRPlaceholderSign   = &apperr.InvalidStateError{Message: "Naskah tidak memuat penanda QR Code (###*QRCode*###). Kembalikan surat ke drafter untuk diperbaiki."}

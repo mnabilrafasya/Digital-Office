@@ -19,11 +19,11 @@ func ptr[T any](v T) *T { return &v }
 // drafter adalah Andi (id 15) di perusahaan PSP, unit 8.
 var drafter = &auth.CurrentUser{ID: 15, Name: "Andi", Unit: auth.UserUnit{ID: 8}, Company: auth.UserCompany{Code: "PSP"}}
 
-// completeInput adalah draf lengkap: reviewer [9, 4], approver 3, Kepada unit 7 + alias 60, Tembusan unit 9.
+// completeInput adalah draf lengkap: reviewer [9, 4], approver [3], Kepada unit 7 + alias 60, Tembusan unit 9.
 func completeInput() LetterInput {
 	in := LetterInput{
 		LetterTypeID: ptr("12"), ClassificationID: ptr("40"), ConfidentialityID: ptr("1"), UrgencyID: ptr("5"),
-		Title: ptr("  Undangan Rapat  "), ReviewerIDs: []string{"9", "4"}, ApproverID: ptr("3"),
+		Title: ptr("  Undangan Rapat  "), ReviewerIDs: []string{"9", "4"}, ApproverIDs: []string{"3"},
 	}
 	in.Recipients.To = []RecipientInput{{UnitID: ptr("7")}, {AliasLevelID: ptr("60")}}
 	in.Recipients.CC = []RecipientInput{{UnitID: ptr("9")}}
@@ -45,11 +45,11 @@ func TestParseDraft(t *testing.T) {
 		{"reviewer duplikat", func(in *LetterInput) { in.ReviewerIDs = []string{"9", "9"} }, "Reviewer yang sama"},
 		{"reviewer kosong", func(in *LetterInput) { in.ReviewerIDs = []string{""} }, "Reviewer tidak valid"},
 		// Peran tidak saling membatasi: pejabat boleh drafter, reviewer, dan approver sekaligus
-		{"approver = drafter", func(in *LetterInput) { in.ApproverID = ptr("15") }, ""},
-		{"approver juga reviewer", func(in *LetterInput) { in.ApproverID = ptr("9") }, ""},
+		{"approver = drafter", func(in *LetterInput) { in.ApproverIDs = []string{"15"} }, ""},
+		{"approver juga reviewer", func(in *LetterInput) { in.ApproverIDs = []string{"9"} }, ""},
 		{"drafter jadi reviewer dan approver", func(in *LetterInput) {
 			in.ReviewerIDs = []string{"15"}
-			in.ApproverID = ptr("15")
+			in.ApproverIDs = []string{"15"}
 		}, ""},
 		{"penerima tanpa unit/alias", func(in *LetterInput) { in.Recipients.To = []RecipientInput{{}} }, "tepat satu"},
 		{"penerima unit dan alias sekaligus", func(in *LetterInput) {
@@ -90,7 +90,7 @@ func TestCheckComplete(t *testing.T) {
 		t.Fatalf("draf lengkap: %v", err)
 	}
 	in := completeInput()
-	in.Title, in.ApproverID = nil, nil
+	in.Title, in.ApproverIDs = nil, nil
 	in.Recipients.To = nil
 	d, _ = parseDraft(in)
 	err := checkComplete(d)

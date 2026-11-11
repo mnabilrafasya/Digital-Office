@@ -40,7 +40,7 @@ func uploadRequest(method, path string, fields map[string]string, fileName strin
 }
 
 func TestUploadQueueHandler(t *testing.T) {
-	store := letterAt(StatusDraft, 0, 0)
+	store := letterAt(StatusDraft, 0)
 	limiter := upload.NewLimiter(2<<20, 200*time.Millisecond) // jatah kecil supaya mudah penuh
 	h := NewHandler(newTestLetterService(store, newFakeRefs()), UploadOptions{Limiter: limiter, ReadTimeout: time.Minute, Timeout: 2 * time.Minute})
 	r := chi.NewRouter()

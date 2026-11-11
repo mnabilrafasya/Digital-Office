@@ -56,7 +56,8 @@ SELECT CONVERT(char(36), l.uuid), l.letter_number, l.title, l.status,
        a.id, a.name, ap.name,
        ISNULL((SELECT TOP 1 lp.step_order FROM letter_participants lp
                WHERE lp.letter_id = l.id AND lp.user_id = l.current_assignee_id
-                 AND lp.role = 'REVIEWER' AND lp.deleted_at IS NULL), 0),
+                 AND lp.role = CASE WHEN l.status IN ('IN_APPROVAL', 'APPROVED') THEN 'APPROVER' ELSE 'REVIEWER' END
+                 AND lp.deleted_at IS NULL), 0),
        l.created_at, l.updated_at,
        COUNT(*) OVER ()
 FROM letters l
