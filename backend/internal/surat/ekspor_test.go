@@ -80,8 +80,9 @@ func TestFinalPDFFromEditor(t *testing.T) {
 	}
 	filled, _ := io.ReadAll(f.Body)
 	doc := docxFiles(t, filled)["word/document.xml"]
-	if !strings.Contains(doc, "Nomor: 015/PSP/X/2026") || !strings.Contains(doc, `<w:jc w:val="right"/>`) ||
-		!strings.Contains(doc, "<w:drawing>") || f.Name != "015-PSP-X-2026.docx" || f.ContentType != DocxContentType {
+	// Naskah uji tanpa penanda QR: QR tidak ditambahkan di mana pun (hanya di posisi penanda)
+	if !strings.Contains(doc, "Nomor: 015/PSP/X/2026") || strings.Contains(doc, "<w:drawing>") ||
+		f.Name != "015-PSP-X-2026.docx" || f.ContentType != DocxContentType {
 		t.Errorf("naskah terisi salah: %+v\n%s", f, doc)
 	}
 

@@ -50,17 +50,13 @@ func (s *Service) openDocument(ctx context.Context, user *auth.CurrentUser, lett
 	}
 	var (
 		v           *DocumentVersion
-		c           officialCopy // salinan yang diunduh (surat terbit)
 		contentType = DocxContentType
 	)
 	if d.Status == StatusSent {
 		if version != 0 {
 			return nil, &apperr.InvalidStateError{Message: "Surat sudah disetujui. Yang bisa diunduh hanya PDF resmi ber-QR."}
 		}
-		if c, err = s.copyFor(ctx, d, user); err != nil {
-			return nil, err
-		}
-		if v, err = s.officialPDF(ctx, d, c); err != nil {
+		if v, err = s.finalVersion(ctx, d.InternalID); err != nil {
 			return nil, err
 		}
 		contentType = PDFContentType
@@ -78,7 +74,7 @@ func (s *Service) openDocument(ctx context.Context, user *auth.CurrentUser, lett
 		return f, nil
 	}
 	err = s.audit.Record(ctx, letterEntry(user, d.InternalID, d.ID, audit.ActionDownload,
-		downloadSnapshot{VersionNumber: v.VersionNumber, Type: v.Type, CopyFor: c.OwnerID}))
+		downloadSnapshot{VersionNumber: v.VersionNumber, Type: v.Type}))
 	if err != nil {
 		f.Body.Close()
 		return nil, err
@@ -89,8 +85,7 @@ func (s *Service) openDocument(ctx context.Context, user *auth.CurrentUser, lett
 // downloadSnapshot adalah isi audit_logs.snapshot saat dokumen surat diunduh.
 type downloadSnapshot struct {
 	VersionNumber int    `json:"versionNumber"`
-	Type          string `json:"type"`              // DRAFT (.docx) atau FINAL (PDF resmi)
-	CopyFor       int64  `json:"copyFor,omitempty"` // pemilik salinan penerima yang diunduh
+	Type          string `json:"type"` // DRAFT (.docx) atau FINAL (PDF resmi)
 }
 
 // draftVersion mengambil versi naskah .docx (version 0 = terbaru).
@@ -121,21 +116,6 @@ func (s *Service) finalVersion(ctx context.Context, letterID int64) (*DocumentVe
 		return nil, errFinalPDFNotReady
 	}
 	return v, err
-}
-
-// officialPDF mengambil PDF resmi salinan c (belum ada = errFinalPDFNotReady).
-func (s *Service) officialPDF(ctx context.Context, d *LetterDetail, c officialCopy) (*DocumentVersion, error) {
-	if c.isMaster() {
-		return s.finalVersion(ctx, d.InternalID)
-	}
-	exists, err := s.repos.Files.DocumentExists(ctx, copyObjectKey(d.ID, c, "pdf"))
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errFinalPDFNotReady
-	}
-	return s.copyVersion(ctx, d, c)
 }
 
 // openVersion membuka file satu versi naskah dari storage.

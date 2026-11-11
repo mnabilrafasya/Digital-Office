@@ -321,25 +321,10 @@ func (f *fakeRefs) UnreachableRecipients(context.Context, string, []int64, []int
 	return f.headlessUnits, f.emptyAliases, nil
 }
 
-// fakeInbox mencatat surat yang dikirim ke inbox; holders adalah user yang memiliki surat di inbox,
-// copies adalah pemilik salinan yang dilihat tiap user (user -> pemilik, jenis, jabatan).
+// fakeInbox mencatat surat yang dikirim ke inbox; holders adalah user yang memiliki surat di inbox.
 type fakeInbox struct {
 	to, cc  []int64
 	holders map[int64]bool
-	copies  map[int64]fakeCopy
-}
-
-type fakeCopy struct {
-	owner     int64
-	typ, post string
-}
-
-func (f *fakeInbox) CopyOwner(_ context.Context, _, userID int64) (int64, string, string, error) {
-	c, ok := f.copies[userID]
-	if !ok {
-		return 0, "", "", nil
-	}
-	return c.owner, c.typ, c.post, nil
 }
 
 func (f *fakeInbox) HasItem(_ context.Context, _, userID int64) (bool, error) {

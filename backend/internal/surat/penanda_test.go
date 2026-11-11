@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"office.backend/internal/organisasi"
 )
 
 // docxFiles membuka .docx menjadi peta nama file -> isi.
@@ -102,7 +100,7 @@ func TestFillPlaceholdersText(t *testing.T) {
 	}
 	zw.Close()
 
-	values := map[string]string{phNoSurat: "015/PSP/X/2026", phPerihal: "Rapat <Q4> & evaluasi", phKepada: "VP Akuntansi\nSeluruh VP"}
+	values := map[string]string{phNoSurat: "015/PSP/X/2026"}
 	out, err := fillPlaceholders(buf.Bytes(), values, []byte("png"))
 	if err != nil {
 		t.Fatalf("fillPlaceholders: %v", err)
@@ -110,11 +108,10 @@ func TestFillPlaceholdersText(t *testing.T) {
 	files := docxFiles(t, out)
 	want := []string{
 		"Nomor: 015/PSP/X/2026 (resmi)",
-		"Perihal: Rapat <Q4> & evaluasi & ###*Poin1*###",
-		"VP Akuntansi|Seluruh VP",
+		"Perihal: ###Perihal### & ###*Poin1*###", // bukan penanda sistem: dibiarkan
+		"###*KEPADA*###",
 		"###*No", "Surat*###",
 		"Tanpa penanda",
-		"", // tanpa penanda QR: paragraf QR ditambahkan di akhir
 	}
 	if got := paragraphTexts(t, files["word/document.xml"]); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("document.xml:\n got %q\nwant %q", got, want)
@@ -125,8 +122,8 @@ func TestFillPlaceholdersText(t *testing.T) {
 	if got := paragraphTexts(t, files["word/header1.xml"]); len(got) != 1 || got[0] != "Nomor 015/PSP/X/2026" {
 		t.Errorf("header1.xml = %q", got)
 	}
-	if files["word/styles.xml"] != "<w:t>###*NoSurat*###</w:t>" || len(files) != 6 {
-		t.Errorf("bagian lain tidak boleh berubah (yang bertambah hanya gambar QR dan relasinya): %d file", len(files))
+	if files["word/styles.xml"] != "<w:t>###*NoSurat*###</w:t>" || len(files) != 4 {
+		t.Errorf("bagian lain tidak boleh berubah, dan tanpa penanda QR tidak ada gambar yang ditambahkan: %d file", len(files))
 	}
 
 	if _, err := fillPlaceholders([]byte("bukan zip"), values, nil); err == nil {
@@ -172,16 +169,66 @@ func TestFillPlaceholdersQR(t *testing.T) {
 		t.Errorf("tipe png tidak didaftarkan: %s", files["[Content_Types].xml"])
 	}
 
-	// Tanpa penanda QR: QR ditambahkan rata kanan di akhir isi, sebelum pengaturan halaman
-	sect := `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>`
-	out, _ = fillPlaceholders(makeDocx(docWith(`<w:p><w:pPr>`+sect+`</w:pPr><w:r><w:t>Bab 1</w:t></w:r></w:p><w:p><w:r><w:t>Tanpa QR</w:t></w:r></w:p>`+sect)), nil, []byte("png"))
-	files = docxFiles(t, out)
-	d = files["word/document.xml"]
-	qrAt, lastSect := strings.Index(d, `<w:jc w:val="right"/></w:pPr><w:r><w:drawing>`), strings.LastIndex(d, "<w:sectPr>")
-	if qrAt < strings.Index(d, "Tanpa QR") || qrAt > lastSect || strings.Count(d, "<w:drawing>") != 1 || files["word/media/qr-persetujuan.png"] != "png" {
-		t.Errorf("QR tidak ditambahkan di akhir isi:\n%s", d)
+	// Penanda QR di beberapa tempat (isi dan footer): semuanya diganti QR
+	var many bytes.Buffer
+	zw = zip.NewWriter(&many)
+	for name, content := range map[string]string{
+		"[Content_Types].xml": `<Types><Default Extension="xml" ContentType="application/xml"/></Types>`,
+		"word/document.xml":   docWith(`<w:p><w:r><w:t>###*QRCode*###</w:t></w:r></w:p><w:p><w:r><w:t>###qrcode###</w:t></w:r></w:p>`),
+		"word/footer1.xml":    docWith(`<w:p><w:r><w:t>Paraf ###*QRCode*###</w:t></w:r></w:p>`),
+	} {
+		w, _ := zw.Create(name)
+		w.Write([]byte(content))
 	}
-	paragraphTexts(t, d) // XML tetap valid
+	zw.Close()
+	out, err = fillPlaceholders(many.Bytes(), nil, []byte("png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = docxFiles(t, out)
+	if strings.Count(files["word/document.xml"], "<w:drawing>") != 2 || strings.Count(files["word/footer1.xml"], "<w:drawing>") != 1 ||
+		files["word/_rels/footer1.xml.rels"] == "" {
+		t.Error("setiap penanda QR (termasuk di footer) harus diganti QR")
+	}
+
+	// Tanpa penanda QR: tidak ada QR yang ditambahkan (QR hanya di posisi penanda)
+	out, _ = fillPlaceholders(makeDocx(docWith(`<w:p><w:r><w:t>Tanpa QR</w:t></w:r></w:p>`)), nil, []byte("png"))
+	files = docxFiles(t, out)
+	if strings.Contains(files["word/document.xml"], "<w:drawing>") || files["word/media/qr-persetujuan.png"] != "" {
+		t.Error("tanpa penanda QR tidak boleh ada QR")
+	}
+}
+
+func TestHasQRPlaceholder(t *testing.T) {
+	cases := []struct {
+		name  string
+		parts map[string]string
+		want  bool
+	}{
+		{"isi surat", map[string]string{"word/document.xml": docWith(`<w:p><w:r><w:t>TTD ###*QRCode*###</w:t></w:r></w:p>`)}, true},
+		{"terpecah beberapa run", map[string]string{"word/document.xml": docWith(`<w:p><w:r><w:t>###*QR</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>Code*###</w:t></w:r></w:p>`)}, true},
+		{"format lama, huruf kecil", map[string]string{"word/document.xml": docWith(`<w:p><w:r><w:t>###qrcode###</w:t></w:r></w:p>`)}, true},
+		{"di footer", map[string]string{"word/document.xml": docWith(`<w:p/>`), "word/footer2.xml": docWith(`<w:p><w:r><w:t>###*QRCode*###</w:t></w:r></w:p>`)}, true},
+		{"di tabel", map[string]string{"word/document.xml": docWith(`<w:tbl><w:tr><w:tc><w:p><w:r><w:t>###*QRCode*###</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`)}, true},
+		{"tidak ada", map[string]string{"word/document.xml": docWith(`<w:p><w:r><w:t>###*NoSurat*###</w:t></w:r></w:p>`)}, false},
+		{"terpotong dua paragraf", map[string]string{"word/document.xml": docWith(`<w:p><w:r><w:t>###*QR</w:t></w:r></w:p><w:p><w:r><w:t>Code*###</w:t></w:r></w:p>`)}, false},
+		{"hanya di bagian non-teks", map[string]string{"word/document.xml": docWith(`<w:p/>`), "word/styles.xml": "<w:t>###*QRCode*###</w:t>"}, false},
+	}
+	for _, tc := range cases {
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		for name, content := range tc.parts {
+			w, _ := zw.Create(name)
+			w.Write([]byte(content))
+		}
+		zw.Close()
+		if got, err := hasQRPlaceholder(buf.Bytes()); err != nil || got != tc.want {
+			t.Errorf("%s: %v (err %v), want %v", tc.name, got, err, tc.want)
+		}
+	}
+	if _, err := hasQRPlaceholder([]byte("bukan zip")); err == nil {
+		t.Error("naskah rusak harus error")
+	}
 }
 
 func TestLetterPlaceholders(t *testing.T) {
@@ -190,58 +237,30 @@ func TestLetterPlaceholders(t *testing.T) {
 		Title:           ptr("Undangan Rapat"),
 		Confidentiality: &LookupRef{Name: "Terbatas"},
 		SenderUnit:      UnitRef{Name: "Departemen Teknologi Informasi PSP"},
-		Attachments:     []Attachment{{}, {}},
-		Recipients: LetterRecipients{To: []LetterRecipient{
-			{Unit: &UnitRef{Name: "Departemen Akuntansi"}, ResolvedHead: &PersonRef{Name: "Joko", PositionName: "VP Akuntansi"}},
-			{Alias: &organisasi.Alias{Label: "Seluruh VP"}},
-			{Unit: &UnitRef{Name: "Departemen Anggaran"}}, // pimpinan tidak tercatat: nama unit
-		}},
 		Approval: &Approval{ApprovedAt: time.Date(2026, 11, 5, 8, 30, 0, 0, time.UTC),
 			ApprovedBy: PersonRef{Name: "Agus Setiawan", PositionName: "VP Teknologi Informasi"}, EmployeeNumber: "1995021"},
 	}
-	want := map[string]string{
-		phNoSurat: "001/PSP/XI/2026", phTglSurat: "5 November 2026", phPerihal: "Undangan Rapat", phSifat: "Terbatas",
-		phLampiran: "2 (dua) berkas", phKepada: "VP Akuntansi\nPara VP\nDepartemen Anggaran", phTembusan: "-",
-		phDari: "Departemen Teknologi Informasi PSP", phJabatanTTD: "VP Teknologi Informasi", phNamaTTD: "Agus Setiawan",
-		phNoBadge: "1995021",
+	// Hanya NoSurat, TglSurat, dan Sifat (QR diisi terpisah); perihal, pengirim, dan penandatangan tidak
+	want := map[string]string{phNoSurat: "001/PSP/XI/2026", phTglSurat: "5 November 2026", phSifat: "Terbatas"}
+	got := letterPlaceholders(d)
+	if len(got) != len(want) {
+		t.Errorf("penanda = %v, want %v", got, want)
 	}
-	got := letterPlaceholders(d, officialCopy{})
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("%s = %q, want %q", k, got[k], v)
 		}
 	}
-	if len(got) != len(want) {
-		t.Errorf("jumlah penanda = %d, want %d", len(got), len(want))
-	}
-	for n, w := range map[int]string{1: "satu", 11: "sebelas", 12: "dua belas", 20: "dua puluh", 21: "dua puluh satu"} {
-		if terbilang(n) != w {
-			t.Errorf("terbilang(%d) = %q, want %q", n, terbilang(n), w)
-		}
-	}
-	if attachmentCountText(0) != "-" {
-		t.Error("tanpa lampiran harus -")
-	}
-
-	// Salinan penerima: "Kepada" hanya jabatan pemilik salinan, penanda lain sama dengan salinan induk
-	copyVals := letterPlaceholders(d, officialCopy{OwnerID: 50, PositionName: "VP Operasi Pabrik I"})
-	for k, v := range want {
-		if k == phKepada {
-			v = "VP Operasi Pabrik I"
-		}
-		if copyVals[k] != v {
-			t.Errorf("salinan: %s = %q, want %q", k, copyVals[k], v)
-		}
+	if len(letterPlaceholders(&LetterDetail{})) != 0 {
+		t.Error("data kosong tidak boleh menghasilkan penanda")
 	}
 }
 
-// TestFillTemplateFiles mengisi kelima template bawaan: semua penanda sistem terisi, QR masuk di
-// posisinya, dan penanda isi (ditulis drafter) tetap ada.
+// TestFillTemplateFiles mengisi kelima template bawaan: keempat penanda sistem terisi, QR masuk di
+// posisinya, dan penanda lain (diisi drafter) tetap ada.
 func TestFillTemplateFiles(t *testing.T) {
-	system := regexp.MustCompile(`(?i)###\*?(NoSurat|TglSurat|Perihal|Sifat|Lampiran|Kepada|Tembusan|Dari|JabatanPenandatangan|NamaPenandatangan|NoBadge|QRCode)\*?###`)
-	values := map[string]string{phNoSurat: "001/PSP/XI/2026", phTglSurat: "5 November 2026", phPerihal: "Uji", phSifat: "Biasa",
-		phLampiran: "-", phKepada: "VP Akuntansi", phTembusan: "-", phDari: "Departemen TI", phJabatanTTD: "VP TI",
-		phNamaTTD: "Agus", phNoBadge: "1995021"}
+	system := regexp.MustCompile(`(?i)###\*?(NoSurat|TglSurat|Sifat|QRCode)\*?###`)
+	values := map[string]string{phNoSurat: "001/PSP/XI/2026", phTglSurat: "5 November 2026", phSifat: "Biasa"}
 	for _, name := range []string{"surat-dinas-standar", "nota-dinas", "undangan-rapat", "surat-tugas", "dokumen-kosong"} {
 		src, err := os.ReadFile("../../database/seeds/templates/" + name + ".docx")
 		if err != nil {
@@ -252,8 +271,11 @@ func TestFillTemplateFiles(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		if d := docxFiles(t, out)["word/document.xml"]; strings.Count(d, "<w:drawing><wp:inline") != 1 || strings.Contains(d, `<w:jc w:val="right"/></w:pPr><w:r><w:drawing>`) {
-			t.Errorf("%s: QR harus satu, di posisi penanda (bukan ditambahkan di akhir)", name)
+		if d := docxFiles(t, out)["word/document.xml"]; strings.Count(d, "<w:drawing><wp:inline") != 1 {
+			t.Errorf("%s: QR harus satu, di posisi penanda", name)
+		}
+		if ok, _ := hasQRPlaceholder(src); !ok {
+			t.Errorf("%s: template bawaan harus memuat penanda QR", name)
 		}
 		text := strings.Join(paragraphTexts(t, docxFiles(t, out)["word/document.xml"]), "\n")
 		if m := system.FindString(text); m != "" {
@@ -266,8 +288,8 @@ func TestFillTemplateFiles(t *testing.T) {
 		if strings.Contains(srcText, "TglSurat") != strings.Contains(text, "5 November 2026") {
 			t.Errorf("%s: tanggal surat tidak terisi", name) // Surat Tugas memang tanpa tanggal
 		}
-		if !strings.Contains(text, "###*") {
-			t.Errorf("%s: penanda isi ikut terhapus", name)
+		if !strings.Contains(text, "###*NamaPenandatangan*###") {
+			t.Errorf("%s: penanda yang diisi drafter ikut terisi/terhapus", name)
 		}
 	}
 }

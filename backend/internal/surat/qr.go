@@ -2,6 +2,7 @@ package surat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 
 	"office.backend/internal/auth"
 	"office.backend/internal/platform/apperr"
+	"office.backend/internal/platform/db"
 )
 
 // qrScale adalah ukuran satu titik QR dalam piksel PNG.
@@ -29,6 +31,37 @@ func (s *Service) ApprovalQR(ctx context.Context, user *auth.CurrentUser, letter
 		return nil, &apperr.InvalidStateError{Message: "QR persetujuan baru tersedia setelah surat disetujui approver"}
 	}
 	return approvalQRPNG(d)
+}
+
+// Penanda QR wajib ada di naskah surat yang sudah diunggah, karena QR persetujuan hanya dipasang di
+// posisi penandanya (penanda.go). Surat tanpa naskah tidak diperiksa.
+var (
+	errNoQRPlaceholderSubmit = apperr.Invalid("Naskah belum memuat penanda QR Code (###*QRCode*###). Tambahkan penanda di posisi tanda tangan sebelum mengajukan.")
+	errNoQRPlaceholderSign   = &apperr.InvalidStateError{Message: "Naskah tidak memuat penanda QR Code (###*QRCode*###). Kembalikan surat ke drafter untuk diperbaiki."}
+)
+
+// checkQRPlaceholder memastikan naskah .docx terakhir surat memuat penanda QR; tidak ada = errNoQR.
+// Surat yang belum punya naskah lolos.
+func (s *Service) checkQRPlaceholder(ctx context.Context, letters Store, letterID int64, errNoQR error) error {
+	v, err := letters.LatestVersion(ctx, letterID, VersionDraft)
+	if errors.Is(err, db.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	docx, err := s.readFile(ctx, v.ObjectKey)
+	if err != nil {
+		return err
+	}
+	ok, err := hasQRPlaceholder(docx)
+	if err != nil {
+		return apperr.Invalid("Naskah surat bukan dokumen Word (.docx) yang valid")
+	}
+	if !ok {
+		return errNoQR
+	}
+	return nil
 }
 
 // approvalQRPNG membuat gambar PNG QR persetujuan dari detail surat yang sudah disetujui.
