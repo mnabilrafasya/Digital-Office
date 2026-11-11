@@ -74,6 +74,15 @@ func (h *Handler) CompanyStatus(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, http.StatusOK, c, err)
 }
 
+// DeleteCompany menangani DELETE /api/v1/admin/companies/{code}
+func (h *Handler) DeleteCompany(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DeleteCompany(r.Context(), auth.CurrentUserFrom(r.Context()), chi.URLParam(r, "code")); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
 // Settings menangani GET /api/v1/company
 func (h *Handler) Settings(w http.ResponseWriter, r *http.Request) {
 	st, err := h.svc.Settings(r.Context(), auth.CurrentUserFrom(r.Context()))

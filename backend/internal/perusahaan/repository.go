@@ -99,11 +99,11 @@ func (r *Repository) FindCompany(ctx context.Context, code string, lock bool) (*
 	return c, nil
 }
 
-// CodeTaken mengecek apakah kode perusahaan sudah pernah dipakai (termasuk yang dihapus).
+// CodeTaken mengecek apakah kode perusahaan sedang dipakai perusahaan yang belum dihapus.
 func (r *Repository) CodeTaken(ctx context.Context, code string) (bool, error) {
 	var taken bool
 	err := r.q.QueryRowContext(ctx,
-		`SELECT CASE WHEN EXISTS (SELECT 1 FROM companies WITH (UPDLOCK, HOLDLOCK) WHERE code = @code) THEN 1 ELSE 0 END`,
+		`SELECT CASE WHEN EXISTS (SELECT 1 FROM companies WITH (UPDLOCK, HOLDLOCK) WHERE code = @code AND deleted_at IS NULL) THEN 1 ELSE 0 END`,
 		sql.Named("code", code)).Scan(&taken)
 	if err != nil {
 		return false, fmt.Errorf("memeriksa kode perusahaan: %w", err)
@@ -113,19 +113,40 @@ func (r *Repository) CodeTaken(ctx context.Context, code string) (bool, error) {
 
 // InsertCompany menambah perusahaan beserta posisi standarnya (lookup POSITION_LEVEL). Format nomor
 // dan watermark dibiarkan kosong: format bawaan dipakai, admin perusahaan yang mengaturnya.
+// Apabila kode pernah dihapus (deleted_at IS NOT NULL), baris perusahaan diaktifkan kembali.
 func (r *Repository) InsertCompany(ctx context.Context, in CompanyInput) error {
-	if _, err := r.q.ExecContext(ctx, `INSERT INTO companies (code, name, city) VALUES (@code, @name, @city)`,
+	const upsertCompany = `
+IF EXISTS (SELECT 1 FROM companies WHERE code = @code AND deleted_at IS NOT NULL)
+    UPDATE companies
+    SET name = @name, city = @city, is_active = 1, deleted_at = NULL, updated_at = SYSDATETIMEOFFSET()
+    WHERE code = @code
+ELSE
+    INSERT INTO companies (code, name, city) VALUES (@code, @name, @city)`
+	if _, err := r.q.ExecContext(ctx, upsertCompany,
 		sql.Named("code", in.Code), sql.Named("name", in.Name), sql.Named("city", in.City)); err != nil {
 		return fmt.Errorf("menambah perusahaan: %w", err)
 	}
 	for _, lv := range standardLevels {
 		const q = `
-INSERT INTO lookups (company_code, category, code, name, sort_order, note)
-VALUES (@company, 'POSITION_LEVEL', @code, @name, @order, @note)`
+IF NOT EXISTS (SELECT 1 FROM lookups WHERE company_code = @company AND category = 'POSITION_LEVEL' AND code = @code AND deleted_at IS NULL)
+    INSERT INTO lookups (company_code, category, code, name, sort_order, note)
+    VALUES (@company, 'POSITION_LEVEL', @code, @name, @order, @note)`
 		if _, err := r.q.ExecContext(ctx, q, sql.Named("company", in.Code), sql.Named("code", lv.Code),
 			sql.Named("name", lv.Name), sql.Named("order", lv.Order), sql.Named("note", lv.Note)); err != nil {
 			return fmt.Errorf("menambah posisi %s: %w", lv.Code, err)
 		}
+	}
+	return nil
+}
+
+// DeleteCompany menghapus (soft-delete) perusahaan.
+func (r *Repository) DeleteCompany(ctx context.Context, code string) error {
+	const q = `
+UPDATE companies
+SET is_active = 0, deleted_at = SYSDATETIMEOFFSET(), updated_at = SYSDATETIMEOFFSET()
+WHERE code = @code AND deleted_at IS NULL`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("code", code)); err != nil {
+		return fmt.Errorf("menghapus perusahaan: %w", err)
 	}
 	return nil
 }

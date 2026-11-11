@@ -100,6 +100,7 @@ type TemplateWriter interface {
 	UpdateTemplate(ctx context.Context, id int64, d TemplateData, objectKey string) error
 	LockAdminTemplate(ctx context.Context, companyCode string, id int64) (*AdminTemplate, error)
 	SetTemplateActive(ctx context.Context, id int64, active bool) error
+	DeleteTemplate(ctx context.Context, id int64) error
 }
 
 // DocumentFiles menyimpan dan membaca file surat (naskah, lampiran) dan file template

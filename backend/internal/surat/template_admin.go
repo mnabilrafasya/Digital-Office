@@ -85,6 +85,29 @@ func (s *Service) SetTemplateStatus(ctx context.Context, user *auth.CurrentUser,
 	return t, nil
 }
 
+// DeleteTemplate menghapus (soft-delete) template surat perusahaan user.
+func (s *Service) DeleteTemplate(ctx context.Context, user *auth.CurrentUser, rawID string) error {
+	id, err := templateID(rawID)
+	if err != nil {
+		return err
+	}
+	return s.tx.InTx(ctx, func(q db.DBTX) error {
+		w := s.repos.TemplateWriter(q)
+		t, err := w.LockAdminTemplate(ctx, user.Company.Code, id)
+		if err != nil {
+			return templateNotFoundAs(err)
+		}
+		if err := w.DeleteTemplate(ctx, id); err != nil {
+			return err
+		}
+		return s.repos.Audit(q).Record(ctx, audit.Entry{
+			CompanyCode: user.Company.Code, EntityType: audit.EntityTemplate, EntityID: id,
+			Action: audit.ActionTemplateDelete, ActorID: user.ID, ActorName: user.Name,
+			Snapshot: templateStatusSnapshot{Name: t.Name, IsActive: false},
+		})
+	})
+}
+
 // manageableTemplate mencari template nonaktif untuk pemegang TEMPLATE_MANAGE (supaya admin bisa
 // mengunduh template yang sudah dinonaktifkan). Selain itu errTemplateNotFound.
 func (s *Service) manageableTemplate(ctx context.Context, user *auth.CurrentUser, rawID string) (*Template, error) {
@@ -130,4 +153,13 @@ func (h *Handler) TemplateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, t)
+}
+
+// DeleteTemplate menangani DELETE /api/v1/admin/templates/{templateId} (TEMPLATE_MANAGE)
+func (h *Handler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	if err := h.letters.DeleteTemplate(r.Context(), auth.CurrentUserFrom(r.Context()), chi.URLParam(r, "templateId")); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }

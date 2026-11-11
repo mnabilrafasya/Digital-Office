@@ -24,6 +24,7 @@ type Store interface {
 	InsertCompany(ctx context.Context, in CompanyInput) error
 	UpdateIdentity(ctx context.Context, code, name string, city *string) error
 	SetActive(ctx context.Context, code string, active bool) error
+	DeleteCompany(ctx context.Context, code string) error
 	UpdateSettings(ctx context.Context, code, format string, watermark *string) error
 }
 
@@ -62,9 +63,11 @@ var codePattern = regexp.MustCompile(`^[A-Z0-9]{2,20}$`)
 
 var (
 	// ErrCompanyNotFound: kode perusahaan tidak ada.
-	ErrCompanyNotFound = &apperr.NotFoundError{Message: "Perusahaan tidak ditemukan"}
-	errCodeTaken       = &apperr.InvalidStateError{Message: "Kode perusahaan sudah dipakai"}
-	errOwnCompany      = &apperr.InvalidStateError{Message: "Perusahaan tempat Anda bekerja tidak bisa dinonaktifkan"}
+	ErrCompanyNotFound   = &apperr.NotFoundError{Message: "Perusahaan tidak ditemukan"}
+	errCodeTaken         = &apperr.InvalidStateError{Message: "Kode perusahaan sudah dipakai"}
+	errOwnCompany        = &apperr.InvalidStateError{Message: "Perusahaan tempat Anda bekerja tidak bisa dinonaktifkan"}
+	errOwnCompanyDelete  = &apperr.InvalidStateError{Message: "Perusahaan tempat Anda bekerja tidak bisa dihapus"}
+	errCompanyHasMembers = &apperr.InvalidStateError{Message: "Perusahaan masih memiliki unit kerja atau user aktif. Hapus atau nonaktifkan dulu."}
 )
 
 // --- SUPERADMIN ---------------------------------------------------------------------------
@@ -176,6 +179,33 @@ func (s *Service) SetCompanyStatus(ctx context.Context, user *auth.CurrentUser, 
 		return nil, err
 	}
 	return s.Company(ctx, code)
+}
+
+// DeleteCompany menghapus (soft-delete) perusahaan apabila bukan perusahaan tempat pelaku bekerja
+// dan tidak lagi memiliki unit/user aktif.
+func (s *Service) DeleteCompany(ctx context.Context, user *auth.CurrentUser, code string) error {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == user.Company.Code {
+		return errOwnCompanyDelete
+	}
+	return s.tx.InTx(ctx, func(q db.DBTX) error {
+		store := s.repos.Companies(q)
+		old, err := store.FindCompany(ctx, code, true)
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrCompanyNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if old.ActiveUnits > 0 || old.ActiveUsers > 0 {
+			return errCompanyHasMembers
+		}
+		if err := store.DeleteCompany(ctx, code); err != nil {
+			return err
+		}
+		return s.record(ctx, q, user, code, audit.ActionCompanyDelete,
+			map[string]any{"name": old.Name, "city": old.City, "isActive": old.IsActive}, nil)
+	})
 }
 
 // parseCompany merapikan dan memvalidasi isian perusahaan.

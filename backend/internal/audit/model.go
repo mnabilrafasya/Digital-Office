@@ -46,6 +46,7 @@ const (
 	ActionTemplateUpdate   = "TEMPLATE_UPDATE"   // data atau file template surat diganti
 	ActionExport           = "AUDIT_EXPORT"      // audit log diekspor
 	ActionTemplateStatus   = "TEMPLATE_STATUS"   // template diaktifkan/dinonaktifkan admin
+	ActionTemplateDelete   = "TEMPLATE_DELETE"   // template surat dihapus admin
 	ActionSignedUpload     = "UPLOAD_SIGNED"     // scan surat eksternal bertanda tangan basah diunggah
 	ActionIncoming         = "INCOMING_RECEIVE"  // surat masuk eksternal dicatat dan didisposisikan
 )
@@ -55,15 +56,19 @@ const (
 	ActionCompanyCreate   = "COMPANY_CREATE"   // perusahaan ditambah (SUPERADMIN)
 	ActionCompanyUpdate   = "COMPANY_UPDATE"   // identitas perusahaan diubah (SUPERADMIN)
 	ActionCompanyStatus   = "COMPANY_STATUS"   // perusahaan diaktifkan/dinonaktifkan (SUPERADMIN)
+	ActionCompanyDelete   = "COMPANY_DELETE"   // perusahaan dihapus (SUPERADMIN)
 	ActionCompanySettings = "COMPANY_SETTINGS" // watermark/format nomor diubah (ADMIN)
 	ActionUnitCreate      = "UNIT_CREATE"
 	ActionUnitUpdate      = "UNIT_UPDATE"
 	ActionUnitStatus      = "UNIT_STATUS"
+	ActionUnitDelete      = "UNIT_DELETE"
 	ActionPositionCreate  = "POSITION_CREATE"
 	ActionPositionUpdate  = "POSITION_UPDATE"
 	ActionPositionStatus  = "POSITION_STATUS"
+	ActionPositionDelete  = "POSITION_DELETE"
 	ActionUserCreate      = "USER_CREATE"
 	ActionUserUpdate      = "USER_UPDATE"
 	ActionUserStatus      = "USER_STATUS"
+	ActionUserDelete      = "USER_DELETE"
 	ActionUserPassword    = "USER_PASSWORD_RESET"
 )

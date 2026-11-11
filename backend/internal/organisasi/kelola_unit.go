@@ -24,10 +24,12 @@ import (
 var unitTypePattern = regexp.MustCompile(`^[A-Z0-9_ ]+$`)
 
 var (
-	errUnitParentInactive = &apperr.InvalidStateError{Message: "Unit induk tidak aktif"}
-	errUnitCycle          = apperr.Invalid("Unit induk tidak boleh unit itu sendiri atau sub-unitnya")
-	errUnitHasChildren    = &apperr.InvalidStateError{Message: "Unit masih punya sub-unit aktif. Nonaktifkan atau pindahkan sub-unitnya dulu."}
-	errUnitHasUsers       = &apperr.InvalidStateError{Message: "Unit masih punya user aktif. Pindahkan atau nonaktifkan user-nya dulu."}
+	errUnitParentInactive    = &apperr.InvalidStateError{Message: "Unit induk tidak aktif"}
+	errUnitCycle             = apperr.Invalid("Unit induk tidak boleh unit itu sendiri atau sub-unitnya")
+	errUnitHasChildren       = &apperr.InvalidStateError{Message: "Unit masih punya sub-unit aktif. Nonaktifkan atau pindahkan sub-unitnya dulu."}
+	errUnitHasUsers          = &apperr.InvalidStateError{Message: "Unit masih punya user aktif. Pindahkan atau nonaktifkan user-nya dulu."}
+	errUnitDeleteHasChildren = &apperr.InvalidStateError{Message: "Unit masih memiliki sub-unit. Hapus atau pindahkan sub-unitnya dulu."}
+	errUnitDeleteHasPos      = &apperr.InvalidStateError{Message: "Unit masih memiliki jabatan. Hapus atau pindahkan jabatannya dulu."}
 )
 
 // Units mengambil semua unit perusahaan user (aktif dan nonaktif) untuk halaman master data.
@@ -149,6 +151,40 @@ func (s *AdminService) SetUnitStatus(ctx context.Context, user *auth.CurrentUser
 		return nil, err
 	}
 	return s.reader.FindAdminUnit(ctx, user.Company.Code, id, false)
+}
+
+// DeleteUnit menghapus (soft-delete) unit apabila tidak lagi memiliki sub-unit maupun jabatan.
+func (s *AdminService) DeleteUnit(ctx context.Context, user *auth.CurrentUser, rawID string) error {
+	id, err := parsePathID(rawID, errUnitNotFound)
+	if err != nil {
+		return err
+	}
+	return s.tx.InTx(ctx, func(q db.DBTX) error {
+		repo := s.repo(q)
+		u, err := s.lockUnit(ctx, repo, user.Company.Code, id)
+		if err != nil {
+			return err
+		}
+		hasChildren, err := repo.UnitHasUndeletedChildren(ctx, id)
+		if err != nil {
+			return err
+		}
+		if hasChildren {
+			return errUnitDeleteHasChildren
+		}
+		hasPositions, err := repo.UnitHasUndeletedPositions(ctx, id)
+		if err != nil {
+			return err
+		}
+		if hasPositions {
+			return errUnitDeleteHasPos
+		}
+		if err := repo.DeleteUnit(ctx, id); err != nil {
+			return err
+		}
+		return s.record(ctx, q, user, user.Company.Code, audit.EntityUnit, id, audit.ActionUnitDelete,
+			UnitInput{Name: u.Name, UnitType: u.UnitType, ParentID: idString(u.ParentID)}, nil)
+	})
 }
 
 func (s *AdminService) lockUnit(ctx context.Context, repo *Repository, companyCode string, id int64) (*AdminUnit, error) {

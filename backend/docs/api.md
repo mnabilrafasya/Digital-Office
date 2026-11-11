@@ -157,7 +157,7 @@ Hak = **role** + **posisi**. Posisi DIREKTUR, SVP, VP, AVP otomatis bisa approve
 
 | Role | Bisa |
 |---|---|
-| SUPERADMIN | Kelola perusahaan |
+| SUPERADMIN | Seluruh permission: perusahaan, organisasi, user, template, surat, review, approve, disposisi, dan audit |
 | ADMIN | Pengaturan perusahaan, unit, jabatan, user, template, audit log |
 | PEGAWAI | Membuat dan me-review surat, membuat template |
 
@@ -220,3 +220,42 @@ Mutasi, ganti role, nonaktif, dan reset password langsung mengakhiri sesi user. 
 |---|---|
 | `GET /admin/templates` | Semua template + jumlah pemakaian |
 | `PATCH /admin/templates/{id}/status` `{active}` | Aktif/nonaktif (nonaktif = hilang dari pilihan surat) |
+
+## Master jenis surat dan klasifikasi
+
+Permission `ORG_MANAGE` (ADMIN), selalu di perusahaan pengguna:
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /api/v1/admin/lookups/{category}?q=&status=` | Daftar standar global dan data perusahaan (termasuk nonaktif) |
+| `POST /api/v1/admin/lookups/{category}` | Tambah `{code, name, note, sortOrder}` |
+| `PUT /api/v1/admin/lookups/{category}/{id}` | Ubah `{name, note, sortOrder}`; kode tetap |
+| `PATCH /api/v1/admin/lookups/{category}/{id}/status` | Aktif/nonaktif `{active}` |
+
+`category` hanya `LETTER_TYPE` atau `CLASSIFICATION`. Data standar global memiliki
+`readOnly: true` dan tidak dapat diubah atau dinonaktifkan. Tambahan data tersimpan
+khusus perusahaan pengguna. Kode tidak boleh menduplikasi kode global/perusahaan.
+Tidak ada hapus permanen; seluruh mutasi dan audit dilakukan dalam satu transaksi.
+Data nonaktif tidak muncul pada `GET /lookups` tetapi riwayat surat tetap tersimpan.
+Endpoint ini menggunakan tabel yang ada; tidak memerlukan migration tambahan.
+
+## Akun development
+
+Akun development, termasuk **Arif Wicaksono (2014091, SUPERADMIN)**, didefinisikan
+bersama di `database/seeds/dev/003_users.sql`. Password awal mengikuti
+`SEED_PASSWORD` di `.env`. Seed tidak mengganti data/password akun yang sudah ada.
+
+Gunakan perintah yang sama pada semua PC, dari folder `backend`:
+
+```sh
+go run ./cmd/migrate up
+go run ./cmd/seed all
+```
+
+Database baru menjalankan seluruh seed development. Database yang sudah berisi user
+hanya menjalankan seed pengguna dasar dan seed lanjutan yang aman diulang; akun
+hanya ditambahkan bila NIK belum ada. Tidak perlu reset database atau perintah akun khusus.
+Seed development membutuhkan `APP_ENV=development` dan data unit HC sesuai panduan awal.
+
+SUPERADMIN memiliki seluruh 11 permission. Persetujuan surat tetap mengikuti
+reviewer/approver yang ditugaskan dan pemisahan data perusahaan.

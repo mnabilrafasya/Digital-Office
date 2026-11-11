@@ -30,6 +30,7 @@ var (
 	errPositionUnusable = apperr.Invalid("Jabatan tidak ditemukan atau tidak aktif")
 	errRoleNotFound     = apperr.Invalid("Role tidak ditemukan")
 	errSelfStatus       = &apperr.InvalidStateError{Message: "Anda tidak bisa menonaktifkan akun Anda sendiri"}
+	errSelfDelete       = &apperr.InvalidStateError{Message: "Anda tidak bisa menghapus akun Anda sendiri"}
 	errSelfRole         = &apperr.InvalidStateError{Message: "Anda tidak bisa mengganti role Anda sendiri"}
 	errLastAdmin        = &apperr.InvalidStateError{Message: "Ini admin terakhir di perusahaan. Angkat admin lain dulu."}
 )
@@ -208,6 +209,32 @@ func (s *AdminService) ResetPassword(ctx context.Context, user *auth.CurrentUser
 			return err
 		}
 		return s.record(ctx, q, user, user.Company.Code, audit.EntityUser, id, audit.ActionUserPassword, nil, nil)
+	})
+}
+
+// DeleteUser menghapus (soft-delete) user dan mengakhiri semua sesinya.
+func (s *AdminService) DeleteUser(ctx context.Context, user *auth.CurrentUser, rawID string) error {
+	id, err := parsePathID(rawID, errUserNotFound)
+	if err != nil {
+		return err
+	}
+	return s.tx.InTx(ctx, func(q db.DBTX) error {
+		repo := s.repo(q)
+		old, err := s.lockUser(ctx, repo, user.Company.Code, id)
+		if err != nil {
+			return err
+		}
+		if old.ID == user.ID {
+			return errSelfDelete
+		}
+		if err := s.guard(ctx, repo, user, old, old.Role.Code, false); err != nil {
+			return err
+		}
+		if err := repo.DeleteUser(ctx, id); err != nil {
+			return err
+		}
+		return s.record(ctx, q, user, user.Company.Code, audit.EntityUser, id, audit.ActionUserDelete,
+			userSnapshot(userRecord{old.EmployeeNumber, old.Name, old.Email, old.Position.ID, old.Role.ID}), nil)
 	})
 }
 

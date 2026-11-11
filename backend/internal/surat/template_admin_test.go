@@ -60,4 +60,14 @@ func TestSetTemplateStatus(t *testing.T) {
 	if _, err := svc.SetTemplateStatus(ctx, andiUser, "3", nil); err == nil {
 		t.Error("active kosong diterima")
 	}
+
+	if err := svc.DeleteTemplate(ctx, andiUser, "3"); err != nil {
+		t.Fatalf("hapus template: %v", err)
+	}
+	if _, ok := refs.templates[3]; ok {
+		t.Error("template masih ada setelah dihapus")
+	}
+	if err := svc.DeleteTemplate(ctx, andiUser, "3"); !errors.Is(err, errTemplateNotFound) {
+		t.Errorf("hapus template yang sudah tidak ada: %v", err)
+	}
 }

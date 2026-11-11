@@ -106,12 +106,13 @@ func run() error {
 		func(q db.DBTX) organisasi.AuditStore { return audit.NewRepository(q) })
 
 	router := newRouter(routerDeps{
-		Health:     server.NewHealthHandler(conn, files),
-		Auth:       auth.NewHandler(authService, cfg.JWTTTL),
-		MasterData: masterdata.NewHandler(masterdata.NewService(masterRepo)),
-		Organisasi: organisasi.NewHandler(organisasi.NewService(orgRepo, orgRepo, orgRepo)),
-		OrgAdmin:   organisasi.NewAdminHandler(orgAdmin),
-		Perusahaan: perusahaan.NewHandler(companyService),
+		Health:      server.NewHealthHandler(conn, files),
+		Auth:        auth.NewHandler(authService, cfg.JWTTTL),
+		MasterData:  masterdata.NewHandler(masterdata.NewService(masterRepo)),
+		LookupAdmin: masterdata.NewAdminHandler(masterdata.NewAdminService(db.NewRunner(conn, deadlockAttempts), conn)),
+		Organisasi:  organisasi.NewHandler(organisasi.NewService(orgRepo, orgRepo, orgRepo)),
+		OrgAdmin:    organisasi.NewAdminHandler(orgAdmin),
+		Perusahaan:  perusahaan.NewHandler(companyService),
 		Surat: surat.NewHandler(suratService, surat.UploadOptions{
 			Limiter:     upload.NewLimiter(int64(cfg.UploadMemoryMB)<<20, cfg.UploadWait),
 			ReadTimeout: cfg.UploadReadTimeout,

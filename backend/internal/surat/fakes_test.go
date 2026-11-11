@@ -256,6 +256,11 @@ func (f *fakeRefs) SetTemplateActive(_ context.Context, id int64, active bool) e
 	return nil
 }
 
+func (f *fakeRefs) DeleteTemplate(_ context.Context, id int64) error {
+	delete(f.templates, id)
+	return nil
+}
+
 func lookupOf(id *int64) *LookupRef {
 	if id == nil {
 		return nil

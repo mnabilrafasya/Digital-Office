@@ -85,6 +85,15 @@ func (h *AdminHandler) UnitStatus(w http.ResponseWriter, r *http.Request) {
 	respond(w, r, http.StatusOK, u, err)
 }
 
+// DeleteUnit menangani DELETE /api/v1/admin/units/{unitId}
+func (h *AdminHandler) DeleteUnit(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DeleteUnit(r.Context(), currentUser(r), chi.URLParam(r, "unitId")); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
 // --- Jabatan ---
 
 // Positions menangani GET /api/v1/admin/positions?unitId=&q=&status=&page=&pageSize=
@@ -135,6 +144,15 @@ func (h *AdminHandler) PositionStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := h.svc.SetPositionStatus(r.Context(), currentUser(r), chi.URLParam(r, "positionId"), in)
 	respond(w, r, http.StatusOK, p, err)
+}
+
+// DeletePosition menangani DELETE /api/v1/admin/positions/{positionId}
+func (h *AdminHandler) DeletePosition(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DeletePosition(r.Context(), currentUser(r), chi.URLParam(r, "positionId")); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 // --- User ---
@@ -193,6 +211,15 @@ func (h *AdminHandler) UserStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.svc.SetUserStatus(r.Context(), currentUser(r), chi.URLParam(r, "userId"), in)
 	respond(w, r, http.StatusOK, u, err)
+}
+
+// DeleteUser menangani DELETE /api/v1/admin/users/{userId}
+func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DeleteUser(r.Context(), currentUser(r), chi.URLParam(r, "userId")); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
 }
 
 // ResetPassword menangani POST /api/v1/admin/users/{userId}/reset-password {password}

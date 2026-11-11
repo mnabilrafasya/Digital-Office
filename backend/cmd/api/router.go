@@ -21,15 +21,16 @@ import (
 
 // routerDeps adalah komponen yang dibutuhkan untuk menyusun router.
 type routerDeps struct {
-	Health     *server.HealthHandler
-	Auth       *auth.Handler
-	MasterData *masterdata.Handler
-	Organisasi *organisasi.Handler
-	OrgAdmin   *organisasi.AdminHandler
-	Perusahaan *perusahaan.Handler
-	Surat      *surat.Handler
-	Inbox      *inbox.Handler
-	Audit      *audit.Handler
+	Health      *server.HealthHandler
+	Auth        *auth.Handler
+	MasterData  *masterdata.Handler
+	LookupAdmin *masterdata.AdminHandler
+	Organisasi  *organisasi.Handler
+	OrgAdmin    *organisasi.AdminHandler
+	Perusahaan  *perusahaan.Handler
+	Surat       *surat.Handler
+	Inbox       *inbox.Handler
+	Audit       *audit.Handler
 
 	Tokens auth.TokenVerifier
 	Users  auth.UserLoader
@@ -134,6 +135,14 @@ func newRouter(d routerDeps) http.Handler {
 			// Master data. Admin perusahaan selalu mengelola perusahaannya sendiri; SUPERADMIN
 			// mengelola perusahaan dan admin-nya.
 			r.Route("/admin", func(r chi.Router) {
+				r.Route("/lookups/{category}", func(r chi.Router) {
+					r.Use(auth.RequirePermission(auth.OrgManage))
+					r.Get("/", d.LookupAdmin.List)
+					r.Post("/", d.LookupAdmin.Save)
+					r.Put("/{lookupId}", d.LookupAdmin.Save)
+					r.Patch("/{lookupId}/status", d.LookupAdmin.Status)
+					r.Delete("/{lookupId}", d.LookupAdmin.Delete)
+				})
 				r.Route("/companies", func(r chi.Router) {
 					r.Use(auth.RequirePermission(auth.CompanyManage))
 					r.Get("/", d.Perusahaan.Companies)
@@ -141,6 +150,7 @@ func newRouter(d routerDeps) http.Handler {
 					r.Get("/{code}", d.Perusahaan.Company)
 					r.Put("/{code}", d.Perusahaan.UpdateCompany)
 					r.Patch("/{code}/status", d.Perusahaan.CompanyStatus)
+					r.Delete("/{code}", d.Perusahaan.DeleteCompany)
 					r.Get("/{code}/units", d.OrgAdmin.CompanyUnits)
 					r.Post("/{code}/admins", d.OrgAdmin.CreateCompanyAdmin)
 				})
@@ -150,10 +160,12 @@ func newRouter(d routerDeps) http.Handler {
 					r.Post("/units", d.OrgAdmin.CreateUnit)
 					r.Put("/units/{unitId}", d.OrgAdmin.UpdateUnit)
 					r.Patch("/units/{unitId}/status", d.OrgAdmin.UnitStatus)
+					r.Delete("/units/{unitId}", d.OrgAdmin.DeleteUnit)
 					r.Get("/positions", d.OrgAdmin.Positions)
 					r.Post("/positions", d.OrgAdmin.CreatePosition)
 					r.Put("/positions/{positionId}", d.OrgAdmin.UpdatePosition)
 					r.Patch("/positions/{positionId}/status", d.OrgAdmin.PositionStatus)
+					r.Delete("/positions/{positionId}", d.OrgAdmin.DeletePosition)
 					r.Get("/position-levels", d.OrgAdmin.Levels)
 				})
 				r.Group(func(r chi.Router) {
@@ -163,6 +175,7 @@ func newRouter(d routerDeps) http.Handler {
 					r.Get("/users/{userId}", d.OrgAdmin.User)
 					r.Put("/users/{userId}", d.OrgAdmin.UpdateUser)
 					r.Patch("/users/{userId}/status", d.OrgAdmin.UserStatus)
+					r.Delete("/users/{userId}", d.OrgAdmin.DeleteUser)
 					r.Post("/users/{userId}/reset-password", d.OrgAdmin.ResetPassword)
 					r.Get("/roles", d.OrgAdmin.Roles)
 				})
@@ -170,6 +183,7 @@ func newRouter(d routerDeps) http.Handler {
 					r.Use(auth.RequirePermission(auth.TemplateManage))
 					r.Get("/templates", d.Surat.AdminTemplates)
 					r.Patch("/templates/{templateId}/status", d.Surat.TemplateStatus)
+					r.Delete("/templates/{templateId}", d.Surat.DeleteTemplate)
 				})
 			})
 

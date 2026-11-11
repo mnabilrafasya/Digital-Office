@@ -214,6 +214,15 @@ func (r *Repository) SetTemplateActive(ctx context.Context, id int64, active boo
 	return nil
 }
 
+// DeleteTemplate menghapus (soft-delete) template surat sehingga namanya dapat dipakai kembali.
+func (r *Repository) DeleteTemplate(ctx context.Context, id int64) error {
+	const q = `UPDATE letter_templates SET is_active = 0, deleted_at = SYSDATETIMEOFFSET(), updated_at = SYSDATETIMEOFFSET() WHERE id = @id AND deleted_at IS NULL`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", id)); err != nil {
+		return fmt.Errorf("menghapus template: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) findTemplate(ctx context.Context, q string, args ...any) (*Template, error) {
 	t, err := scanTemplate(r.q.QueryRowContext(ctx, q, args...))
 	if errors.Is(err, sql.ErrNoRows) {

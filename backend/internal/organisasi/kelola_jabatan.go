@@ -18,10 +18,11 @@ import (
 // hanya menentukan siapa yang menerima surat yang ditujukan ke unit, maksimal satu per unit.
 
 var (
-	errPositionUnitInactive = &apperr.InvalidStateError{Message: "Unit jabatan tidak aktif"}
-	errPositionHeadTaken    = &apperr.InvalidStateError{Message: "Unit ini sudah punya jabatan pimpinan unit yang aktif"}
-	errPositionNameTaken    = &apperr.InvalidStateError{Message: "Nama jabatan sudah dipakai di unit ini"}
-	errPositionHasUsers     = &apperr.InvalidStateError{Message: "Jabatan masih dipegang user aktif. Pindahkan atau nonaktifkan user-nya dulu."}
+	errPositionUnitInactive   = &apperr.InvalidStateError{Message: "Unit jabatan tidak aktif"}
+	errPositionHeadTaken      = &apperr.InvalidStateError{Message: "Unit ini sudah punya jabatan pimpinan unit yang aktif"}
+	errPositionNameTaken      = &apperr.InvalidStateError{Message: "Nama jabatan sudah dipakai di unit ini"}
+	errPositionHasUsers       = &apperr.InvalidStateError{Message: "Jabatan masih dipegang user aktif. Pindahkan atau nonaktifkan user-nya dulu."}
+	errPositionDeleteHasUsers = &apperr.InvalidStateError{Message: "Jabatan masih memiliki user. Hapus atau pindahkan user-nya dulu."}
 )
 
 // positionData adalah isian jabatan yang sudah divalidasi.
@@ -137,6 +138,33 @@ func (s *AdminService) SetPositionStatus(ctx context.Context, user *auth.Current
 		return nil, err
 	}
 	return s.reader.FindAdminPosition(ctx, user.Company.Code, id, false)
+}
+
+// DeletePosition menghapus (soft-delete) jabatan apabila tidak lagi dipegang oleh user yang belum dihapus.
+func (s *AdminService) DeletePosition(ctx context.Context, user *auth.CurrentUser, rawID string) error {
+	id, err := parsePathID(rawID, errPositionNotFound)
+	if err != nil {
+		return err
+	}
+	return s.tx.InTx(ctx, func(q db.DBTX) error {
+		repo := s.repo(q)
+		p, err := s.lockPosition(ctx, repo, user.Company.Code, id)
+		if err != nil {
+			return err
+		}
+		hasUsers, err := repo.PositionHasUndeletedUsers(ctx, id)
+		if err != nil {
+			return err
+		}
+		if hasUsers {
+			return errPositionDeleteHasUsers
+		}
+		if err := repo.DeletePosition(ctx, id); err != nil {
+			return err
+		}
+		return s.record(ctx, q, user, user.Company.Code, audit.EntityPosition, id, audit.ActionPositionDelete,
+			positionInputOf(p), nil)
+	})
 }
 
 func (s *AdminService) lockPosition(ctx context.Context, repo *Repository, companyCode string, id int64) (*AdminPosition, error) {

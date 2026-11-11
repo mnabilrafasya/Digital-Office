@@ -134,6 +134,35 @@ func (r *Repository) SetUnitActive(ctx context.Context, id int64, active bool) e
 	return nil
 }
 
+// UnitHasUndeletedChildren mengecek apakah unit masih memiliki sub-unit yang belum dihapus.
+func (r *Repository) UnitHasUndeletedChildren(ctx context.Context, id int64) (bool, error) {
+	const q = `SELECT CASE WHEN EXISTS (SELECT 1 FROM units WHERE parent_id = @id AND deleted_at IS NULL) THEN 1 ELSE 0 END`
+	var found bool
+	if err := r.q.QueryRowContext(ctx, q, sql.Named("id", id)).Scan(&found); err != nil {
+		return false, fmt.Errorf("memeriksa sub-unit: %w", err)
+	}
+	return found, nil
+}
+
+// UnitHasUndeletedPositions mengecek apakah unit masih memiliki jabatan yang belum dihapus.
+func (r *Repository) UnitHasUndeletedPositions(ctx context.Context, id int64) (bool, error) {
+	const q = `SELECT CASE WHEN EXISTS (SELECT 1 FROM positions WHERE unit_id = @id AND deleted_at IS NULL) THEN 1 ELSE 0 END`
+	var found bool
+	if err := r.q.QueryRowContext(ctx, q, sql.Named("id", id)).Scan(&found); err != nil {
+		return false, fmt.Errorf("memeriksa jabatan unit: %w", err)
+	}
+	return found, nil
+}
+
+// DeleteUnit menghapus (soft-delete) unit.
+func (r *Repository) DeleteUnit(ctx context.Context, id int64) error {
+	const q = `UPDATE units SET is_active = 0, deleted_at = SYSDATETIMEOFFSET(), updated_at = SYSDATETIMEOFFSET() WHERE id = @id AND deleted_at IS NULL`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", id)); err != nil {
+		return fmt.Errorf("menghapus unit: %w", err)
+	}
+	return nil
+}
+
 // IsAncestorOrSelf mengecek apakah unitID adalah candidateID sendiri atau salah satu induknya ke
 // atas. Dipakai mencegah induk unit membentuk lingkaran.
 func (r *Repository) IsAncestorOrSelf(ctx context.Context, unitID, candidateID int64) (bool, error) {
@@ -330,6 +359,25 @@ func (r *Repository) SetPositionActive(ctx context.Context, id int64, active boo
 	return nil
 }
 
+// PositionHasUndeletedUsers mengecek apakah jabatan masih dipegang user yang belum dihapus.
+func (r *Repository) PositionHasUndeletedUsers(ctx context.Context, id int64) (bool, error) {
+	const q = `SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE position_id = @id AND deleted_at IS NULL) THEN 1 ELSE 0 END`
+	var found bool
+	if err := r.q.QueryRowContext(ctx, q, sql.Named("id", id)).Scan(&found); err != nil {
+		return false, fmt.Errorf("memeriksa user jabatan: %w", err)
+	}
+	return found, nil
+}
+
+// DeletePosition menghapus (soft-delete) jabatan.
+func (r *Repository) DeletePosition(ctx context.Context, id int64) error {
+	const q = `UPDATE positions SET is_active = 0, deleted_at = SYSDATETIMEOFFSET(), updated_at = SYSDATETIMEOFFSET() WHERE id = @id AND deleted_at IS NULL`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", id)); err != nil {
+		return fmt.Errorf("menghapus jabatan: %w", err)
+	}
+	return nil
+}
+
 // --- User -----------------------------------------------------------------------------------
 
 const adminUserSelect = `
@@ -515,6 +563,18 @@ UPDATE users SET password_hash = @hash, token_version = token_version + 1, updat
 WHERE id = @id`
 	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", id), sql.Named("hash", hash)); err != nil {
 		return fmt.Errorf("mengganti password: %w", err)
+	}
+	return nil
+}
+
+// DeleteUser menghapus (soft-delete) user dan mengakhiri semua sesinya.
+func (r *Repository) DeleteUser(ctx context.Context, id int64) error {
+	const q = `
+UPDATE users
+SET is_active = 0, deleted_at = SYSDATETIMEOFFSET(), token_version = token_version + 1, updated_at = SYSDATETIMEOFFSET()
+WHERE id = @id AND deleted_at IS NULL`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("id", id)); err != nil {
+		return fmt.Errorf("menghapus user: %w", err)
 	}
 	return nil
 }
