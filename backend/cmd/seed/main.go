@@ -4,7 +4,7 @@
 //	go run ./cmd/seed reference   -> data acuan, idempoten, aman di semua environment
 //	go run ./cmd/seed dev         -> data dummy, hanya APP_ENV=development (butuh reference;
 //	                                 unit PSP diambil dari snapshot HC bila belum ada). Bila
-//	                                 database sudah berisi user, hanya seed lanjutan yang idempoten
+//	                                 database sudah berisi user, seed pengguna dan seed lanjutan idempoten
 //	                                 (topUpDevSeeds) yang dijalankan.
 //	go run ./cmd/seed all         -> reference, dev, lalu templates (development)
 //	go run ./cmd/seed templates   -> template naskah bawaan ke MinIO, idempoten (butuh user admin)
@@ -37,7 +37,7 @@ const (
 
 // topUpDevSeeds adalah seed dev yang idempoten (hanya menambah yang belum ada), sehingga juga
 // dijalankan pada database yang sudah berisi data dev.
-var topUpDevSeeds = []string{"005_pkg_alur_lengkap.sql"}
+var topUpDevSeeds = []string{"003_users.sql", "005_pkg_alur_lengkap.sql"}
 
 // summaryTables adalah tabel yang jumlah barisnya dicetak di akhir (daftar tetap, bukan input).
 var summaryTables = []string{"companies", "roles", "permissions", "lookups", "units", "positions", "users", "letter_templates"}
@@ -110,7 +110,7 @@ SELECT (SELECT COUNT(*) FROM users),
 	hashArg := sql.Named("password_hash", string(hash))
 
 	if users > 0 {
-		fmt.Println("Data dev dasar sudah ada: hanya menambah data dev lanjutan yang belum ada.")
+		fmt.Println("Data dev dasar sudah ada: hanya menambah akun dasar dan data dev lanjutan yang belum ada.")
 		fmt.Println("Untuk mengulang dari nol (development saja): go run ./cmd/migrate reset --yes, lalu go run ./cmd/seed all")
 		if err := runFiles(ctx, conn, "dev", database.DevSeeds, topUpDevSeeds, hashArg); err != nil {
 			return err

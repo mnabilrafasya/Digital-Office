@@ -1,10 +1,10 @@
 -- 002_roles_permissions.sql
 -- Role (1 user = 1 role) dan permission per role. Idempoten (MERGE), aman dijalankan berulang.
 --
--- Hak akses user = permission role + permission dari posisi (level jabatan). Approve dan disposisi
--- TIDAK diberikan lewat role: otomatis dimiliki pemegang posisi DIREKTUR, SVP, VP, dan AVP
+-- Hak akses user = permission role + permission dari posisi (level jabatan). SUPERADMIN punya seluruh hak.
+-- Pada role lain, approve dan disposisi otomatis dimiliki posisi DIREKTUR, SVP, VP, dan AVP
 -- (lihat internal/auth/hakakses.go). Role hanya menentukan akses sistem:
---   SUPERADMIN  kelola perusahaan (lintas perusahaan)
+--   SUPERADMIN  seluruh permission: master data, surat, approve, disposisi, audit
 --   ADMIN       kelola internal perusahaannya (pengaturan, unit, jabatan, user, template) + audit
 --   PEGAWAI     pemakai biasa
 SET NOCOUNT ON;
@@ -30,6 +30,13 @@ USING (
         ('SUPERADMIN', 'LETTER_REVIEW',    N'Dapat dipilih sebagai reviewer'),
         ('SUPERADMIN', 'TEMPLATE_CREATE',  N'Membuat template surat'),
         ('SUPERADMIN', 'COMPANY_MANAGE',   N'Mengelola perusahaan dan admin pertamanya'),
+        ('SUPERADMIN', 'COMPANY_SETTINGS', N'Mengatur perusahaan'),
+        ('SUPERADMIN', 'ORG_MANAGE',       N'Mengelola unit dan jabatan'),
+        ('SUPERADMIN', 'USER_MANAGE',      N'Mengelola user'),
+        ('SUPERADMIN', 'TEMPLATE_MANAGE',  N'Mengelola status template'),
+        ('SUPERADMIN', 'AUDIT_VIEW',       N'Melihat log sistem'),
+        ('SUPERADMIN', 'LETTER_APPROVE',   N'Menyetujui surat yang ditugaskan'),
+        ('SUPERADMIN', 'INBOX_DISPOSE',    N'Mendisposisikan surat masuk'),
         ('ADMIN',      'LETTER_CREATE',    N'Membuat dan mengajukan surat'),
         ('ADMIN',      'LETTER_REVIEW',    N'Dapat dipilih sebagai reviewer'),
         ('ADMIN',      'TEMPLATE_CREATE',  N'Membuat template surat'),

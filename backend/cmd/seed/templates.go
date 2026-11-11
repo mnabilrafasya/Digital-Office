@@ -16,12 +16,12 @@ import (
 )
 
 // companyTemplates adalah template bawaan per perusahaan (nama file di database/seeds/templates).
-// Empat template berkop Pusri Palembang hanya untuk PSP; perusahaan lain mendapat dokumen kosong.
+// Template berkop Pusri Palembang hanya untuk PSP; perusahaan lain mendapat dokumen kosong.
 var companyTemplates = []struct {
 	company string
 	files   []string
 }{
-	{"PSP", []string{"surat-dinas-standar.docx", "nota-dinas.docx", "undangan-rapat.docx", "surat-tugas.docx", "dokumen-kosong.docx"}},
+	{"PSP", []string{"surat-dinas-standar.docx", "nota-dinas.docx", "undangan-rapat.docx", "surat-tugas.docx", "surat-external.docx", "dokumen-kosong.docx"}},
 	{"PKG", []string{"dokumen-kosong.docx"}},
 }
 
@@ -38,6 +38,8 @@ var defaultTemplates = []struct {
 		"Format undangan kegiatan atau rapat koordinasi dengan tabel hari, waktu, tempat, dan agenda.", "SURAT_UNDANGAN"},
 	{"surat-tugas.docx", "Surat Perintah Tugas (SPT)",
 		"Format penugasan kedinasan dengan tabel daftar pegawai dan pejabat penandatangan.", "SURAT_TUGAS"},
+	{"surat-external.docx", "Surat Eksternal",
+		"Format surat keluar kepada perusahaan atau instansi di luar perusahaan.", "SURAT_EKSTERNAL"},
 	{"dokumen-kosong.docx", "Dokumen Kosong (Blank)",
 		"Mulai dari halaman kosong A4 standar Word.", ""},
 }
