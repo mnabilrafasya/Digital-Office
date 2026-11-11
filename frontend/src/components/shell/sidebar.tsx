@@ -16,9 +16,6 @@ import {
   ClipboardCheck,
   CheckSquare,
   Database,
-  Archive,
-  ArchiveX,
-  Shield,
   Inbox,
   Bell,
   BarChart3,
@@ -40,6 +37,7 @@ interface NavItem {
   badge?: number;
   dynamicBadge?: DynamicBadgeType;
   requiredPermission?: string;
+  anyPermissions?: string[];
   children?: NavItem[];
 }
 
@@ -108,13 +106,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Master Data",
     href: "/master-data",
     icon: <Database size={16} />,
-    requiredPermission: "TEMPLATE_CREATE",
-  },
-  {
-    label: "Permission Document",
-    href: "/permission",
-    icon: <Shield size={16} />,
-    requiredPermission: "AUDIT_VIEW",
+    anyPermissions: ["TEMPLATE_CREATE", "TEMPLATE_MANAGE", "COMPANY_MANAGE", "COMPANY_SETTINGS", "ORG_MANAGE", "USER_MANAGE"],
   },
   {
     label: "Inbox",
@@ -128,7 +120,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Bell size={16} />,
   },
   {
-    label: "Rekap",
+    label: "Monitoring Surat",
     href: "/rekap",
     icon: <BarChart3 size={16} />,
     requiredPermission: "AUDIT_VIEW",
@@ -148,6 +140,7 @@ function filterNavItemsByPermissions(
   const permSet = new Set(permissions);
 
   return items.reduce<NavItem[]>((acc, item) => {
+    if (item.anyPermissions && !item.anyPermissions.some(permission => permSet.has(permission))) return acc;
     if (item.requiredPermission && !permSet.has(item.requiredPermission)) {
       return acc;
     }

@@ -18,6 +18,17 @@ export interface DevUserAccount {
 }
 
 export const DEV_ACCOUNTS: DevUserAccount[] = [
+  {
+    nik: "2014091",
+    name: "Arif Wicaksono",
+    position: "Administrator Sistem",
+    unit: "Departemen Teknologi Informasi PSP",
+    category: "admin",
+    badge: "Superadmin · Seluruh Akses",
+    badgeVariant: "indigo",
+    flowNote: "Kelola seluruh master data dan uji buat surat, review, approve, disposisi, serta audit. Pilih akun ini sebagai peserta surat untuk menguji alur.",
+    isActive: true,
+  },
   // ── 1. Alur Persuratan TI (Drafter → Reviewer → Approver) ──
   {
     nik: "2015047",

@@ -1,11 +1,6 @@
-import { AuditMonitoringView } from "@/components/audit/audit-monitoring-view";
+import { redirect } from "next/navigation";
 
-// ─────────────────────────────────────────────
-// app/(app)/permission/page.tsx
-// Halaman Permission & Jejak Audit Dokumen
-// ─────────────────────────────────────────────
-
+// Tautan lama tetap menuju riwayat pada halaman monitoring yang sama.
 export default function PermissionAuditPage() {
-  return <AuditMonitoringView defaultTab="audit" />;
+  redirect("/rekap?tab=activity");
 }
-

@@ -177,6 +177,9 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
 ];
 
 let cachedTemplates: LetterTemplateDefinition[] | null = null;
+
+/** Buang cache setelah admin mengubah status template. */
+export function invalidateTemplateCache() { cachedTemplates = null; }
 let inflightTemplatesPromise: Promise<LetterTemplateDefinition[]> | null = null;
 
 function mapBackendTemplateToDefinition(
