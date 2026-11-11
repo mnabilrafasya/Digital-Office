@@ -1,11 +1,9 @@
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { AuditMonitoringView } from "@/components/audit/audit-monitoring-view";
 
-// ─────────────────────────────────────────────
-// app/(app)/rekap/page.tsx
-// Halaman Rekap & Pantauan Persuratan (Monitoring + Audit Log)
-// ─────────────────────────────────────────────
-
-export default function RekapPage() {
-  return <AuditMonitoringView defaultTab="monitoring" />;
+export default async function RekapPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  return <AuditMonitoringView viewerId={user.id} />;
 }
-
