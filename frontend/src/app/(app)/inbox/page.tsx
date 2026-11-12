@@ -94,6 +94,10 @@ function InboxView() {
     DISPOSED: 0,
     REDIRECTED: 0,
   });
+  const [categoryUnread, setCategoryUnread] = useState<{
+    INTERNAL: number;
+    EXTERNAL: number;
+  }>({ INTERNAL: 0, EXTERNAL: 0 });
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,18 +148,26 @@ function InboxView() {
       setLoading(true);
       setError(null);
 
-      getInboxList({
-        category: activeCategory || undefined,
-        status: activeTab || undefined,
-        q: debouncedQuery || undefined,
-        page,
-        pageSize: PAGE_SIZE,
-      })
-        .then((res) => {
+      Promise.all([
+        getInboxList({
+          category: activeCategory || undefined,
+          status: activeTab || undefined,
+          q: debouncedQuery || undefined,
+          page,
+          pageSize: PAGE_SIZE,
+        }),
+        getInboxList({ category: "INTERNAL", pageSize: 1 }).catch(() => null),
+        getInboxList({ category: "EXTERNAL", pageSize: 1 }).catch(() => null),
+      ])
+        .then(([res, intRes, extRes]) => {
           if (cancelled) return;
           setItems(res.data);
           setCounts(res.counts);
           setTotal(res.meta.total);
+          setCategoryUnread({
+            INTERNAL: intRes?.counts.UNREAD ?? 0,
+            EXTERNAL: extRes?.counts.UNREAD ?? 0,
+          });
         })
         .catch((e: unknown) => {
           if (!cancelled) {
@@ -298,6 +310,12 @@ function InboxView() {
           UNREAD: Math.max(0, c.UNREAD - 1),
           READ: c.READ + 1,
         }));
+        const isInternal = detail.letter.direction === "INTERNAL";
+        setCategoryUnread((cu) => ({
+          INTERNAL: isInternal ? Math.max(0, cu.INTERNAL - 1) : cu.INTERNAL,
+          EXTERNAL: !isInternal ? Math.max(0, cu.EXTERNAL - 1) : cu.EXTERNAL,
+        }));
+        window.dispatchEvent(new CustomEvent("digital-office:counts-changed"));
       }
       return prev.map((it) =>
         it.id === detail.id
@@ -378,6 +396,18 @@ function InboxView() {
     () => Array.from(selectedIds)[0] ?? null,
     [selectedIds]
   );
+  const firstSelectedItem = useMemo(
+    () =>
+      firstSelectedId
+        ? items.find((it) => it.id === firstSelectedId) ?? null
+        : null,
+    [items, firstSelectedId]
+  );
+  const canDisposeSelectedFirst =
+    Boolean(firstSelectedItem) &&
+    firstSelectedItem?.letter.direction !== "OUTGOING" &&
+    (firstSelectedItem?.status === "UNREAD" ||
+      firstSelectedItem?.status === "READ");
 
   return (
     <div className="space-y-3">
@@ -415,16 +445,18 @@ function InboxView() {
           <div className="inline-flex items-center rounded-xl border border-border bg-surface p-1 shadow-2xs">
             {(
               [
-                { value: "" as InboxCategory, label: "Semua", icon: Inbox },
+                { value: "" as InboxCategory, label: "Semua", icon: Inbox, unread: 0 },
                 {
                   value: "INTERNAL" as InboxCategory,
                   label: "Surat Internal",
                   icon: Building2,
+                  unread: categoryUnread.INTERNAL,
                 },
                 {
                   value: "EXTERNAL" as InboxCategory,
                   label: "Surat Eksternal",
                   icon: Globe,
+                  unread: categoryUnread.EXTERNAL,
                 },
               ] as const
             ).map((cat) => {
@@ -448,6 +480,11 @@ function InboxView() {
                 >
                   <Icon size={13} />
                   <span>{cat.label}</span>
+                  {cat.unread > 0 && (
+                    <span className="bg-accent text-white text-[10px] font-bold rounded-full min-w-4.5 h-4.5 flex items-center justify-center px-1 shrink-0">
+                      {cat.unread > 99 ? "99+" : cat.unread}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -504,7 +541,7 @@ function InboxView() {
               : undefined
           }
           onDisposeSelectedFirst={
-            firstSelectedId
+            firstSelectedId && canDisposeSelectedFirst
               ? () =>
                   setModalState({
                     itemId: firstSelectedId,
@@ -519,7 +556,7 @@ function InboxView() {
           className={cn(
             "grid min-h-[68vh] w-full min-w-0 max-w-full overflow-hidden",
             splitView && activeItemId
-              ? "grid-cols-1 lg:grid-cols-[minmax(320px,42%)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,45%)_minmax(0,1fr)] divide-y lg:divide-y-0 lg:divide-x divide-border"
+              ? "grid-cols-1 lg:grid-cols-[minmax(300px,38%)_minmax(0,1fr)] xl:grid-cols-[minmax(330px,39%)_minmax(0,1fr)] 2xl:grid-cols-[minmax(360px,43%)_minmax(0,1fr)] divide-y lg:divide-y-0 lg:divide-x divide-border"
               : "grid-cols-1"
           )}
         >

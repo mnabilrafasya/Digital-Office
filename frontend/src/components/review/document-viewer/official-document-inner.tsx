@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   Download,
+  ExternalLink,
   FileCheck2,
   FileText,
   Info,
@@ -360,90 +361,98 @@ export default function OfficialDocumentInner({
   const pdfReady = effectivePdfState === "ready";
   const bodyHeight = isFullscreen ? "calc(100vh - 80px)" : DEFAULT_HEIGHT;
   const wrapperClass = isFullscreen
-    ? "fixed inset-0 z-[45] isolate bg-surface flex flex-col p-4 shadow-2xl"
-    : "relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm min-w-0 max-w-full";
+    ? "@container fixed inset-0 z-[45] isolate bg-surface flex flex-col p-4 shadow-2xl"
+    : "@container relative isolate z-0 flex flex-col border border-border rounded-xl bg-surface overflow-hidden shadow-sm min-w-0 max-w-full";
 
   const inlinePdfHref = `${officialPdfUrl(letter.id, true)}&v=${letter.currentVersion ?? 1}`;
 
   return (
     <div ref={wrapperRef} className={wrapperClass}>
-      <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-panel border-b border-border flex-wrap shrink-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-text">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-panel border-b border-border flex-wrap @2xl:flex-nowrap shrink-0">
+        <div className="flex items-center gap-1.5 flex-wrap @2xl:flex-nowrap min-w-0">
+          <span className="text-xs font-semibold text-text shrink-0">
             {isPdfViewMode ? "Dokumen PDF Surat" : "Naskah Surat"}
           </span>
-          <span className="text-[11px] font-medium text-text-muted bg-surface border border-border px-2 py-0.5 rounded-md shadow-2xs">
+          <span className="hidden @xl:inline-block text-[11px] font-medium text-text-muted bg-surface border border-border px-2 py-0.5 rounded-md shadow-2xs shrink-0">
             {isPdfViewMode ? "Tampilan PDF" : "Mode Baca"}
           </span>
 
           {isExternalIncoming ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-info-text bg-status-info-bg px-2 py-0.5 rounded-md">
-              <FileText size={11} /> Scan Surat Masuk Eksternal
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-info-text bg-status-info-bg px-2 py-0.5 rounded-md shrink-0">
+              <FileText size={11} />
+              <span className="hidden @md:inline">Scan Surat Masuk Eksternal</span>
+              <span className="@md:hidden">Surat Masuk</span>
             </span>
           ) : isExternalOutgoing && letter.status === "APPROVED" ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-warn-text bg-status-warn-bg px-2 py-0.5 rounded-md">
-              <Printer size={11} /> PDF Siap Cetak (Menunggu TTD Basah)
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-warn-text bg-status-warn-bg px-2 py-0.5 rounded-md shrink-0">
+              <Printer size={11} />
+              <span className="hidden @md:inline">PDF Siap Cetak (Menunggu TTD Basah)</span>
+              <span className="@md:hidden">Menunggu TTD Basah</span>
             </span>
           ) : isExternalOutgoing && letter.status === "SENT" ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-success-text bg-status-success-bg px-2 py-0.5 rounded-md">
-              <FileCheck2 size={11} /> Scan Resmi Bertanda Tangan Basah
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-success-text bg-status-success-bg px-2 py-0.5 rounded-md shrink-0">
+              <FileCheck2 size={11} />
+              <span className="hidden @md:inline">Scan Resmi Bertanda Tangan Basah</span>
+              <span className="@md:hidden">Scan TTD Basah</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-success-text bg-status-success-bg px-2 py-0.5 rounded-md">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-success-text bg-status-success-bg px-2 py-0.5 rounded-md shrink-0">
               <FileCheck2 size={11} /> Naskah Resmi
             </span>
           )}
 
           {copyFor && (
             <span
-              className="text-[11px] text-text-muted"
-              title="Salinan surat yang ditujukan kepada jabatan ini"
+              className="text-[11px] text-text-muted truncate max-w-36 @2xl:max-w-52"
+              title={`Salinan untuk ${copyFor}`}
             >
               Salinan untuk {copyFor}
             </span>
           )}
           {(effectivePdfState === "checking" || effectivePdfState === "preparing") && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-text-muted">
+            <span className="inline-flex items-center gap-1 text-[11px] text-text-muted shrink-0">
               <Loader2 size={11} className="animate-spin" />
-              {effectivePdfState === "preparing"
-                ? "Menyiapkan PDF siap cetak..."
-                : "Memeriksa PDF resmi..."}
+              <span className="hidden @lg:inline">
+                {effectivePdfState === "preparing"
+                  ? "Menyiapkan PDF siap cetak..."
+                  : "Memeriksa PDF resmi..."}
+              </span>
             </span>
           )}
-          {pdfReady && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-status-success-text">
+          {pdfReady && !isPdfViewMode && (
+            <span className="hidden @lg:inline-flex items-center gap-1 text-[11px] text-status-success-text shrink-0">
               <CheckCircle2 size={11} /> PDF siap
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          <div className="inline-flex items-center rounded-lg border border-border bg-surface p-0.5 shadow-2xs">
-            <a
-              href={pdfReady ? officialPdfUrl(letter.id) : undefined}
-              aria-disabled={!pdfReady}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
-            >
-              <Download size={13} className="text-primary" />
-              <span>
-                {isExternalOutgoing && letter.status === "APPROVED"
-                  ? "Unduh PDF Cetak"
-                  : "Unduh PDF Resmi"}
-              </span>
-            </a>
-            <span className="h-4 w-px bg-border" />
-            <a
-              href={pdfReady ? officialPdfUrl(letter.id, true) : undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-disabled={!pdfReady}
-              title="Buka PDF di tab baru untuk dicetak"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
-            >
-              <Printer size={13} className="text-primary" />
-              <span>Cetak / PDF</span>
-            </a>
-          </div>
+        <div className="flex items-center gap-1.5 ml-auto shrink-0">
+          {!isPdfViewMode && (
+            <div className="inline-flex items-center rounded-lg border border-border bg-surface p-0.5 shadow-2xs shrink-0">
+              <a
+                href={pdfReady ? officialPdfUrl(letter.id) : undefined}
+                aria-disabled={!pdfReady}
+                title="Unduh PDF Resmi"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none whitespace-nowrap"
+              >
+                <Download size={13} className="text-primary shrink-0" />
+                <span className="hidden @xl:inline">Unduh PDF Resmi</span>
+                <span className="@xl:hidden">Unduh PDF</span>
+              </a>
+              <span className="h-4 w-px bg-border" />
+              <a
+                href={pdfReady ? officialPdfUrl(letter.id, true) : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-disabled={!pdfReady}
+                title="Buka PDF di tab baru"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none whitespace-nowrap"
+              >
+                <ExternalLink size={13} className="text-primary shrink-0" />
+                <span>Buka PDF</span>
+              </a>
+            </div>
+          )}
 
           {!isPdfViewMode && (
             <WordZoomControl

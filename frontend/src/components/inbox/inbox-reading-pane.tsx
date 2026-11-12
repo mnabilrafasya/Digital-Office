@@ -45,6 +45,7 @@ import {
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
+  openLetterAttachmentInline,
 } from "@/lib/api/letter-document";
 import { InboxForwardingTrail } from "./inbox-forwarding-trail";
 import { ReviewDocumentViewer } from "@/components/review/document-viewer";
@@ -225,18 +226,21 @@ export function InboxReadingPane({
 
   const canDispose = item.allowedActions.includes("DISPOSE");
   const canRedirect = item.allowedActions.includes("REDIRECT");
+  const isExternalPdf =
+    item.letter.direction === "OUTGOING" ||
+    item.letter.direction === "INCOMING";
 
   return (
-    <div className="flex flex-col h-full w-full min-w-0 max-w-full overflow-hidden bg-surface">
+    <div className="@container flex flex-col h-full w-full min-w-0 max-w-full overflow-hidden bg-surface">
       {/* ── Top Action Bar Panel Baca ala Gmail ── */}
-      <div className="px-4 py-2.5 border-b border-border bg-panel/30 flex items-center justify-between gap-2 flex-wrap shrink-0">
+      <div className="px-3 py-2 border-b border-border bg-panel/30 flex items-center justify-between gap-1.5 flex-wrap @lg:flex-nowrap shrink-0">
         {/* Kiri: Tombol Aksi Cepat (Disposisi, Alihkan, Unduh PDF, Buka Halaman Penuh) */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap @lg:flex-nowrap min-w-0">
           {canDispose && (
             <button
               type="button"
               onClick={() => onOpenModal(item.id, "disposisi")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors shadow-2xs whitespace-nowrap shrink-0"
             >
               <Share2 size={13} /> Disposisi
             </button>
@@ -245,41 +249,45 @@ export function InboxReadingPane({
             <button
               type="button"
               onClick={() => onOpenModal(item.id, "redirect")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface text-text hover:bg-panel transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface text-text hover:bg-panel transition-colors whitespace-nowrap shrink-0"
             >
               <ArrowRight size={13} /> Alihkan
             </button>
           )}
-          <a
-            href={pdfReady ? officialPdfUrl(item.letter.id) : undefined}
-            aria-disabled={!pdfReady}
-            title="Unduh PDF Resmi"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
-          >
-            {pdfReady ? (
-              <>
-                <Download size={13} className="text-primary" />
-                <span>PDF Resmi</span>
-              </>
-            ) : (
-              <>
-                <Loader2 size={13} className="animate-spin text-primary" />
-                <span>Menyiapkan PDF...</span>
-              </>
-            )}
-          </a>
+          {!isExternalPdf && (
+            <a
+              href={pdfReady ? officialPdfUrl(item.letter.id) : undefined}
+              aria-disabled={!pdfReady}
+              title="Unduh PDF Resmi"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none whitespace-nowrap shrink-0"
+            >
+              {pdfReady ? (
+                <>
+                  <Download size={13} className="text-primary shrink-0" />
+                  <span className="hidden @xl:inline">PDF Resmi</span>
+                  <span className="@xl:hidden">PDF</span>
+                </>
+              ) : (
+                <>
+                  <Loader2 size={13} className="animate-spin text-primary shrink-0" />
+                  <span className="hidden @xl:inline">Menyiapkan PDF...</span>
+                  <span className="@xl:hidden">PDF...</span>
+                </>
+              )}
+            </a>
+          )}
           <Link
             href={`/inbox/${item.id}`}
             title="Buka di halaman detail penuh"
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface text-text-muted hover:text-text hover:bg-panel transition-colors"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface text-text-muted hover:text-text hover:bg-panel transition-colors whitespace-nowrap shrink-0"
           >
-            <ExternalLink size={13} />
-            <span className="hidden sm:inline">Layar Penuh</span>
+            <ExternalLink size={13} className="shrink-0" />
+            <span className="hidden @xl:inline">Layar Penuh</span>
           </Link>
         </div>
 
         {/* Kanan: Navigasi Pesan < > & Tombol Tutup Panel */}
-        <div className="flex items-center gap-1 ml-auto text-xs text-text-muted">
+        <div className="flex items-center gap-0.5 ml-auto text-xs text-text-muted shrink-0">
           {currentIndex >= 0 && totalVisible > 0 && (
             <>
               <span className="px-1.5 font-medium">
@@ -528,15 +536,21 @@ export function InboxReadingPane({
                     <span className="text-[10px] text-text-muted">
                       ({formatBytes(att.size)})
                     </span>
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void openLetterAttachmentInline(
+                          item.letter.id,
+                          att.id,
+                          att.contentType,
+                          att.fileName
+                        ).catch(() => {});
+                      }}
                       title="Buka lampiran"
                       className="text-text-muted hover:text-primary"
                     >
                       <Eye size={13} />
-                    </a>
+                    </button>
                     <a
                       href={url}
                       download={att.fileName}

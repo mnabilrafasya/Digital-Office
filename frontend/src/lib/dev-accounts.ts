@@ -24,9 +24,9 @@ export const DEV_ACCOUNTS: DevUserAccount[] = [
     position: "Administrator Sistem",
     unit: "Departemen Teknologi Informasi PSP",
     category: "admin",
-    badge: "Superadmin · Seluruh Akses",
+    badge: "Superadmin · Master Data & Audit",
     badgeVariant: "indigo",
-    flowNote: "Kelola seluruh master data dan uji buat surat, review, approve, disposisi, serta audit. Pilih akun ini sebagai peserta surat untuk menguji alur.",
+    flowNote: "Kelola seluruh perusahaan, master data, template & audit, serta uji buat surat/review (hak approve & disposisi mengikuti jabatan struktural).",
     isActive: true,
   },
   // ── 1. Alur Persuratan TI (Drafter → Reviewer → Approver) ──

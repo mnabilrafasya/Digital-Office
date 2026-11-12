@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────
 
 import Link from "next/link";
-import { Bell, Home, FileText } from "lucide-react";
+import { Home } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
 
@@ -27,18 +27,11 @@ export async function Header() {
       {/* Nav links */}
       <nav className="flex items-center gap-1">
         <Link
-          href="/dashboard"
+          href="/surat/daftar"
           className="flex items-center gap-1.5 text-slate-300 hover:text-white text-sm px-3 py-1.5 rounded-md hover:bg-white/10 transition-colors"
         >
           <Home size={14} />
           <span>Beranda</span>
-        </Link>
-        <Link
-          href="#"
-          className="flex items-center gap-1.5 text-slate-300 hover:text-white text-sm px-3 py-1.5 rounded-md hover:bg-white/10 transition-colors"
-        >
-          <FileText size={14} />
-          <span>Supporting Documents</span>
         </Link>
       </nav>
 
@@ -47,15 +40,6 @@ export async function Header() {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        {/* Notifikasi */}
-        <button
-          className="relative text-slate-300 hover:text-white p-2 rounded-md hover:bg-white/10 transition-colors"
-          aria-label="Notifikasi"
-        >
-          <Bell size={18} />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full" />
-        </button>
-
         {/* User info */}
         <div className="flex items-center gap-2 text-sm text-slate-300">
           <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xs">

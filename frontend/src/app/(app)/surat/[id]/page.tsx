@@ -20,6 +20,7 @@ import {
   QrCode,
   CheckCircle2,
   Printer,
+  ExternalLink,
   UploadCloud,
   Building2,
   Inbox,
@@ -34,6 +35,7 @@ import type { LetterDetail, LetterHistoryEntry } from "@/lib/api/letter-detail";
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
+  openLetterAttachmentInline,
   uploadSignedPdf,
 } from "@/lib/api/letter-document";
 import { StatusBadge } from "@/components/daftar-surat/status-badge";
@@ -270,7 +272,7 @@ export default function SuratDetailPage() {
     <div className={cn("space-y-4", hasActions && "pb-20")}>
       {/* ── Breadcrumb ── */}
       <nav className="flex items-center gap-1 text-xs text-text-muted flex-wrap">
-        <Link href="/dashboard" className="hover:text-text transition-colors">
+        <Link href="/surat/daftar" className="hover:text-text transition-colors">
           Beranda
         </Link>
         <ChevronRight size={12} />
@@ -413,7 +415,7 @@ export default function SuratDetailPage() {
                   </div>
                 </div>
 
-                {/* Bar tombol Cetak / Unduh PDF */}
+                {/* Bar tombol Buka / Unduh PDF */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <a
                     href={pdfReady ? officialPdfUrl(letter.id, true) : undefined}
@@ -422,7 +424,7 @@ export default function SuratDetailPage() {
                     aria-disabled={!pdfReady}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
                   >
-                    <Printer size={14} /> Cetak Surat (Print / PDF)
+                    <ExternalLink size={14} /> Buka PDF
                   </a>
                   <a
                     href={pdfReady ? officialPdfUrl(letter.id) : undefined}
@@ -552,6 +554,7 @@ export default function SuratDetailPage() {
                 {/* QR image dari backend (hanya untuk surat internal) */}
                 {!isExternalOutgoing && letter.approval.qrUrl && (
                   <div className="w-28 h-28 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={letter.approval.qrUrl}
                       alt="QR Persetujuan"
@@ -660,14 +663,20 @@ export default function SuratDetailPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <a
-                          href={downloadUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void openLetterAttachmentInline(
+                              letter.id,
+                              att.id,
+                              att.contentType,
+                              att.fileName
+                            ).catch(() => {});
+                          }}
                           className="text-xs text-text-muted hover:text-primary flex items-center gap-1 transition-colors"
                         >
                           <Eye size={13} /> Buka
-                        </a>
+                        </button>
                         <a
                           href={downloadUrl}
                           download={att.fileName}

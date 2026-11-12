@@ -37,7 +37,10 @@ interface BackendListResponse {
   };
 }
 
-function mapBackendLetter(b: BackendLetterItem): LetterListItem {
+function mapBackendLetter(
+  b: BackendLetterItem,
+  backendScope: "mine" | "tasks",
+): LetterListItem {
   const isDrafterEditable =
     b.status === "DRAFT" || b.status === "RETURNED_TO_DRAFTER";
   const isReviewable =
@@ -46,9 +49,11 @@ function mapBackendLetter(b: BackendLetterItem): LetterListItem {
 
   const actions: string[] = [];
   if (isDrafterEditable) actions.push("EDIT");
-  if (isReviewable) actions.push("REVIEW");
-  if (isApprovable) actions.push("APPROVE");
-  if (b.status === "APPROVED") actions.push("UPLOAD_SIGNED");
+  if (backendScope === "tasks") {
+    if (isReviewable) actions.push("REVIEW");
+    if (isApprovable) actions.push("APPROVE");
+    if (b.status === "APPROVED") actions.push("UPLOAD_SIGNED");
+  }
 
   return {
     id: b.id,
@@ -171,8 +176,9 @@ export async function listLetters(
     queryParams.set("q", q.trim());
   }
 
-  const [resCurrent, ...totals] = await Promise.all([
+  const [resCurrent, allTotal, ...totals] = await Promise.all([
     fetch(`${API}/letters?${queryParams.toString()}`, { cache: "no-store" }),
+    fetchTotal(backendScope, ""),
     ...Object.values(COUNT_GROUPS).map((g) => fetchTotal(backendScope, g)),
   ]);
 
@@ -188,14 +194,14 @@ export async function listLetters(
   const [DRAFT, IN_REVIEW, RETURNED, IN_APPROVAL, SENT, CANCELLED] = totals;
 
   return {
-    data: jsonCurrent.data.map(mapBackendLetter),
+    data: jsonCurrent.data.map((item) => mapBackendLetter(item, backendScope)),
     meta: {
       page: jsonCurrent.meta.page,
       pageSize: jsonCurrent.meta.pageSize,
       total: jsonCurrent.meta.total,
     },
     counts: {
-      ALL: DRAFT + IN_REVIEW + RETURNED + IN_APPROVAL + SENT + CANCELLED,
+      ALL: allTotal,
       DRAFT,
       IN_REVIEW,
       RETURNED,

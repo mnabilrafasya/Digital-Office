@@ -6,7 +6,7 @@
 // Mengelola state URL query params, fetch data, koordinasi tab, filter, tabel, pagination.
 // ─────────────────────────────────────────────
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Plus } from "lucide-react";
@@ -85,7 +85,7 @@ export function DaftarSuratView({
   const router       = useRouter();
   const pathname     = usePathname();
   const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
+  const [reloadTick, setReloadTick] = useState(0);
 
   const isSpecialScope = initialScope === "review" || initialScope === "approval";
   const effectiveScope = isSpecialScope
@@ -133,34 +133,43 @@ export function DaftarSuratView({
 
   // ── Fetch ─────────────────────────────────
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const resp = await listLetters({
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(false);
+
+      listLetters({
         scope: effectiveScope,
         status: (activeTab as ListLettersResponse["data"][0]["status"]) || undefined,
-        q:                searchParams.get("q")                ?? "",
-        letterTypeId:     searchParams.get("letterTypeId")     ?? "",
+        q: searchParams.get("q") ?? "",
+        letterTypeId: searchParams.get("letterTypeId") ?? "",
         confidentialityId: searchParams.get("confidentialityId") ?? "",
-        from:             searchParams.get("from")             ?? "",
-        to:               searchParams.get("to")               ?? "",
+        from: searchParams.get("from") ?? "",
+        to: searchParams.get("to") ?? "",
         page,
         pageSize,
-      });
-      setData(resp.data);
-      setCounts(resp.counts);
-      setMeta(resp.meta);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [searchParams, effectiveScope, activeTab, page, pageSize]);
+      })
+        .then((resp) => {
+          if (cancelled) return;
+          setData(resp.data);
+          setCounts(resp.counts);
+          setMeta(resp.meta);
+        })
+        .catch(() => {
+          if (!cancelled) setError(true);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 0);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchParams, effectiveScope, activeTab, page, pageSize, reloadTick]);
 
   // ── URL helpers ───────────────────────────
 
@@ -168,9 +177,7 @@ export function DaftarSuratView({
     const current: Record<string, string | number> = {};
     searchParams.forEach((v, k) => { current[k] = v; });
     const merged = { ...current, ...overrides };
-    startTransition(() => {
-      router.push(`${pathname}${buildSearch(merged)}`);
-    });
+    router.push(`${pathname}${buildSearch(merged)}`);
   }
 
   function handleScopeChange(newScope: "mine" | "tasks") {
@@ -230,7 +237,7 @@ export function DaftarSuratView({
       <div className="mb-5">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-1 text-xs text-text-muted mb-2">
-          <Link href="/" className="hover:text-text transition-colors">Beranda</Link>
+          <Link href="/surat/daftar" className="hover:text-text transition-colors">Beranda</Link>
           <ChevronRight size={12} />
           <span>Penciptaan Surat</span>
           <ChevronRight size={12} />
@@ -318,7 +325,7 @@ export function DaftarSuratView({
         loading={loading}
         error={error}
         isFiltered={isFiltered || !!activeTab}
-        onRetry={fetchData}
+        onRetry={() => setReloadTick((t) => t + 1)}
       />
 
       {/* ── Pagination ── */}

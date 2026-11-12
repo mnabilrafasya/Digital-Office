@@ -45,6 +45,7 @@ import {
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
+  openLetterAttachmentInline,
 } from "@/lib/api/letter-document";
 import { DisposisiModal } from "@/components/inbox/disposisi-modal";
 import { RedirectModal } from "@/components/inbox/redirect-modal";
@@ -442,6 +443,7 @@ export default function InboxDetailPage() {
               <div className="p-4 flex items-start gap-4 flex-wrap">
                 {letter.direction !== "OUTGOING" && letter.approval.qrUrl && (
                   <div className="w-24 h-24 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={letter.approval.qrUrl}
                       alt="QR Persetujuan"
@@ -527,14 +529,20 @@ export default function InboxDetailPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <a
-                          href={downloadUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void openLetterAttachmentInline(
+                              item.letter.id,
+                              att.id,
+                              att.contentType,
+                              att.fileName
+                            ).catch(() => {});
+                          }}
                           className="text-xs text-text-muted hover:text-primary flex items-center gap-1 transition-colors"
                         >
                           <Eye size={13} /> Buka
-                        </a>
+                        </button>
                         <a
                           href={downloadUrl}
                           download={att.fileName}

@@ -44,6 +44,9 @@ interface ActionButtonProps {
 
 function ActionButton({ item }: ActionButtonProps) {
   const hasEdit = item.allowedActions.includes("EDIT");
+  const hasReview = item.allowedActions.includes("REVIEW");
+  const hasApprove = item.allowedActions.includes("APPROVE");
+  const hasUploadSigned = item.allowedActions.includes("UPLOAD_SIGNED");
   const isReturned =
     item.status === "RETURNED_TO_DRAFTER" ||
     item.status === "RETURNED_TO_REVIEWER";
@@ -73,11 +76,7 @@ function ActionButton({ item }: ActionButtonProps) {
     );
   }
 
-  const isReview = item.status === "IN_REVIEW";
-  const isApproval = item.status === "IN_APPROVAL";
-  const isWaitingSignedScan = item.status === "APPROVED";
-
-  if (isWaitingSignedScan) {
+  if (hasUploadSigned && item.status === "APPROVED") {
     return (
       <Link
         href={`/surat/${item.id}`}
@@ -89,14 +88,14 @@ function ActionButton({ item }: ActionButtonProps) {
     );
   }
 
-  if (isReview || isApproval) {
+  if (hasReview || hasApprove) {
     return (
       <Link
         href={`/surat/${item.id}`}
         className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors"
       >
         <Eye size={13} />
-        {isReview ? "Tinjau" : "Setujui"}
+        {hasReview ? "Tinjau" : "Setujui"}
       </Link>
     );
   }

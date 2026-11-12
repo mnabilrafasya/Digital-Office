@@ -17,9 +17,7 @@ import {
   CheckSquare,
   Database,
   Inbox,
-  Bell,
   BarChart3,
-  Search,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -115,20 +113,10 @@ const NAV_ITEMS: NavItem[] = [
     dynamicBadge: "inbox", // badge dari backend, bukan hardcode
   },
   {
-    label: "Notifikasi",
-    href: "/notifikasi",
-    icon: <Bell size={16} />,
-  },
-  {
     label: "Monitoring Surat",
     href: "/rekap",
     icon: <BarChart3 size={16} />,
     requiredPermission: "AUDIT_VIEW",
-  },
-  {
-    label: "Pencarian",
-    href: "/pencarian",
-    icon: <Search size={16} />,
   },
 ];
 
@@ -257,18 +245,23 @@ export function Sidebar({ permissions }: { permissions?: string[] }) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([getInboxUnreadCount(), getPendingTaskCounts()])
-      .then(([inboxCount, tasks]) => {
-        if (!active) return;
-        setBadgeCounts({
-          inbox: inboxCount,
-          review: tasks.review,
-          approval: tasks.approval,
-        });
-      })
-      .catch(() => {});
+    const refreshCounts = () => {
+      Promise.all([getInboxUnreadCount(), getPendingTaskCounts()])
+        .then(([inboxCount, tasks]) => {
+          if (!active) return;
+          setBadgeCounts({
+            inbox: inboxCount,
+            review: tasks.review,
+            approval: tasks.approval,
+          });
+        })
+        .catch(() => {});
+    };
+    refreshCounts();
+    window.addEventListener("digital-office:counts-changed", refreshCounts);
     return () => {
       active = false;
+      window.removeEventListener("digital-office:counts-changed", refreshCounts);
     };
   }, [pathname]);
 

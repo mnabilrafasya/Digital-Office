@@ -13,7 +13,6 @@ import {
   Share2,
   History,
   Download,
-  Shield,
   CheckCircle2,
   Clock,
   MailOpen,
@@ -24,17 +23,14 @@ import {
 } from "lucide-react";
 import {
   getLetterTracking,
-  getLetterAuditLogs,
   type LetterTracking,
   type DistributionNode,
-  type AuditLogEntry,
 } from "@/lib/api/audit";
 import {
   getLetterVersions,
   officialPdfUrl,
   type DocumentVersion,
 } from "@/lib/api/letter-document";
-import { activityLabel } from "@/components/audit/audit-presenter";
 import {
   formatBytes,
   type LetterDetail,
@@ -153,7 +149,7 @@ function DistributionTreeItem({
   );
 }
 
-type TrackingTab = "diagram" | "distribution" | "versions" | "audit";
+type TrackingTab = "diagram" | "distribution" | "versions";
 
 export function LetterTrackingPanel({
   letterId,
@@ -168,7 +164,6 @@ export function LetterTrackingPanel({
 }) {
   const [tracking, setTracking] = useState<LetterTracking | null>(null);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<TrackingTab>("diagram");
 
@@ -191,12 +186,6 @@ export function LetterTrackingPanel({
           if (!cancelled) setVersions(items);
         })
         .catch(() => {});
-
-      getLetterAuditLogs(letterId)
-        .then((logs) => {
-          if (!cancelled) setAuditLogs(logs);
-        })
-        .catch(() => {});
     }
 
     return () => {
@@ -204,7 +193,7 @@ export function LetterTrackingPanel({
     };
   }, [letterId, showVersions, letter]);
 
-  if (!tracking && !letter && versions.length === 0 && auditLogs.length === 0) {
+  if (!tracking && !letter && versions.length === 0) {
     return null;
   }
 
@@ -332,22 +321,6 @@ export function LetterTrackingPanel({
                 <span>Versi Naskah ({versions.length})</span>
               </button>
             )}
-
-            {showVersions && auditLogs.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setActiveTab("audit")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0",
-                  activeTab === "audit"
-                    ? "bg-primary text-white"
-                    : "text-text-muted hover:text-text hover:bg-panel"
-                )}
-              >
-                <Shield size={12} />
-                <span>Log Audit ({auditLogs.length})</span>
-              </button>
-            )}
           </div>
 
           {/* Konten Tab 1: Visualisasi Diagram Alur */}
@@ -426,39 +399,6 @@ export function LetterTrackingPanel({
                 );
               })}
             </div>
-          )}
-
-          {/* Konten Tab 4: Jejak Audit Sistem (AUDIT_VIEW) */}
-          {activeTab === "audit" && auditLogs.length > 0 && (
-            <ul className="divide-y divide-border max-h-52 overflow-y-auto border border-border rounded-lg">
-              {auditLogs.map((log) => (
-                <li
-                  key={log.id}
-                  className="px-3 py-2 flex items-center justify-between gap-2 text-xs hover:bg-panel/20"
-                >
-                  <div className="min-w-0 truncate">
-                    <span
-                      title={log.action}
-                      className="font-semibold text-primary"
-                    >
-                      {activityLabel(log.action)}
-                    </span>{" "}
-                    <span className="text-text">
-                      oleh {log.actor.name || "Sistem"}
-                    </span>
-                    {log.ipAddress && (
-                      <span className="text-text-muted">
-                        {" "}
-                        · IP {log.ipAddress}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-text-muted shrink-0">
-                    {formatCompactTime(log.at)}
-                  </span>
-                </li>
-              ))}
-            </ul>
           )}
         </div>
       )}

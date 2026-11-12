@@ -14,7 +14,7 @@ import {
   RotateCcw,
   X,
   Loader2,
-  Printer,
+  ExternalLink,
   UploadCloud,
   FileText,
 } from "lucide-react";
@@ -203,8 +203,8 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border border-border text-text hover:bg-panel transition-colors"
               >
-                <Printer size={15} className="text-primary" />
-                Cetak / Unduh PDF
+                <ExternalLink size={15} className="text-primary" />
+                Buka PDF
               </a>
               <button
                 type="button"
