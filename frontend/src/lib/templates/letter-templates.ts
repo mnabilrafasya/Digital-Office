@@ -100,7 +100,7 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
       "Format surat resmi dengan kop PT Pupuk Sriwidjaja Palembang, nomor ###NoSurat###, Yth, tanda tangan, dan tembusan.",
     fileUrl: "/templates/surat-dinas-standar.docx",
     fallbackFileUrl: "/templates/surat-dinas-standar.docx",
-    letterTypeKeywords: ["dinas", "antar", "standar", "korporat"],
+    letterTypeKeywords: ["surat_dinas", "antar", "standar", "korporat"],
   },
   {
     id: "tmpl-nota-dinas",
@@ -232,6 +232,60 @@ export function getCachedTemplates(): LetterTemplateDefinition[] {
   return cachedTemplates ?? LETTER_TEMPLATE_LIST;
 }
 
+function isBlankTemplate(t: LetterTemplateDefinition): boolean {
+  return (
+    t.legacyId === "tmpl-kosong" ||
+    t.name.trim().toLowerCase().includes("dokumen kosong")
+  );
+}
+
+function isGenericStandardTemplate(t: LetterTemplateDefinition): boolean {
+  return (
+    t.legacyId === "tmpl-dinas-standar" ||
+    t.name.trim().toLowerCase() === "surat dinas resmi standar"
+  );
+}
+
+/** Memilih template terbaik yang paling sesuai untuk jenis surat terpilih. */
+export function matchTemplateForLetterType(
+  templates: LetterTemplateDefinition[],
+  letterType: { id?: string | null; code?: string | null; name?: string | null }
+): LetterTemplateDefinition | undefined {
+  if (templates.length === 0) return undefined;
+  const ltId = letterType.id ? String(letterType.id) : "";
+  const ltCode = (letterType.code ?? "").trim().toLowerCase();
+  const ltName = (letterType.name ?? "").trim().toLowerCase();
+
+  const exactByLink = templates.find(
+    (t) =>
+      (ltId && t.letterType?.id != null && String(t.letterType.id) === ltId) ||
+      (ltCode && t.letterType?.code?.trim().toLowerCase() === ltCode)
+  );
+  if (exactByLink) return exactByLink;
+
+  const nonGeneric = templates.filter(
+    (t) => !isBlankTemplate(t) && !isGenericStandardTemplate(t)
+  );
+
+  const bySpecificNameOrKeyword = nonGeneric.find((t) => {
+    const tName = t.name.trim().toLowerCase();
+    const matchesName =
+      (ltName && tName.includes(ltName)) ||
+      (ltName && tName.length >= 4 && ltName.includes(tName));
+    const matchesKeyword = t.letterTypeKeywords.some(
+      (kw) => (ltName && ltName.includes(kw)) || (ltCode && ltCode.includes(kw))
+    );
+    return matchesName || matchesKeyword;
+  });
+  if (bySpecificNameOrKeyword) return bySpecificNameOrKeyword;
+
+  return (
+    templates.find((t) => !t.letterType && !isBlankTemplate(t)) ??
+    templates.find((t) => !isBlankTemplate(t)) ??
+    templates[0]
+  );
+}
+
 /**
  * Mengambil daftar template aktif dari `GET /api/v1/templates`.
  * Bila gagal (misal pada halaman dev tanpa sesi login), kembali ke `LETTER_TEMPLATE_LIST`.
@@ -294,7 +348,8 @@ export interface SaveTemplateInput {
  * Membuat template naskah baru (`POST /api/v1/templates`, `multipart/form-data`).
  */
 export async function createTemplate(
-  input: SaveTemplateInput & { file: File }
+  input: SaveTemplateInput & { file: File },
+  companyCode?: string
 ): Promise<LetterTemplateDefinition> {
   const formData = new FormData();
   formData.append("name", input.name.trim());
@@ -310,6 +365,7 @@ export async function createTemplate(
     method: "POST",
     body: formData,
     credentials: "include",
+    headers: companyCode ? { "X-Company-Code": companyCode } : undefined,
   });
   const payload = (await res.json().catch(() => null)) as {
     data?: BackendTemplateItem;
@@ -330,7 +386,8 @@ export async function createTemplate(
  */
 export async function updateTemplate(
   templateId: string,
-  input: SaveTemplateInput
+  input: SaveTemplateInput,
+  companyCode?: string
 ): Promise<LetterTemplateDefinition> {
   const formData = new FormData();
   formData.append("name", input.name.trim());
@@ -350,6 +407,7 @@ export async function updateTemplate(
       method: "PUT",
       body: formData,
       credentials: "include",
+      headers: companyCode ? { "X-Company-Code": companyCode } : undefined,
     }
   );
   const payload = (await res.json().catch(() => null)) as {

@@ -51,7 +51,7 @@ func newRouter(d routerDeps) http.Handler {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   d.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "If-Match"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "If-Match", "X-Company-Code"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -78,7 +78,7 @@ func newRouter(d routerDeps) http.Handler {
 				r.Put("/{delegationId}", d.Delegasi.UpdateMine)
 				r.Delete("/{delegationId}", d.Delegasi.DeleteMine)
 			})
-			r.Get("/lookups", d.MasterData.Lookups)
+			r.With(auth.WithCompanyScope(d.Perusahaan)).Get("/lookups", d.MasterData.Lookups)
 			r.Get("/units", d.Organisasi.Units)
 			r.With(auth.RequirePermission(auth.LetterCreate)).
 				Get("/users/candidates", d.Organisasi.Candidates)
@@ -118,6 +118,7 @@ func newRouter(d routerDeps) http.Handler {
 			// Template naskah: semua user perusahaan boleh memakai; membuat dan mengganti butuh
 			// TEMPLATE_CREATE (dimiliki semua role)
 			r.Route("/templates", func(r chi.Router) {
+				r.Use(auth.WithCompanyScope(d.Perusahaan))
 				r.Get("/", d.Surat.Templates)
 				r.With(auth.RequirePermission(auth.TemplateCreate)).Post("/", d.Surat.CreateTemplate)
 				r.Get("/{templateId}/file", d.Surat.TemplateFile)
@@ -133,9 +134,10 @@ func newRouter(d routerDeps) http.Handler {
 				r.Get("/monitoring/letters", d.Audit.Monitor)
 			})
 
-			// Pengaturan perusahaan sendiri (ADMIN): format nomor surat dan watermark
+			// Pengaturan perusahaan (ADMIN untuk perusahaannya sendiri, atau SUPERADMIN lintas perusahaan)
 			r.Route("/company", func(r chi.Router) {
 				r.Use(auth.RequirePermission(auth.CompanySettings))
+				r.Use(auth.WithCompanyScope(d.Perusahaan))
 				r.Get("/", d.Perusahaan.Settings)
 				r.Put("/", d.Perusahaan.UpdateSettings)
 				r.Get("/number-preview", d.Perusahaan.NumberPreview)
@@ -155,6 +157,7 @@ func newRouter(d routerDeps) http.Handler {
 				})
 				r.Route("/lookups/{category}", func(r chi.Router) {
 					r.Use(auth.RequirePermission(auth.OrgManage))
+					r.Use(auth.WithCompanyScope(d.Perusahaan))
 					r.Get("/", d.LookupAdmin.List)
 					r.Post("/", d.LookupAdmin.Save)
 					r.Put("/{lookupId}", d.LookupAdmin.Save)
@@ -174,6 +177,7 @@ func newRouter(d routerDeps) http.Handler {
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequirePermission(auth.OrgManage))
+					r.Use(auth.WithCompanyScope(d.Perusahaan))
 					r.Get("/units", d.OrgAdmin.Units)
 					r.Post("/units", d.OrgAdmin.CreateUnit)
 					r.Put("/units/{unitId}", d.OrgAdmin.UpdateUnit)
@@ -188,6 +192,7 @@ func newRouter(d routerDeps) http.Handler {
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequirePermission(auth.UserManage))
+					r.Use(auth.WithCompanyScope(d.Perusahaan))
 					r.Get("/users", d.OrgAdmin.Users)
 					r.Post("/users", d.OrgAdmin.CreateUser)
 					r.Get("/users/{userId}", d.OrgAdmin.User)
@@ -199,6 +204,7 @@ func newRouter(d routerDeps) http.Handler {
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequirePermission(auth.TemplateManage))
+					r.Use(auth.WithCompanyScope(d.Perusahaan))
 					r.Get("/templates", d.Surat.AdminTemplates)
 					r.Patch("/templates/{templateId}/status", d.Surat.TemplateStatus)
 					r.Delete("/templates/{templateId}", d.Surat.DeleteTemplate)

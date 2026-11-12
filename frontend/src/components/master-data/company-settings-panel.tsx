@@ -44,7 +44,13 @@ const FORMAT_TOKENS = [
   },
 ] as const;
 
-function SettingsForm({ settings }: { settings: CompanySettings }) {
+function SettingsForm({
+  settings,
+  companyCode,
+}: {
+  settings: CompanySettings;
+  companyCode?: string;
+}) {
   const cache = useQueryClient();
   const [format, setFormat] = useState(settings.letterNumberFormat);
   const [watermark, setWatermark] = useState(settings.watermarkText ?? "");
@@ -57,7 +63,9 @@ function SettingsForm({ settings }: { settings: CompanySettings }) {
   const [busy, setBusy] = useState(false);
 
   const imageUrl = previewedWatermark.trim()
-    ? `/api/v1/company/watermark-preview?text=${encodeURIComponent(previewedWatermark.trim())}`
+    ? `/api/v1/company/watermark-preview?text=${encodeURIComponent(previewedWatermark.trim())}${
+        companyCode ? `&companyCode=${encodeURIComponent(companyCode)}` : ""
+      }`
     : "";
 
   async function run(action: () => Promise<void>) {
@@ -84,6 +92,7 @@ function SettingsForm({ settings }: { settings: CompanySettings }) {
           letterNumberFormat: format.trim(),
           watermarkText: trimmedWatermark || null,
         },
+        companyCode,
       );
       setPreview(result.data.numberPreview);
       setPreviewedWatermark(result.data.watermarkText ?? "");
@@ -297,6 +306,9 @@ function SettingsForm({ settings }: { settings: CompanySettings }) {
                     data: { numberPreview: string };
                   }>(
                     `/company/number-preview?format=${encodeURIComponent(format)}`,
+                    "GET",
+                    undefined,
+                    companyCode,
                   );
                   setPreview(result.data.numberPreview);
                 })
@@ -469,10 +481,20 @@ function SettingsForm({ settings }: { settings: CompanySettings }) {
   );
 }
 
-export function CompanySettingsPanel() {
+export function CompanySettingsPanel({
+  companyCode,
+}: {
+  companyCode?: string;
+} = {}) {
   const query = useQuery({
-    queryKey: ["master", "settings"],
-    queryFn: () => masterRequest<{ data: CompanySettings }>("/company"),
+    queryKey: ["master", "settings", companyCode],
+    queryFn: () =>
+      masterRequest<{ data: CompanySettings }>(
+        "/company",
+        "GET",
+        undefined,
+        companyCode,
+      ),
   });
 
   if (query.isPending) {
@@ -505,5 +527,11 @@ export function CompanySettingsPanel() {
     );
   }
 
-  return <SettingsForm settings={query.data.data} />;
+  return (
+    <SettingsForm
+      key={query.data.data.code}
+      settings={query.data.data}
+      companyCode={companyCode}
+    />
+  );
 }

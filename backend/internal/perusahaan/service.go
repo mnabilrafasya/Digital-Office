@@ -150,6 +150,15 @@ func (s *Service) UpdateCompany(ctx context.Context, user *auth.CurrentUser, cod
 	return s.Company(ctx, code)
 }
 
+// LookupCompany mengembalikan kode dan nama perusahaan untuk pengalihan konteks SUPERADMIN.
+func (s *Service) LookupCompany(ctx context.Context, code string) (*auth.CompanyRef, error) {
+	c, err := s.Company(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.CompanyRef{Code: c.Code, Name: c.Name}, nil
+}
+
 // SetCompanyStatus mengaktifkan/menonaktifkan perusahaan. Perusahaan pelaku tidak bisa
 // dinonaktifkan (supaya SUPERADMIN tidak mengunci dirinya sendiri).
 func (s *Service) SetCompanyStatus(ctx context.Context, user *auth.CurrentUser, code string, in StatusInput) (*Company, error) {

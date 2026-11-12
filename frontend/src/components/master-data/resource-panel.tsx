@@ -22,6 +22,7 @@ import {
   Building2,
   Users,
   FileText,
+  ArrowUpRight,
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ import {
   MasterForm,
   buttonClass,
   primaryButtonClass,
+  softPrimaryButtonClass,
   rowActionButtonClass,
   rowDangerButtonClass,
   inputClass,
@@ -446,13 +448,19 @@ export function ResourcePanel({
   resource,
   userId,
   companyCode,
+  ownCompanyCode,
+  onManageCompany,
   canManageSuperadmin = false,
 }: {
   resource: Resource;
   userId: string;
   companyCode: string;
+  ownCompanyCode?: string;
+  onManageCompany?: (code: string) => void;
   canManageSuperadmin?: boolean;
 }) {
+  const effectiveOwnCompanyCode = ownCompanyCode ?? companyCode;
+  const scopedCompany = resource.key === "companies" ? undefined : companyCode;
   const cache = useQueryClient();
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -469,14 +477,14 @@ export function ResourcePanel({
   const supportsRoleFilter = resource.key === "users";
 
   const unitsFilterQuery = useQuery({
-    queryKey: ["master", "choices", "units", undefined],
-    queryFn: () => loadChoices("units"),
+    queryKey: ["master", "choices", "units", scopedCompany],
+    queryFn: () => loadChoices("units", scopedCompany),
     enabled: supportsUnitFilter,
   });
 
   const rolesFilterQuery = useQuery({
-    queryKey: ["master", "choices", "roles", undefined],
-    queryFn: () => loadChoices("roles"),
+    queryKey: ["master", "choices", "roles", scopedCompany],
+    queryFn: () => loadChoices("roles", scopedCompany),
     enabled: supportsRoleFilter,
   });
 
@@ -490,8 +498,14 @@ export function ResourcePanel({
   if (supportsRoleFilter && roleId) params.set("roleId", roleId);
 
   const query = useQuery({
-    queryKey: ["master", resource.key, q, status, unitId, roleId, page],
-    queryFn: () => masterRequest<MasterList>(`${resource.path}?${params}`),
+    queryKey: ["master", resource.key, scopedCompany, q, status, unitId, roleId, page],
+    queryFn: () =>
+      masterRequest<MasterList>(
+        `${resource.path}?${params}`,
+        "GET",
+        undefined,
+        scopedCompany,
+      ),
   });
 
   const rows = query.data?.data ?? [];
@@ -508,21 +522,29 @@ export function ResourcePanel({
 
     switch (action.kind) {
       case "create":
-        await masterRequest(resource.path, "POST", values);
+        await masterRequest(resource.path, "POST", values, scopedCompany);
         break;
       case "edit":
-        await masterRequest(pathFor(row!), "PUT", values);
+        await masterRequest(pathFor(row!), "PUT", values, scopedCompany);
         break;
       case "status":
-        await masterRequest(`${pathFor(row!)}/status`, "PATCH", {
-          active: !row!.isActive,
-        });
+        await masterRequest(
+          `${pathFor(row!)}/status`,
+          "PATCH",
+          { active: !row!.isActive },
+          scopedCompany,
+        );
         break;
       case "delete":
-        await masterRequest(pathFor(row!), "DELETE");
+        await masterRequest(pathFor(row!), "DELETE", undefined, scopedCompany);
         break;
       case "password":
-        await masterRequest(`${pathFor(row!)}/reset-password`, "POST", values);
+        await masterRequest(
+          `${pathFor(row!)}/reset-password`,
+          "POST",
+          values,
+          scopedCompany,
+        );
         break;
       case "admin": {
         if (!values.unitId && !values.unitName) {
@@ -888,7 +910,8 @@ export function ResourcePanel({
                   valueAt(row, "role.code") === "SUPERADMIN" &&
                   !canManageSuperadmin;
                 const ownCompany =
-                  resource.key === "companies" && row.code === companyCode;
+                  resource.key === "companies" &&
+                  row.code === effectiveOwnCompanyCode;
 
                 return (
                   <tr
@@ -989,14 +1012,29 @@ export function ResourcePanel({
                         )}
 
                         {resource.key === "companies" && (
-                          <button
-                            type="button"
-                            className={rowActionButtonClass}
-                            onClick={() => setAction({ kind: "admin", row })}
-                          >
-                            <UserPlus size={13} />
-                            Tambah Admin
-                          </button>
+                          <>
+                            {onManageCompany && (
+                              <button
+                                type="button"
+                                className={softPrimaryButtonClass}
+                                title={`Buka & kelola master data ${String(row.code)}`}
+                                onClick={() =>
+                                  onManageCompany(String(row.code))
+                                }
+                              >
+                                <ArrowUpRight size={13} />
+                                Kelola Data
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={rowActionButtonClass}
+                              onClick={() => setAction({ kind: "admin", row })}
+                            >
+                              <UserPlus size={13} />
+                              Tambah Admin
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -1088,7 +1126,7 @@ export function ResourcePanel({
           fields={fields}
           row={action.kind === "edit" ? action.row : undefined}
           company={
-            action.kind === "admin" ? String(action.row?.code) : undefined
+            action.kind === "admin" ? String(action.row?.code) : scopedCompany
           }
           onClose={() => setAction(null)}
           onSubmit={save}

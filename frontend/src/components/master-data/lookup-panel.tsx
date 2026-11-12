@@ -61,29 +61,41 @@ export function LookupPanel({
   ) {
     return (
       <ResourcePanel
-        key={category}
+        key={`${category}-${companyCode}`}
         resource={lookupResource(category, label)}
         userId={userId}
         companyCode={companyCode}
       />
     );
   }
-  return <LookupReference key={category} category={category} label={label} />;
+  return (
+    <LookupReference
+      key={`${category}-${companyCode}`}
+      category={category}
+      label={label}
+      companyCode={companyCode}
+    />
+  );
 }
 
 function LookupReference({
   category,
   label,
+  companyCode,
 }: {
   category: string;
   label: string;
+  companyCode: string;
 }) {
   const [search, setSearch] = useState("");
   const query = useQuery({
-    queryKey: ["master", "lookup", category],
+    queryKey: ["master", "lookup", category, companyCode],
     queryFn: () =>
       masterRequest<MasterList>(
         `/lookups?category=${encodeURIComponent(category)}`,
+        "GET",
+        undefined,
+        companyCode,
       ),
   });
 

@@ -556,12 +556,17 @@ function InboxView() {
           className={cn(
             "grid min-h-[68vh] w-full min-w-0 max-w-full overflow-hidden",
             splitView && activeItemId
-              ? "grid-cols-1 lg:grid-cols-[minmax(300px,38%)_minmax(0,1fr)] xl:grid-cols-[minmax(330px,39%)_minmax(0,1fr)] 2xl:grid-cols-[minmax(360px,43%)_minmax(0,1fr)] divide-y lg:divide-y-0 lg:divide-x divide-border"
+              ? "lg:h-[calc(100vh-14.5rem)] lg:min-h-[500px] grid-cols-1 lg:grid-cols-[minmax(300px,38%)_minmax(0,1fr)] xl:grid-cols-[minmax(330px,39%)_minmax(0,1fr)] 2xl:grid-cols-[minmax(360px,43%)_minmax(0,1fr)] divide-y lg:divide-y-0 lg:divide-x divide-border"
               : "grid-cols-1"
           )}
         >
           {/* ─ Kolom Kiri: Daftar Pesan ─ */}
-          <div className="flex flex-col min-w-0">
+          <div
+            className={cn(
+              "flex flex-col min-w-0",
+              splitView && activeItemId && "lg:min-h-0 lg:h-full"
+            )}
+          >
             {loading ? (
               <div className="flex-1 flex flex-col items-center justify-center py-20 gap-2.5 text-text-muted">
                 <Loader2 size={22} className="animate-spin text-primary" />
@@ -600,7 +605,7 @@ function InboxView() {
                 </p>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 {visibleItems.map((item) => (
                   <InboxMessageRow
                     key={item.id}
@@ -626,7 +631,7 @@ function InboxView() {
             )}
 
             {/* Footer Baris Daftar */}
-            <div className="px-4 py-2.5 bg-panel/30 border-t border-border flex items-center justify-between text-xs text-text-muted mt-auto">
+            <div className="px-4 py-2.5 bg-panel/30 border-t border-border flex items-center justify-between text-xs text-text-muted mt-auto shrink-0">
               <span>
                 Menampilkan{" "}
                 <strong className="text-text">{visibleItems.length}</strong>{" "}
@@ -643,7 +648,7 @@ function InboxView() {
 
           {/* ─ Kolom Kanan: Panel Baca Samping ala Gmail ─ */}
           {splitView && activeItemId && (
-            <div className="min-w-0 max-w-full overflow-hidden h-full">
+            <div className="min-w-0 max-w-full overflow-hidden h-full lg:min-h-0">
               <InboxReadingPane
                 itemId={activeItemId}
                 currentIndex={activeIndex}

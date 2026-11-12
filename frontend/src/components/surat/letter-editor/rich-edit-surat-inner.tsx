@@ -67,6 +67,8 @@ export default function RichEditSuratInner({
   const isLoadingDocRef = useRef(false);
   const userEditedRef = useRef(false);
   const loadedServerDocKeyRef = useRef<string | null>(null);
+  const loadSeqRef = useRef(0);
+  const pendingTemplateIdRef = useRef<string | null>(null);
 
   const [isReady, setIsReady] = useState(false);
   const [fileName, setFileName] = useState<string>("Naskah_Dinas_Draf.docx");
@@ -241,13 +243,17 @@ export default function RichEditSuratInner({
       const docFmt = docFmtRef.current;
       if (!editor || editor.isDisposed || !docFmt) return;
 
+      const seq = ++loadSeqRef.current;
+      pendingTemplateIdRef.current = templateId;
       isLoadingDocRef.current = true;
       userEditedRef.current = false;
 
       resolveTemplateDocxBlob(templateId)
         .then(({ blob, template: tpl }) => {
           const currentEditor = instanceRef.current;
-          if (!currentEditor || currentEditor.isDisposed) return;
+          if (seq !== loadSeqRef.current || !currentEditor || currentEditor.isDisposed) {
+            return;
+          }
           const docName = `${tpl.name.replace(/\s+/g, "_")}.docx`;
 
           currentEditor.openDocument(
@@ -256,7 +262,14 @@ export default function RichEditSuratInner({
             docFmt.OpenXml,
             (success) => {
               const activeEditor = instanceRef.current;
-              if (!activeEditor || activeEditor.isDisposed) return;
+              if (
+                seq !== loadSeqRef.current ||
+                !activeEditor ||
+                activeEditor.isDisposed
+              ) {
+                return;
+              }
+              pendingTemplateIdRef.current = null;
               if (success) {
                 if (syncFormFields) {
                   applyTemplateContextToEditor(
@@ -278,13 +291,18 @@ export default function RichEditSuratInner({
                 }
               }
               setTimeout(() => {
-                isLoadingDocRef.current = false;
-              }, 500);
+                if (seq === loadSeqRef.current) {
+                  isLoadingDocRef.current = false;
+                }
+              }, 900);
             }
           );
         })
         .catch((err) => {
-          isLoadingDocRef.current = false;
+          if (seq === loadSeqRef.current) {
+            pendingTemplateIdRef.current = null;
+            isLoadingDocRef.current = false;
+          }
           console.error("[LetterEditor] Gagal memuat file .docx template:", err);
           showToast("Gagal memuat file template .docx");
         });
@@ -449,9 +467,14 @@ export default function RichEditSuratInner({
     loadTemplateIntoEditor,
   ]);
 
-  // Jika user memilih template di Section 1
+  // Jika user memilih template / mengganti Jenis Surat di Section 1
   useEffect(() => {
-    if (!isReady || !formTemplateId || formTemplateId === appliedTemplateId) {
+    if (
+      !isReady ||
+      !formTemplateId ||
+      formTemplateId === appliedTemplateId ||
+      pendingTemplateIdRef.current === formTemplateId
+    ) {
       return;
     }
     const resolvedFormTpl = getTemplateById(formTemplateId);
@@ -463,7 +486,7 @@ export default function RichEditSuratInner({
       setValue("templateId", appliedTemplateId);
       return;
     }
-    loadTemplateIntoEditor(formTemplateId, false, false);
+    loadTemplateIntoEditor(formTemplateId, true, false);
   }, [
     formTemplateId,
     isReady,
@@ -597,7 +620,13 @@ export default function RichEditSuratInner({
         onSyncFormData={() => {
           const editor = instanceRef.current;
           if (!editor || editor.isDisposed) return;
+          const prevEdited = userEditedRef.current;
+          isLoadingDocRef.current = true;
           applyTemplateContextToEditor(editor, getTemplateContextRef.current());
+          setTimeout(() => {
+            isLoadingDocRef.current = false;
+            userEditedRef.current = prevEdited;
+          }, 300);
           showToast("Data form disinkronkan ke naskah");
         }}
         zoomLevel={zoomLevel}

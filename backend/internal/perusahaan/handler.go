@@ -1,6 +1,7 @@
 package perusahaan
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,11 @@ type Handler struct {
 // NewHandler membuat Handler.
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// LookupCompany meneruskan pencarian ringkas perusahaan ke Service untuk middleware WithCompanyScope.
+func (h *Handler) LookupCompany(ctx context.Context, code string) (*auth.CompanyRef, error) {
+	return h.svc.LookupCompany(ctx, code)
 }
 
 // Companies menangani GET /api/v1/admin/companies?q=&status=&page=&pageSize=

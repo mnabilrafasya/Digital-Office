@@ -59,7 +59,13 @@ const STATUS_TABS = [
   { key: "INACTIVE", label: "Nonaktif" },
 ] as const;
 
-export function TemplatesPanel({ permissions }: { permissions: string[] }) {
+export function TemplatesPanel({
+  permissions,
+  companyCode,
+}: {
+  permissions: string[];
+  companyCode?: string;
+}) {
   const cache = useQueryClient();
   const manage = permissions.includes("TEMPLATE_MANAGE");
   const create = permissions.includes("TEMPLATE_CREATE");
@@ -72,10 +78,13 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
   const [notice, setNotice] = useState("");
 
   const query = useQuery({
-    queryKey: ["master", "template-table", manage, status],
+    queryKey: ["master", "template-table", companyCode, manage, status],
     queryFn: () =>
       masterRequest<MasterList>(
         manage ? `/admin/templates?status=${status}` : "/templates",
+        "GET",
+        undefined,
+        companyCode,
       ),
   });
 
@@ -92,6 +101,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
       `/admin/templates/${encodeURIComponent(String(action.row?.id))}/status`,
       "PATCH",
       { active: !action.row?.isActive },
+      companyCode,
     );
     invalidateTemplateCache();
     setNotice("Status template surat berhasil diperbarui.");
@@ -103,6 +113,8 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
     await masterRequest(
       `/admin/templates/${encodeURIComponent(String(action.row?.id))}`,
       "DELETE",
+      undefined,
+      companyCode,
     );
     invalidateTemplateCache();
     setNotice("Template surat berhasil dihapus.");
@@ -364,7 +376,11 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                         <a
                           aria-label={`Unduh ${row.name}`}
                           title="Unduh berkas .docx"
-                          href={`/api/v1/templates/${encodeURIComponent(String(row.id))}/file`}
+                          href={`/api/v1/templates/${encodeURIComponent(String(row.id))}/file${
+                            companyCode
+                              ? `?companyCode=${encodeURIComponent(companyCode)}`
+                              : ""
+                          }`}
                           className={rowActionButtonClass}
                         >
                           <Download size={13} />
@@ -453,6 +469,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
         <TemplateDocxEditorModal
           mode={action.kind}
           row={action.kind === "edit" ? action.row : undefined}
+          companyCode={companyCode}
           onClose={() => setAction(null)}
           onSaved={async (msg) => {
             setNotice(msg);

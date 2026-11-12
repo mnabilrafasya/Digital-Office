@@ -8,11 +8,13 @@
 
 import { CheckCircle2, Info, Loader2 } from "lucide-react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { BuatSuratFormValues } from "@/lib/schemas";
 import {
   fetchTemplates,
   getCachedTemplates,
+  matchTemplateForLetterType,
   type LetterTemplateDefinition,
 } from "@/lib/templates/letter-templates";
 import { fetchLookups, type LookupItem } from "@/lib/api/form";
@@ -120,18 +122,54 @@ export function BasicFields({
   const [templates, setTemplates] = useState<LetterTemplateDefinition[]>(() =>
     getCachedTemplates()
   );
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const userManualTemplateRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     fetchTemplates().then((items) => {
       if (!cancelled) {
         setTemplates(items);
+        setTemplatesLoaded(true);
       }
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const searchParams = useSearchParams();
+  const hasDraftParam = Boolean(searchParams.get("draft"));
+
+  // Sinkronkan template otomatis jika Jenis Surat sudah terisi (mis. dari URL ?type=...) atau daftar template baru selesai dimuat
+  useEffect(() => {
+    if (!templatesLoaded || templates.length === 0) return;
+    if (userManualTemplateRef.current || hasDraftParam) return;
+
+    const currentLT = letterTypeId
+      ? letterTypes.items.find((lt) => lt.id === letterTypeId)
+      : letterTypeCode
+        ? letterTypes.items.find(
+            (lt) => lt.code.toUpperCase() === letterTypeCode.toUpperCase()
+          )
+        : undefined;
+
+    if (!currentLT) return;
+
+    const matched = matchTemplateForLetterType(templates, currentLT);
+    if (matched && (!templateId || templates.some((t) => t.legacyId === templateId && matched.id !== templateId))) {
+      setValue("templateId", matched.id, { shouldValidate: true });
+    }
+  }, [
+    hasDraftParam,
+    templatesLoaded,
+    templates,
+    letterTypeId,
+    letterTypeCode,
+    letterTypes.items,
+    templateId,
+    setValue,
+  ]);
 
   // Normalisasi ID template warisan (mis. "tmpl-dinas-standar") menjadi ID numerik backend saat daftar selesai dimuat
   useEffect(() => {
@@ -188,26 +226,11 @@ export function BasicFields({
                     shouldDirty: true,
                   });
                   if (selectedLT) {
-                    const ltName = selectedLT.name.toLowerCase();
-                    const ltCode = selectedLT.code.toLowerCase();
-                    // 1. Cari template khusus untuk jenis surat ini
-                    // 2. Jika tidak ada, cari template umum (!t.letterType) yang cocok keyword-nya
-                    // 3. Fallback ke template umum pertama (mis. Surat Dinas Resmi Standar)
-                    const matched =
-                      templates.find(
-                        (t) =>
-                          t.letterType?.id === val ||
-                          t.letterType?.code?.toLowerCase() === ltCode
-                      ) ??
-                      templates.find(
-                        (t) =>
-                          !t.letterType &&
-                          t.letterTypeKeywords.some(
-                            (kw) => ltName.includes(kw) || ltCode.includes(kw)
-                          )
-                      ) ??
-                      templates.find((t) => !t.letterType) ??
-                      templates[0];
+                    userManualTemplateRef.current = false;
+                    const matched = matchTemplateForLetterType(
+                      templates,
+                      selectedLT
+                    );
                     if (matched) {
                       setValue("templateId", matched.id, {
                         shouldValidate: true,
@@ -244,6 +267,7 @@ export function BasicFields({
               value={field.value ?? ""}
               onChange={(e) => {
                 const nextTplId = e.target.value || undefined;
+                userManualTemplateRef.current = Boolean(nextTplId);
                 field.onChange(nextTplId);
                 // Jika Jenis Surat belum dipilih dan user memilih template khusus jenis tertentu,
                 // otomatis sesuaikan Jenis Surat-nya agar tidak ditolak backend

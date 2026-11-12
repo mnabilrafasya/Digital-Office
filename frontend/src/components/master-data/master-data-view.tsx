@@ -3,7 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   ChevronRight,
   LayoutGrid,
@@ -12,8 +17,11 @@ import {
   Building2,
   ShieldCheck,
   Stamp,
+  RotateCcw,
 } from "lucide-react";
 import type { AuthUser } from "@/lib/auth";
+import { masterRequest, type MasterList } from "@/lib/api/master-data";
+import { invalidateTemplateCache } from "@/lib/templates/letter-templates";
 import { RESOURCES } from "./config";
 import { ResourcePanel } from "./resource-panel";
 import { CompanySettingsPanel } from "./company-settings-panel";
@@ -26,18 +34,76 @@ function MasterDataContent({ user }: { user: AuthUser }) {
   const search = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const cache = useQueryClient();
+  const isSuperadmin = user.permissions.includes("COMPANY_MANAGE");
   const active = CATEGORIES.find((item) => item.key === search.get("tab"));
 
-  function select(key: string) {
+  const companiesQuery = useQuery({
+    queryKey: ["master", "company-switcher"],
+    queryFn: () =>
+      masterRequest<MasterList>("/admin/companies?page=1&pageSize=100"),
+    enabled: isSuperadmin,
+  });
+
+  const companies = (companiesQuery.data?.data ?? []).map((row) => ({
+    code: String(row.code ?? ""),
+    name: String(row.name ?? ""),
+    isActive: Boolean(row.isActive),
+  }));
+
+  const requestedCode = (search.get("company") ?? "").trim().toUpperCase();
+  const matchedCompany = isSuperadmin && requestedCode
+    ? companies.find((c) => c.code === requestedCode)
+    : undefined;
+  const activeCompany = isSuperadmin && requestedCode
+    ? {
+        code: matchedCompany?.code ?? requestedCode,
+        name:
+          matchedCompany?.name ??
+          (requestedCode === user.company.code
+            ? user.company.name
+            : requestedCode),
+      }
+    : user.company;
+  const isCrossCompany =
+    isSuperadmin && activeCompany.code !== user.company.code;
+
+  function updateUrl(mutator: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(search.toString());
-    if (key === "overview") {
-      params.delete("tab");
-    } else {
-      params.set("tab", key);
-    }
+    mutator(params);
     router.replace(`${pathname}${params.size ? `?${params}` : ""}`, {
       scroll: false,
     });
+  }
+
+  function select(key: string) {
+    updateUrl((params) => {
+      if (key === "overview") {
+        params.delete("tab");
+      } else {
+        params.set("tab", key);
+      }
+    });
+  }
+
+  function selectCompany(code: string, nextTab?: string) {
+    const normalized = code.trim().toUpperCase() || user.company.code;
+    updateUrl((params) => {
+      if (normalized === user.company.code) {
+        params.delete("company");
+      } else {
+        params.set("company", normalized);
+      }
+      if (nextTab) {
+        if (nextTab === "overview") {
+          params.delete("tab");
+        } else {
+          params.set("tab", nextTab);
+        }
+      }
+    });
+    invalidateTemplateCache();
+    void cache.invalidateQueries({ queryKey: ["master"] });
   }
 
   const resource = RESOURCES.find((item) => item.key === active?.key);
@@ -125,21 +191,74 @@ function MasterDataContent({ user }: { user: AuthUser }) {
                 Watermark & Nomor Surat
               </button>
             )}
-            <div className="inline-flex items-center gap-2 border border-border rounded-xl bg-surface px-3.5 py-2 text-xs text-text-muted shadow-2xs">
+            <div className="inline-flex items-center gap-2 border border-border rounded-xl bg-surface px-3 py-1.5 text-xs text-text-muted shadow-2xs">
               <Building2 size={14} className="text-primary shrink-0" />
-              <span className="font-semibold text-text">
-                {user.company.code}
-              </span>
+              {isSuperadmin ? (
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="sr-only">Pilih perusahaan</span>
+                  <select
+                    aria-label="Pilih perusahaan yang dikelola"
+                    value={activeCompany.code}
+                    onChange={(e) => selectCompany(e.target.value)}
+                    className="bg-transparent font-semibold text-text focus:outline-none cursor-pointer pr-1 max-w-52 truncate"
+                  >
+                    {companies.length > 0 ? (
+                      companies.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code} — {c.name}
+                          {!c.isActive ? " (Nonaktif)" : ""}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={activeCompany.code}>
+                        {activeCompany.code} — {activeCompany.name}
+                      </option>
+                    )}
+                  </select>
+                </label>
+              ) : (
+                <span className="font-semibold text-text">
+                  {user.company.code}
+                </span>
+              )}
               <span className="h-3.5 w-px bg-border" />
-              <ShieldCheck size={14} className="text-status-success-text shrink-0" />
-              <span>{user.role.name}</span>
+              <ShieldCheck
+                size={14}
+                className="text-status-success-text shrink-0"
+              />
+              <span className="whitespace-nowrap">{user.role.name}</span>
             </div>
           </div>
         </div>
+        {isCrossCompany && active?.key !== "companies" && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-2 text-xs">
+            <div className="flex items-center gap-2 text-text">
+              <Building2 size={14} className="text-primary shrink-0" />
+              <span>
+                Mode Superadmin: Anda sedang mengelola master data perusahaan{" "}
+                <strong className="text-primary">
+                  {activeCompany.code} — {activeCompany.name}
+                </strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => selectCompany(user.company.code)}
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-[11px] font-semibold text-text hover:text-primary hover:border-primary/40 transition-colors"
+            >
+              <RotateCcw size={12} />
+              Kembali ke {user.company.code}
+            </button>
+          </div>
+        )}
       </header>
 
       {!active ? (
-        <MasterOverview user={user} onSelect={select} />
+        <MasterOverview
+          user={user}
+          activeCompany={activeCompany}
+          onSelect={select}
+        />
       ) : (
         <div className="space-y-4">
           {/* Mobile / Tablet Quick Category Strip */}
@@ -264,26 +383,38 @@ function MasterDataContent({ user }: { user: AuthUser }) {
                   </button>
                 </div>
               ) : active.key === "templates" ? (
-                <TemplatesPanel permissions={user.permissions} />
+                <TemplatesPanel
+                  key={`templates-${activeCompany.code}`}
+                  permissions={user.permissions}
+                  companyCode={activeCompany.code}
+                />
               ) : active.category ? (
                 <LookupPanel
+                  key={`${active.category}-${activeCompany.code}`}
                   category={active.category}
                   label={active.label}
                   permissions={user.permissions}
                   userId={user.id}
-                  companyCode={user.company.code}
+                  companyCode={activeCompany.code}
                 />
               ) : active.key === "settings" ? (
-                <CompanySettingsPanel />
+                <CompanySettingsPanel
+                  key={`settings-${activeCompany.code}`}
+                  companyCode={activeCompany.code}
+                />
               ) : resource ? (
                 <ResourcePanel
-                  key={resource.key}
+                  key={`${resource.key}-${activeCompany.code}`}
                   resource={resource}
                   userId={user.id}
-                  companyCode={user.company.code}
-                  canManageSuperadmin={user.permissions.includes(
-                    "COMPANY_MANAGE",
-                  )}
+                  companyCode={activeCompany.code}
+                  ownCompanyCode={user.company.code}
+                  onManageCompany={
+                    isSuperadmin
+                      ? (code) => selectCompany(code, "units")
+                      : undefined
+                  }
+                  canManageSuperadmin={isSuperadmin}
                 />
               ) : null}
             </div>

@@ -469,9 +469,9 @@ export default function ReviewDocumentInner({
 
   return (
     <div ref={wrapperRef} className={wrapperClass}>
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-panel border-b border-border flex-wrap @2xl:flex-nowrap shrink-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-panel border-b border-border flex-wrap @4xl:flex-nowrap shrink-0">
         {/* Kiri: Label Naskah, Mode, & Versi */}
-        <div className="flex items-center gap-1.5 flex-wrap @2xl:flex-nowrap min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap @4xl:flex-nowrap min-w-0">
           <span className="text-xs font-semibold text-text shrink-0">Naskah Surat</span>
           <span className="text-[11px] font-medium text-text-muted bg-surface border border-border px-2 py-0.5 rounded-md shadow-2xs shrink-0">
             {isActiveReviewer ? "Mode Edit Reviewer" : "Mode Baca"}

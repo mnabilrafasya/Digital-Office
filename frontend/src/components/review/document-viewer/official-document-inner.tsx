@@ -368,8 +368,8 @@ export default function OfficialDocumentInner({
 
   return (
     <div ref={wrapperRef} className={wrapperClass}>
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-panel border-b border-border flex-wrap @2xl:flex-nowrap shrink-0">
-        <div className="flex items-center gap-1.5 flex-wrap @2xl:flex-nowrap min-w-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-panel border-b border-border flex-wrap @4xl:flex-nowrap shrink-0">
+        <div className="flex items-center gap-1.5 flex-wrap @4xl:flex-nowrap min-w-0">
           <span className="text-xs font-semibold text-text shrink-0">
             {isPdfViewMode ? "Dokumen PDF Surat" : "Naskah Surat"}
           </span>

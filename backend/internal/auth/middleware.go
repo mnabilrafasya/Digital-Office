@@ -89,6 +89,57 @@ func RequirePermission(code string) func(http.Handler) http.Handler {
 	}
 }
 
+// CompanyRef adalah identitas ringkas perusahaan target untuk pengalihan konteks SUPERADMIN.
+type CompanyRef struct {
+	Code string
+	Name string
+}
+
+// CompanyFinder mencari perusahaan berdasarkan kodenya (mengembalikan error bila tidak ditemukan).
+type CompanyFinder interface {
+	LookupCompany(ctx context.Context, code string) (*CompanyRef, error)
+}
+
+// WithCompanyScope mengalihkan perusahaan aktif di CurrentUser ke header X-Company-Code (atau query
+// ?companyCode=) bagi pemegang izin COMPANY_MANAGE (SUPERADMIN). Pengguna non-SUPERADMIN yang mencoba
+// mengakses perusahaan lain ditolak dengan 403 FORBIDDEN.
+func WithCompanyScope(companies CompanyFinder) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw := strings.TrimSpace(r.Header.Get("X-Company-Code"))
+			if raw == "" {
+				raw = strings.TrimSpace(r.URL.Query().Get("companyCode"))
+			}
+			if raw == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			user := CurrentUserFrom(r.Context())
+			if user == nil {
+				httpx.Unauthorized(w)
+				return
+			}
+			code := strings.ToUpper(raw)
+			if code == user.Company.Code {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !user.HasPermission(CompanyManage) {
+				httpx.Forbidden(w)
+				return
+			}
+			target, err := companies.LookupCompany(r.Context(), code)
+			if err != nil {
+				httpx.WriteError(w, r, err)
+				return
+			}
+			scoped := *user
+			scoped.Company = UserCompany{Code: target.Code, Name: target.Name}
+			next.ServeHTTP(w, r.WithContext(WithCurrentUser(r.Context(), &scoped)))
+		})
+	}
+}
+
 // bearerToken mengambil token dari nilai header "Bearer <token>" (skema tidak peka huruf besar/kecil)
 func bearerToken(header string) (string, bool) {
 	scheme, token, found := strings.Cut(header, " ")

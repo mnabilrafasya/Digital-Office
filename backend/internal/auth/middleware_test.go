@@ -10,6 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"office.backend/internal/platform/apperr"
 	"office.backend/internal/platform/db"
 )
 
@@ -151,6 +152,97 @@ func TestRequirePermission(t *testing.T) {
 	t.Run("belum login", func(t *testing.T) {
 		if rec := serve(nil, LetterCreate); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", rec.Code)
+		}
+	})
+}
+
+type fakeCompanies map[string]string
+
+func (f fakeCompanies) LookupCompany(_ context.Context, code string) (*CompanyRef, error) {
+	if name, ok := f[code]; ok {
+		return &CompanyRef{Code: code, Name: name}, nil
+	}
+	return nil, &apperr.NotFoundError{Message: "Perusahaan tidak ditemukan"}
+}
+
+func TestWithCompanyScope(t *testing.T) {
+	companies := fakeCompanies{
+		"PSP": "PT Pupuk Sriwidjaja Palembang",
+		"PKG": "PT Petrokimia Gresik",
+	}
+	superAdmin := &CurrentUser{
+		ID:          1,
+		Name:        "Arif Wicaksono",
+		Company:     UserCompany{Code: "PSP", Name: "PT Pupuk Sriwidjaja Palembang"},
+		Permissions: []string{CompanyManage, CompanySettings, OrgManage, UserManage},
+	}
+	regularAdmin := &CurrentUser{
+		ID:          2,
+		Name:        "Admin PSP",
+		Company:     UserCompany{Code: "PSP", Name: "PT Pupuk Sriwidjaja Palembang"},
+		Permissions: []string{CompanySettings, OrgManage, UserManage},
+	}
+	echoCompany := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := CurrentUserFrom(r.Context())
+		_, _ = w.Write([]byte(u.Company.Code + ":" + u.Company.Name))
+	})
+
+	run := func(user *CurrentUser, header, query string) *httptest.ResponseRecorder {
+		target := "/api/v1/admin/units"
+		if query != "" {
+			target += "?companyCode=" + query
+		}
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if header != "" {
+			req.Header.Set("X-Company-Code", header)
+		}
+		if user != nil {
+			req = req.WithContext(WithCurrentUser(req.Context(), user))
+		}
+		rec := httptest.NewRecorder()
+		WithCompanyScope(companies)(echoCompany).ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("tanpa header memakai perusahaan sendiri", func(t *testing.T) {
+		rec := run(regularAdmin, "", "")
+		if rec.Code != http.StatusOK || rec.Body.String() != "PSP:PT Pupuk Sriwidjaja Palembang" {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("admin biasa menyebut perusahaannya sendiri tetap diizinkan", func(t *testing.T) {
+		rec := run(regularAdmin, "psp", "")
+		if rec.Code != http.StatusOK || rec.Body.String() != "PSP:PT Pupuk Sriwidjaja Palembang" {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("admin biasa akses perusahaan lain ditolak 403", func(t *testing.T) {
+		rec := run(regularAdmin, "PKG", "")
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status=%d want 403", rec.Code)
+		}
+	})
+
+	t.Run("superadmin alih ke perusahaan lain via header", func(t *testing.T) {
+		rec := run(superAdmin, "pkg", "")
+		if rec.Code != http.StatusOK || rec.Body.String() != "PKG:PT Petrokimia Gresik" {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("superadmin alih ke perusahaan lain via query param", func(t *testing.T) {
+		rec := run(superAdmin, "", "PKG")
+		if rec.Code != http.StatusOK || rec.Body.String() != "PKG:PT Petrokimia Gresik" {
+			t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("perusahaan tidak ditemukan mengembalikan 404", func(t *testing.T) {
+		rec := run(superAdmin, "XXX", "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status=%d want 404 (%s)", rec.Code, rec.Body.String())
 		}
 	})
 }

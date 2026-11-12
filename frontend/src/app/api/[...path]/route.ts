@@ -55,9 +55,11 @@ async function handler(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // Header If-Match (ETag surat) perlu diteruskan untuk PUT
+  // Header If-Match (ETag surat) & X-Company-Code (scope superadmin) perlu diteruskan
   const ifMatch = req.headers.get("if-match");
   if (ifMatch) headers["If-Match"] = ifMatch;
+  const companyCode = req.headers.get("x-company-code");
+  if (companyCode) headers["X-Company-Code"] = companyCode;
 
   let response: Response;
   try {

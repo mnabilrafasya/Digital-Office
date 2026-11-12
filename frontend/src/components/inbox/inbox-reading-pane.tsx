@@ -233,9 +233,9 @@ export function InboxReadingPane({
   return (
     <div className="@container flex flex-col h-full w-full min-w-0 max-w-full overflow-hidden bg-surface">
       {/* ── Top Action Bar Panel Baca ala Gmail ── */}
-      <div className="px-3 py-2 border-b border-border bg-panel/30 flex items-center justify-between gap-1.5 flex-wrap @lg:flex-nowrap shrink-0">
+      <div className="px-3 py-2 border-b border-border bg-panel/30 flex items-center justify-between gap-1.5 flex-wrap @2xl:flex-nowrap shrink-0">
         {/* Kiri: Tombol Aksi Cepat (Disposisi, Alihkan, Unduh PDF, Buka Halaman Penuh) */}
-        <div className="flex items-center gap-1.5 flex-wrap @lg:flex-nowrap min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap @2xl:flex-nowrap min-w-0">
           {canDispose && (
             <button
               type="button"
@@ -326,7 +326,7 @@ export function InboxReadingPane({
       </div>
 
       {/* ── Isi Panel Baca (Scrollable) ── */}
-      <div className="flex-1 min-w-0 max-w-full overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
+      <div className="flex-1 min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4">
         {/* Judul & Badge Baris Atas */}
         <div className="space-y-2">
           <div className="flex items-start justify-between gap-2">

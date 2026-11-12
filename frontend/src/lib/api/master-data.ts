@@ -23,12 +23,27 @@ export async function masterRequest<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  companyCode?: string,
 ): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (companyCode) {
+    headers["X-Company-Code"] = companyCode;
+  }
+
+  let requestUrl = `/api/v1${path}`;
+  if (companyCode && !path.startsWith("/admin/companies")) {
+    const sep = requestUrl.includes("?") ? "&" : "?";
+    requestUrl = `${requestUrl}${sep}companyCode=${encodeURIComponent(companyCode)}`;
+  }
+
+  const response = await fetch(requestUrl, {
     method,
     cache: "no-store",
     credentials: "include",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
@@ -62,6 +77,7 @@ export function valueAt(row: MasterRow, path: string): unknown {
 export async function allChoices(
   path: string,
   label: (row: MasterRow) => string,
+  companyCode?: string,
 ): Promise<Choice[]> {
   const rows: MasterRow[] = [];
   let page = 1;
@@ -70,6 +86,9 @@ export async function allChoices(
     const separator = path.includes("?") ? "&" : "?";
     const result = await masterRequest<MasterList>(
       `${path}${separator}page=${page}&pageSize=100`,
+      "GET",
+      undefined,
+      companyCode,
     );
     rows.push(...(result.data ?? []));
     if (!result.meta || rows.length >= result.meta.total || !result.data.length) {

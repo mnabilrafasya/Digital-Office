@@ -247,11 +247,11 @@ const CHOICE_PATHS: Record<string, string> = {
 };
 
 export function loadChoices(key: string, company?: string) {
-  const path = company
-    ? `/admin/companies/${encodeURIComponent(company)}/units`
-    : CHOICE_PATHS[key];
-  return allChoices(path, (row) =>
-    key === "positions" ? `${row.name} — ${row.unitName}` : String(row.name),
+  return allChoices(
+    CHOICE_PATHS[key],
+    (row) =>
+      key === "positions" ? `${row.name} — ${row.unitName}` : String(row.name),
+    company,
   );
 }
 

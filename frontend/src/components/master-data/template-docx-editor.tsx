@@ -59,11 +59,13 @@ const FULLSCREEN_EDITOR_HEIGHT = "calc(100vh - 180px)";
 export function TemplateDocxEditorModal({
   mode,
   row,
+  companyCode,
   onClose,
   onSaved,
 }: {
   mode: "create" | "edit";
   row?: MasterRow;
+  companyCode?: string;
   onClose: () => void;
   onSaved: (message: string) => Promise<void> | void;
 }) {
@@ -102,8 +104,8 @@ export function TemplateDocxEditorModal({
   const [busy, setBusy] = useState(false);
 
   const letterTypesQuery = useQuery({
-    queryKey: ["master", "choices", "letterTypes", undefined],
-    queryFn: () => loadChoices("letterTypes"),
+    queryKey: ["master", "choices", "letterTypes", companyCode],
+    queryFn: () => loadChoices("letterTypes", companyCode),
   });
 
   const showToast = useCallback((msg: string) => {
@@ -295,7 +297,9 @@ export function TemplateDocxEditorModal({
             )
           : undefined);
       loadFromUrl(
-        `/api/v1/templates/${id}/file`,
+        `/api/v1/templates/${id}/file${
+          companyCode ? `?companyCode=${encodeURIComponent(companyCode)}` : ""
+        }`,
         `${tplName.replace(/\s+/g, "_")}.docx`,
         `${tplName}.docx`,
         matchedStarter?.fallbackFileUrl ?? "/templates/dokumen-kosong.docx",
@@ -307,7 +311,7 @@ export function TemplateDocxEditorModal({
         "Dokumen Kosong (Blank)",
       );
     }
-  }, [isReady, mode, row?.id, row?.name, row?.letterType, loadFromUrl]);
+  }, [isReady, mode, row?.id, row?.name, row?.letterType, companyCode, loadFromUrl]);
 
   // Sesuaikan ukuran saat toggle fullscreen
   useEffect(() => {
@@ -450,9 +454,9 @@ export function TemplateDocxEditorModal({
       };
 
       if (mode === "create") {
-        await createTemplate(payload);
+        await createTemplate(payload, companyCode);
       } else {
-        await updateTemplate(String(row?.id), payload);
+        await updateTemplate(String(row?.id), payload, companyCode);
       }
 
       invalidateTemplateCache();
