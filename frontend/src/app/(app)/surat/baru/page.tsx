@@ -42,7 +42,8 @@ import {
 } from "@/components/surat/letter-editor";
 import { uploadLetterDocument } from "@/lib/api/letter-document";
 import { LampiranSection } from "@/components/surat/lampiran-section";
-import { Loader2 } from "lucide-react";
+import { IncomingExternalForm } from "@/components/surat/incoming-external-form";
+import { Loader2, RotateCcw } from "lucide-react";
 
 export default function BuatSuratPage() {
   const [formKey, setFormKey] = useState(0);
@@ -73,11 +74,15 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const draftQueryId = searchParams.get("draft");
+  const initialTypeQuery = searchParams.get("type");
 
   const methods = useForm<BuatSuratFormValues>({
     resolver: zodResolver(buatSuratSchema),
     mode: "onChange",
-    defaultValues: BUAT_SURAT_DEFAULTS,
+    defaultValues: {
+      ...BUAT_SURAT_DEFAULTS,
+      letterTypeCode: initialTypeQuery ? initialTypeQuery.toUpperCase() : "",
+    },
   });
   const { control, reset, trigger } = methods;
 
@@ -100,6 +105,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [returnedNote, setReturnedNote] = useState<string | null>(null);
 
   const values = useWatch({ control });
 
@@ -150,6 +156,11 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
         setAttachments(loadedAttachments);
         setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
+        setReturnedNote(
+          detail.status === "RETURNED_TO_DRAFTER"
+            ? detail.lastReturnNote || "Naskah dikembalikan untuk direvisi oleh Drafter."
+            : null
+        );
 
         reset(formValues);
         setLastSaved(new Date());
@@ -272,6 +283,11 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
       setAttachments(loadedAttachments);
       setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
+      setReturnedNote(
+        detail.status === "RETURNED_TO_DRAFTER"
+          ? detail.lastReturnNote || "Naskah dikembalikan untuk direvisi oleh Drafter."
+          : null
+      );
 
       reset(formValues);
       setLastSaved(new Date());
@@ -369,6 +385,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
       // 2. Eksekusi pengiriman surat ke reviewer pertama (POST /api/v1/letters/{id}/submit)
       await submitLetter(saved.id);
+      setReturnedNote(null);
 
       // 3. Tampilkan modal dialog sukses
       setDialog("sukses");
@@ -392,6 +409,9 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
     else router.push("/surat/daftar");
   }
 
+  const isIncomingExternal =
+    (values.letterTypeCode ?? "").toUpperCase() === "SURAT_MASUK_EKSTERNAL";
+
   // ─── Render ──────────────────────────────────
 
   return (
@@ -406,42 +426,68 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           onLoadDraft={handleLoadDraft}
         />
 
-        <div className="space-y-5">
-          <SectionCard number={1} title="Detail Surat">
-            <DetailSection onValidSubmit={() => setDialog("submit")} />
-          </SectionCard>
+        {returnedNote && (
+          <div className="mb-5 flex items-start gap-3 rounded-xl border border-status-warn-text/30 bg-status-warn-bg/60 px-4 py-3 text-xs text-status-warn-text">
+            <RotateCcw size={16} className="shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-sm">
+                Naskah Dikembalikan untuk Revisi
+              </p>
+              <p className="text-text">{returnedNote}</p>
+              <p className="opacity-85">
+                Setelah diperbaiki dan dikirim ulang, pemeriksaan akan dimulai
+                kembali dari Reviewer Tahap 1.
+              </p>
+            </div>
+          </div>
+        )}
 
-          <SectionCard number={2} title="Lampiran">
-            <LampiranSection
-              value={attachments}
-              onChange={(next) => {
-                setAttachments(next);
-                setSavedAttachmentsSignature(JSON.stringify(next));
-              }}
-              letterId={draftId}
-              ensureLetterId={ensureDraftId}
-              onEtagChange={(newEtag) => {
-                setDraftEtag(newEtag);
-                draftEtagRef.current = newEtag;
-              }}
+        {isIncomingExternal ? (
+          <IncomingExternalForm
+            onCancel={() => router.push("/surat/daftar")}
+            onResetNew={onNew}
+          />
+        ) : (
+          <>
+            <div className="space-y-5">
+              <SectionCard number={1} title="Detail Surat">
+                <DetailSection onValidSubmit={() => setDialog("submit")} />
+              </SectionCard>
+
+              <SectionCard number={2} title="Lampiran">
+                <LampiranSection
+                  value={attachments}
+                  onChange={(next) => {
+                    setAttachments(next);
+                    setSavedAttachmentsSignature(JSON.stringify(next));
+                  }}
+                  letterId={draftId}
+                  ensureLetterId={ensureDraftId}
+                  onEtagChange={(newEtag) => {
+                    setDraftEtag(newEtag);
+                    draftEtagRef.current = newEtag;
+                  }}
+                />
+              </SectionCard>
+
+              <SectionCard number={3} title="Isi Surat & Tata Naskah Digital">
+                <LetterEditorSection
+                  letterId={draftId}
+                  serverVersionNumber={serverVersionNumber}
+                  attachmentsCount={attachments.length}
+                  editorHandleRef={editorHandleRef}
+                  onQuickSaveDraft={handleDirectSaveDraft}
+                />
+              </SectionCard>
+            </div>
+
+            <ActionBar
+              onBatal={handleBatal}
+              onSimpan={handleDirectSaveDraft}
+              isSaving={isSavingDraft}
             />
-          </SectionCard>
-
-          <SectionCard number={3} title="Isi Surat & Tata Naskah Digital">
-            <LetterEditorSection
-              letterId={draftId}
-              serverVersionNumber={serverVersionNumber}
-              editorHandleRef={editorHandleRef}
-              onQuickSaveDraft={handleDirectSaveDraft}
-            />
-          </SectionCard>
-        </div>
-
-        <ActionBar
-          onBatal={handleBatal}
-          onSimpan={handleDirectSaveDraft}
-          isSaving={isSavingDraft}
-        />
+          </>
+        )}
 
         <ConfirmDialogs
           dialog={dialog}

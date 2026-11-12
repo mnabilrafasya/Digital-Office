@@ -74,9 +74,14 @@ function SelectError({ message, onRetry }: { message: string; onRetry: () => voi
 
 // ─── Component utama ─────────────────────────
 
-export function BasicFields() {
+export function BasicFields({
+  onlyLetterType = false,
+}: {
+  onlyLetterType?: boolean;
+} = {}) {
   const { control, formState: { errors }, setValue } = useFormContext<BuatSuratFormValues>();
   const letterTypeId = useWatch({ control, name: "letterTypeId" });
+  const letterTypeCode = useWatch({ control, name: "letterTypeCode" });
   const templateId = useWatch({ control, name: "templateId" });
   const sifat = useWatch({ control, name: "sifat" });
   const kecepatan = useWatch({ control, name: "kecepatan" });
@@ -86,6 +91,25 @@ export function BasicFields() {
   const urgencies   = useLookups("URGENCY");
   const [retryLT, setRetryLT] = useState(0);
   const [retryUG, setRetryUG] = useState(0);
+
+  // Sinkronkan letterTypeCode setiap kali letterTypeId atau daftar letterTypes berubah
+  useEffect(() => {
+    if (letterTypes.items.length === 0) return;
+    if (letterTypeId) {
+      const matched = letterTypes.items.find((lt) => lt.id === letterTypeId);
+      if (matched && matched.code !== letterTypeCode) {
+        setValue("letterTypeCode", matched.code, { shouldValidate: true });
+      }
+    } else if (letterTypeCode) {
+      // Jika letterTypeCode diisi dari URL (?type=SURAT_MASUK_EKSTERNAL), pilih ID yang sesuai
+      const matchedByCode = letterTypes.items.find(
+        (lt) => lt.code.toUpperCase() === letterTypeCode.toUpperCase()
+      );
+      if (matchedByCode) {
+        setValue("letterTypeId", matchedByCode.id, { shouldValidate: true });
+      }
+    }
+  }, [letterTypeId, letterTypeCode, letterTypes.items, setValue]);
 
   // Daftar template naskah dari backend (/api/v1/templates)
   const [templates, setTemplates] = useState<LetterTemplateDefinition[]>(() =>
@@ -151,6 +175,10 @@ export function BasicFields() {
                   const val = e.target.value;
                   field.onChange(val);
                   const selectedLT = letterTypes.items.find((lt) => lt.id === val);
+                  setValue("letterTypeCode", selectedLT?.code ?? "", {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  });
                   if (selectedLT) {
                     const ltName = selectedLT.name.toLowerCase();
                     const ltCode = selectedLT.code.toLowerCase();
@@ -194,6 +222,8 @@ export function BasicFields() {
         <FieldError message={errors.letterTypeId?.message} />
       </div>
 
+      {!onlyLetterType && (
+        <>
       {/* Template Surat — daftar aktif dari GET /api/v1/templates (dikelola di Master Data) */}
       <div>
         <FieldLabel label="Template Surat" htmlFor="templateId" />
@@ -374,6 +404,8 @@ export function BasicFields() {
         />
         <FieldError message={errors.title?.message} />
       </div>
+        </>
+      )}
     </>
   );
 }

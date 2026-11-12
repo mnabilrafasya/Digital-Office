@@ -31,9 +31,17 @@ export const STATUS_META: Record<LetterStatus, StatusMeta> = {
     label: "Dikembalikan",
     variant: "danger",
   },
+  APPROVED: {
+    label: "Menunggu Tanda Tangan",
+    variant: "warn",
+  },
   SENT: {
     label: "Disetujui",
     variant: "success",
+  },
+  RECEIVED: {
+    label: "Surat Masuk Eksternal",
+    variant: "info",
   },
   CANCELLED: {
     label: "Dibatalkan",
@@ -42,7 +50,5 @@ export const STATUS_META: Record<LetterStatus, StatusMeta> = {
 };
 
 export function getStatusMeta(status: string): StatusMeta {
-  if (status === "APPROVED") return { label: "Menunggu Tanda Tangan", variant: "warn" };
-  if (status === "RECEIVED") return { label: "Surat Masuk", variant: "info" };
   return STATUS_META[status as LetterStatus] ?? { label: "Status belum dikenali", variant: "neutral" };
 }

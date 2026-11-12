@@ -33,6 +33,11 @@ export const buatSuratSchema = z.object({
     .string()
     .min(1, { message: "Jenis surat wajib dipilih." }),
 
+  letterTypeCode: z
+    .string()
+    .optional()
+    .nullable(),
+
   templateId: z
     .string()
     .optional()
@@ -66,11 +71,18 @@ export const buatSuratSchema = z.object({
     .min(1, { message: "Minimal 1 approver (pejabat penandatangan) wajib dipilih." })
     .max(10, { message: "Maksimal 10 approver diperbolehkan." }),
 
-  toUnits: z
-    .array(unitEntrySchema)
-    .min(1, { message: "Minimal 1 tujuan surat wajib dipilih." }),
+  toUnits: z.array(unitEntrySchema),
 
   ccUnits: z.array(unitEntrySchema).optional().nullable(),
+
+  externalRecipient: z
+    .object({
+      name: z.string(),
+      address: z.string().optional().nullable(),
+      attention: z.string().optional().nullable(),
+    })
+    .optional()
+    .nullable(),
 
   specialNote: z
     .string()
@@ -83,16 +95,71 @@ export const buatSuratSchema = z.object({
     .max(1000, { message: "Isi ringkas arsip maksimal 1000 karakter." })
     .optional()
     .nullable(),
-}).refine(
-  (data) => {
-    const ids = (data.reviewers ?? []).map((r) => r.employeeId);
-    return new Set(ids).size === ids.length;
-  },
-  {
-    message: "Reviewer yang sama tidak boleh dipilih lebih dari sekali.",
-    path: ["reviewers"],
+}).superRefine((data, ctx) => {
+  const revIds = (data.reviewers ?? []).map((r) => r.employeeId);
+  if (new Set(revIds).size !== revIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Reviewer yang sama tidak boleh dipilih lebih dari sekali.",
+      path: ["reviewers"],
+    });
   }
-);
+
+  const appIds = (data.approvers ?? []).map((a) => a.employeeId);
+  if (new Set(appIds).size !== appIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Approver yang sama tidak boleh dipilih lebih dari sekali.",
+      path: ["approvers"],
+    });
+  }
+
+  const isExternalOutgoing =
+    (data.letterTypeCode ?? "").toUpperCase() === "SURAT_EKSTERNAL";
+
+  if (isExternalOutgoing) {
+    const extName = (data.externalRecipient?.name ?? "").trim();
+    if (!extName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Nama perusahaan / instansi tujuan eksternal wajib diisi.",
+        path: ["externalRecipient", "name"],
+      });
+    } else if (extName.length > 200) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Nama penerima eksternal maksimal 200 karakter.",
+        path: ["externalRecipient", "name"],
+      });
+    }
+
+    const extAddress = (data.externalRecipient?.address ?? "").trim();
+    if (extAddress.length > 500) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Alamat penerima eksternal maksimal 500 karakter.",
+        path: ["externalRecipient", "address"],
+      });
+    }
+
+    const extAttention = (data.externalRecipient?.attention ?? "").trim();
+    if (extAttention.length > 200) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Tujuan UP penerima eksternal maksimal 200 karakter.",
+        path: ["externalRecipient", "attention"],
+      });
+    }
+  } else {
+    if ((data.toUnits ?? []).length < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Minimal 1 tujuan surat wajib dipilih.",
+        path: ["toUnits"],
+      });
+    }
+  }
+});
 
 export type BuatSuratFormValues = z.infer<typeof buatSuratSchema>;
 
@@ -109,6 +176,7 @@ export const loginSchema = z.object({
  * akan diisi otomatis saat lookup LETTER_TYPE selesai dimuat. */
 export const BUAT_SURAT_DEFAULTS: Partial<BuatSuratFormValues> = {
   letterTypeId: "",
+  letterTypeCode: "",
   kecepatan: "BIASA",
   sifat: "BIASA",
   title: "",
@@ -118,4 +186,9 @@ export const BUAT_SURAT_DEFAULTS: Partial<BuatSuratFormValues> = {
   approvers: [],
   toUnits: [],
   ccUnits: [],
+  externalRecipient: {
+    name: "",
+    address: "",
+    attention: "",
+  },
 };

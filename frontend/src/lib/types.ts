@@ -10,7 +10,9 @@ export type LetterStatus =
   | "RETURNED_TO_DRAFTER"
   | "IN_APPROVAL"
   | "RETURNED_TO_REVIEWER"
+  | "APPROVED"
   | "SENT"
+  | "RECEIVED"
   | "CANCELLED";
 
 export type InboxStatus = "UNREAD" | "READ" | "DISPOSED" | "REDIRECTED";

@@ -84,6 +84,7 @@ async function getLookupIdMap() {
 
 export interface FormInputValues {
   letterTypeId?: string | null;
+  letterTypeCode?: string | null;
   templateId?: string | null;
   classificationId?: string | null;
   kecepatan?: string | null;
@@ -95,6 +96,11 @@ export interface FormInputValues {
   approvers?: Array<{ employeeId?: string; [key: string]: unknown }> | null;
   toUnits?: Array<{ id?: string; [key: string]: unknown }> | null;
   ccUnits?: Array<{ id?: string; [key: string]: unknown }> | null;
+  externalRecipient?: {
+    name?: string | null;
+    address?: string | null;
+    attention?: string | null;
+  } | null;
 }
 
 function mapRecipientInput(
@@ -122,8 +128,9 @@ export function detailToFormValues(detail: LetterDetail): {
 } {
   const reviewers: StepEntry[] = (detail.steps ?? [])
     .filter((s) => s.role === "REVIEWER")
+    .sort((a, b) => a.order - b.order)
     .map((s, idx) => ({
-      id: `rev-${s.user.id || idx}`,
+      id: `rev-${s.user.id || idx}-${s.order}`,
       employeeId: String(s.user.id),
       employeeName: s.user.name,
       jabatan: s.user.positionName,
@@ -133,8 +140,9 @@ export function detailToFormValues(detail: LetterDetail): {
 
   const approvers: StepEntry[] = (detail.steps ?? [])
     .filter((s) => s.role === "APPROVER")
+    .sort((a, b) => a.order - b.order)
     .map((s, idx) => ({
-      id: `app-${s.user.id || idx}`,
+      id: `app-${s.user.id || idx}-${s.order}`,
       employeeId: String(s.user.id),
       employeeName: s.user.name,
       jabatan: s.user.positionName,
@@ -168,6 +176,7 @@ export function detailToFormValues(detail: LetterDetail): {
 
   const formValues: BuatSuratFormValues = {
     letterTypeId: detail.letterType?.id ? String(detail.letterType.id) : "",
+    letterTypeCode: detail.letterType?.code ?? "",
     templateId: detail.template?.id ? String(detail.template.id) : undefined,
     classificationId: detail.classification?.id
       ? String(detail.classification.id)
@@ -184,6 +193,11 @@ export function detailToFormValues(detail: LetterDetail): {
     approvers,
     toUnits,
     ccUnits,
+    externalRecipient: {
+      name: detail.external?.recipient?.name ?? "",
+      address: detail.external?.recipient?.address ?? "",
+      attention: detail.external?.recipient?.attention ?? "",
+    },
   };
 
   const attachments: LetterAttachment[] = (detail.attachments ?? []).map(
@@ -219,13 +233,9 @@ export async function formValuesToLetterInput(values: FormInputValues) {
     .map((r) => String(r.employeeId).trim())
     .filter((id) => id && /^\d+$/.test(id));
 
-  const approverId =
-    values.approvers &&
-    values.approvers.length > 0 &&
-    values.approvers[0].employeeId &&
-    /^\d+$/.test(String(values.approvers[0].employeeId).trim())
-      ? String(values.approvers[0].employeeId).trim()
-      : undefined;
+  const approverIds = (values.approvers ?? [])
+    .map((a) => String(a.employeeId).trim())
+    .filter((id) => id && /^\d+$/.test(id));
 
   const toRecipients = (values.toUnits ?? [])
     .map(mapRecipientInput)
@@ -261,6 +271,13 @@ export async function formValuesToLetterInput(values: FormInputValues) {
       String(selectedTpl.letterType.id) !== resolvedLetterTypeId
   );
 
+  const isExternalOutgoing =
+    (values.letterTypeCode ?? "").toUpperCase() === "SURAT_EKSTERNAL";
+
+  const extName = values.externalRecipient?.name?.trim() || "";
+  const extAddress = values.externalRecipient?.address?.trim() || null;
+  const extAttention = values.externalRecipient?.attention?.trim() || null;
+
   return {
     letterTypeId: resolvedLetterTypeId,
     templateId: isTemplateTypeMismatch ? null : rawTemplateId,
@@ -275,11 +292,20 @@ export async function formValuesToLetterInput(values: FormInputValues) {
     summary: values.summary?.trim() || null,
     specialNote: values.specialNote?.trim() || null,
     reviewerIds,
-    approverId: approverId ?? null,
-    recipients: {
-      to: toRecipients,
-      cc: ccRecipients,
-    },
+    approverIds,
+    recipients: isExternalOutgoing
+      ? { to: [], cc: [] }
+      : {
+          to: toRecipients,
+          cc: ccRecipients,
+        },
+    externalRecipient: isExternalOutgoing
+      ? {
+          name: extName,
+          address: extAddress,
+          attention: extAttention,
+        }
+      : undefined,
   };
 }
 
@@ -455,3 +481,59 @@ export async function getDraftLetter(
   const json = (await res.json()) as { data: LetterDetail };
   return { detail: json.data, etag };
 }
+
+// ─── Surat Masuk Eksternal (POST /api/v1/letters/incoming) ───
+
+export interface CreateIncomingLetterInput {
+  file: File;
+  title: string;
+  sender: string;
+  referenceNumber: string;
+  letterDate: string; // YYYY-MM-DD
+  userIds?: string[];
+  aliasLevelIds?: string[];
+  note?: string;
+}
+
+/**
+ * Mencatat surat masuk eksternal beserta scan PDF dan mendisposisikannya
+ * ke penerima internal (`POST /api/v1/letters/incoming`).
+ */
+export async function createIncomingLetter(
+  input: CreateIncomingLetterInput
+): Promise<LetterDetail> {
+  const form = new FormData();
+  form.append("file", input.file, input.file.name || "Surat_Masuk_Eksternal.pdf");
+  form.append("title", input.title.trim());
+  form.append("sender", input.sender.trim());
+  form.append("referenceNumber", input.referenceNumber.trim());
+  form.append("letterDate", input.letterDate.trim());
+  if (input.userIds && input.userIds.length > 0) {
+    form.append("userIds", input.userIds.join(","));
+  }
+  if (input.aliasLevelIds && input.aliasLevelIds.length > 0) {
+    form.append("aliasLevelIds", input.aliasLevelIds.join(","));
+  }
+  if (input.note && input.note.trim()) {
+    form.append("note", input.note.trim());
+  }
+
+  const res = await fetch(`${API}/letters/incoming`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ?? `Gagal mencatat surat masuk eksternal (HTTP ${res.status})`
+    );
+  }
+
+  const json = (await res.json()) as { data: LetterDetail };
+  return json.data;
+}
+
