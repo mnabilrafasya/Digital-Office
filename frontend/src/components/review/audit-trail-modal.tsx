@@ -20,6 +20,8 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
+  UploadCloud,
+  Inbox,
 } from "lucide-react";
 import type {
   LetterDetail,
@@ -45,6 +47,11 @@ function actionIcon(action: string) {
     case "APPROVE":
     case "SIGN":
       return <CheckCircle2 size={13} className="text-status-success-text" />;
+    case "UPLOAD_SIGNED":
+      return <UploadCloud size={13} className="text-status-success-text" />;
+    case "RECEIVE":
+    case "INCOMING_RECEIVE":
+      return <Inbox size={12} className="text-status-info-text" />;
     case "RETURN":
       return <RotateCcw size={13} className="text-status-warn-text" />;
     case "SUBMIT":

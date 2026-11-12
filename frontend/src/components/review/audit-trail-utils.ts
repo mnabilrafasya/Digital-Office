@@ -39,7 +39,7 @@ export const ACTION_META: Record<string, ActionMeta> = {
     category: "milestone",
   },
   APPROVE: {
-    label: "Disetujui Reviewer",
+    label: "Disetujui",
     shortLabel: "Disetujui",
     tone: "success",
     category: "milestone",
@@ -54,6 +54,24 @@ export const ACTION_META: Record<string, ActionMeta> = {
     label: "Disahkan & Diterbitkan",
     shortLabel: "Terbit & Sah",
     tone: "success",
+    category: "milestone",
+  },
+  UPLOAD_SIGNED: {
+    label: "Scan Bertanda Tangan Basah Diunggah",
+    shortLabel: "Unggah Scan TTD",
+    tone: "success",
+    category: "milestone",
+  },
+  RECEIVE: {
+    label: "Surat Masuk Eksternal Dicatat",
+    shortLabel: "Surat Masuk",
+    tone: "info",
+    category: "milestone",
+  },
+  INCOMING_RECEIVE: {
+    label: "Surat Masuk Eksternal Dicatat",
+    shortLabel: "Surat Masuk",
+    tone: "info",
     category: "milestone",
   },
   CANCEL: {
@@ -81,23 +99,29 @@ export function getActionMeta(action: string): ActionMeta {
   );
 }
 
-export function formatCompactTime(iso: string): string {
+export function formatCompactTime(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
   return new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(iso));
+  }).format(d);
 }
 
-export function formatFullDateTime(iso: string): string {
+export function formatFullDateTime(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
   return new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(iso));
+  }).format(d);
 }
 
 /** Item riwayat yang sudah dikelompokkan agar aksi berulang (READ/SAVE) tidak memenuhi layar */
@@ -239,7 +263,10 @@ export function buildFlowDiagram(
   const nodes: FlowDiagramNode[] = [
     {
       id: "node-drafter",
-      roleLabel: "Pembuat Surat",
+      roleLabel:
+        letter.direction === "INCOMING"
+          ? "Pencatat Surat Masuk"
+          : "Pembuat Surat",
       roleCode: "DRAFTER",
       actorName: letter.drafter.name,
       actorPosition: letter.drafter.positionName,
@@ -254,6 +281,10 @@ export function buildFlowDiagram(
       savedVersions: Array.from(new Set(drafterVersions)),
     },
   ];
+
+  const totalApprovers = letter.steps.filter(
+    (s) => s.role === "APPROVER"
+  ).length;
 
   for (const step of letter.steps) {
     const stepActions = history.filter(
@@ -276,7 +307,11 @@ export function buildFlowDiagram(
     nodes.push({
       id: `node-${step.role}-${step.order}`,
       roleLabel:
-        step.role === "APPROVER" ? "Approver" : `Reviewer ${step.order}`,
+        step.role === "APPROVER"
+          ? totalApprovers > 1
+            ? `Approver ${step.order}`
+            : "Approver"
+          : `Reviewer ${step.order}`,
       roleCode: step.role,
       actorName: step.user.name,
       actorPosition: step.user.positionName,
@@ -297,17 +332,38 @@ export function buildFlowDiagram(
   // Node hilir: Terbit & Distribusi (atau Dibatalkan)
   const recipientCount =
     letter.recipients.to.length + letter.recipients.cc.length;
+  const isWaitingSignedScan = letter.status === "APPROVED";
+  const isReceivedIncoming = letter.status === "RECEIVED";
+  const externalTargetLabel =
+    letter.external?.recipient?.name ??
+    letter.external?.sender ??
+    `${recipientCount} Unit/Alias Penerima`;
+
   nodes.push({
     id: "node-final",
-    roleLabel: isCancelled ? "Dibatalkan" : "Terbit & Kirim",
+    roleLabel: isCancelled
+      ? "Dibatalkan"
+      : isWaitingSignedScan
+        ? "Menunggu Scan TTD"
+        : isReceivedIncoming
+          ? "Surat Masuk Eksternal"
+          : "Terbit & Kirim",
     roleCode: "FINAL",
     actorName: isCancelled
       ? "Naskah Dibatalkan"
       : letter.letterNumber ?? "Nomor Otomatis",
     actorPosition: isCancelled
       ? "Alur dihentikan"
-      : `${recipientCount} Unit/Alias Penerima`,
-    state: isCancelled ? "CANCELLED" : isSent ? "DONE" : "PENDING",
+      : letter.direction === "OUTGOING" || letter.direction === "INCOMING"
+        ? externalTargetLabel
+        : `${recipientCount} Unit/Alias Penerima`,
+    state: isCancelled
+      ? "CANCELLED"
+      : isSent || isReceivedIncoming
+        ? "DONE"
+        : isWaitingSignedScan
+          ? "ACTIVE"
+          : "PENDING",
     lastActionAt: letter.approval?.approvedAt ?? null,
     returnCount: 0,
     latestReturnNote: null,

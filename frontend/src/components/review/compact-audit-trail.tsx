@@ -19,6 +19,8 @@ import {
   ChevronDown,
   ChevronUp,
   Maximize2,
+  UploadCloud,
+  Inbox,
 } from "lucide-react";
 import type {
   LetterDetail,
@@ -45,6 +47,19 @@ function smallActionDot(action: string) {
       return (
         <span className="w-4 h-4 rounded-full bg-status-success-bg border border-status-success-text/30 flex items-center justify-center shrink-0">
           <CheckCircle2 size={10} className="text-status-success-text" />
+        </span>
+      );
+    case "UPLOAD_SIGNED":
+      return (
+        <span className="w-4 h-4 rounded-full bg-status-success-bg border border-status-success-text/30 flex items-center justify-center shrink-0">
+          <UploadCloud size={9} className="text-status-success-text" />
+        </span>
+      );
+    case "RECEIVE":
+    case "INCOMING_RECEIVE":
+      return (
+        <span className="w-4 h-4 rounded-full bg-status-info-bg border border-status-info-text/30 flex items-center justify-center shrink-0">
+          <Inbox size={9} className="text-status-info-text" />
         </span>
       );
     case "RETURN":
@@ -127,6 +142,7 @@ export function CompactAuditTrail({
             history={history}
             drafter={letter.drafter}
             status={letter.status}
+            direction={letter.direction}
             createdAt={letter.createdAt}
           />
         </div>

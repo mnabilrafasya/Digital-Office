@@ -17,12 +17,22 @@ import { id as idLocale } from "date-fns/locale";
 
 function getCurrentStageLabel(item: LetterListItem): string {
   if (item.status === "DRAFT")      return "Drafter (Anda)";
-  if (item.status === "SENT")       return "—";
+  if (item.status === "SENT" || item.status === "RECEIVED") return "—";
   if (item.status === "CANCELLED")  return "—";
+  if (item.status === "APPROVED") {
+    return item.currentAssignee
+      ? `Menunggu Scan TTD · ${item.currentAssignee.name}`
+      : "Menunggu Scan TTD Basah";
+  }
   if (!item.currentAssignee)        return "—";
 
   const a = item.currentAssignee;
-  const roleLabel = a.role === "REVIEWER" ? `Reviewer ${a.order}` : "Approver";
+  const roleLabel =
+    a.role === "REVIEWER"
+      ? `Reviewer ${a.order}`
+      : a.order > 1
+        ? `Approver ${a.order}`
+        : "Approver";
   return `${roleLabel} · ${a.name}`;
 }
 
@@ -53,7 +63,7 @@ function ActionButton({ item }: ActionButtonProps) {
   if (isReturned && hasEdit) {
     return (
       <Link
-        href={`/surat/${item.id}`}
+        href={`/surat/baru?draft=${item.id}`}
         title={item.lastReturnNote ?? undefined}
         className="inline-flex items-center gap-1 text-xs font-semibold text-status-danger-text hover:underline"
       >
@@ -65,6 +75,19 @@ function ActionButton({ item }: ActionButtonProps) {
 
   const isReview = item.status === "IN_REVIEW";
   const isApproval = item.status === "IN_APPROVAL";
+  const isWaitingSignedScan = item.status === "APPROVED";
+
+  if (isWaitingSignedScan) {
+    return (
+      <Link
+        href={`/surat/${item.id}`}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-status-warn-text hover:underline bg-status-warn-bg px-2 py-1 rounded transition-colors"
+      >
+        <Eye size={13} />
+        TTD &amp; Unggah Scan
+      </Link>
+    );
+  }
 
   if (isReview || isApproval) {
     return (

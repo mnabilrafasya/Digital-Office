@@ -21,6 +21,8 @@ interface Tab {
   label: string;
   /** Value yang dikirim ke query string `status`; "" = Semua */
   value: string;
+  /** Daftar nilai URL yang dianggap mengaktifkan tab ini (mendukung gabungan koma) */
+  aliases?: string[];
   count: number;
 }
 
@@ -32,14 +34,16 @@ interface Props {
 
 export function StatusTabs({ counts, activeTab, onTabChange }: Props) {
   const tabs: Tab[] = [
-    { label: "Semua",              value: "",                    count: counts.ALL },
-    { label: "Draft",              value: "DRAFT",               count: counts.DRAFT },
-    { label: "Menunggu Review",    value: "IN_REVIEW",           count: counts.IN_REVIEW },
-    { label: "Dikembalikan",       value: "RETURNED_TO_DRAFTER", count: counts.RETURNED },
-    { label: "Menunggu Approval",  value: "IN_APPROVAL",         count: counts.IN_APPROVAL },
-    { label: "Disetujui",          value: "SENT",                count: counts.SENT },
-    { label: "Dibatalkan",         value: "CANCELLED",           count: counts.CANCELLED },
+    { label: "Semua",             value: "",                    count: counts.ALL },
+    { label: "Draft",             value: "DRAFT",               count: counts.DRAFT },
+    { label: "Menunggu Review",   value: "IN_REVIEW",           aliases: ["IN_REVIEW,RETURNED_TO_REVIEWER"], count: counts.IN_REVIEW },
+    { label: "Dikembalikan",      value: "RETURNED_TO_DRAFTER", aliases: ["RETURNED_TO_REVIEWER", "RETURNED_TO_DRAFTER,RETURNED_TO_REVIEWER"], count: counts.RETURNED },
+    { label: "Menunggu Approval", value: "IN_APPROVAL",         aliases: ["APPROVED", "IN_APPROVAL,APPROVED"], count: counts.IN_APPROVAL },
+    { label: "Disetujui & Masuk", value: "SENT",                aliases: ["RECEIVED", "SENT,RECEIVED"], count: counts.SENT },
+    { label: "Dibatalkan",        value: "CANCELLED",           count: counts.CANCELLED },
   ];
+
+  const normalizedActive = activeTab.trim().toUpperCase();
 
   return (
     <div
@@ -48,7 +52,9 @@ export function StatusTabs({ counts, activeTab, onTabChange }: Props) {
       className="flex items-center gap-0.5 border-b border-border overflow-x-auto mb-4 -mx-1 px-1"
     >
       {tabs.map((tab) => {
-        const isActive = activeTab === tab.value;
+        const isActive =
+          normalizedActive === tab.value ||
+          (tab.aliases?.includes(normalizedActive) ?? false);
         return (
           <button
             key={tab.value}

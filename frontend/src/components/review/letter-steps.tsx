@@ -30,6 +30,7 @@ interface LetterStepsProps {
   /** Pembuat surat (opsional, ditampilkan sebagai simpul awal alur) */
   drafter?: PersonRef;
   status?: string;
+  direction?: string;
   createdAt?: string;
 }
 
@@ -38,12 +39,14 @@ export function LetterSteps({
   history = [],
   drafter,
   status,
+  direction,
   createdAt,
 }: LetterStepsProps) {
   const [expandedNoteIdx, setExpandedNoteIdx] = useState<number | null>(null);
 
   const isReturnedToDrafter = status === "RETURNED_TO_DRAFTER";
   const isDraft = status === "DRAFT";
+  const totalApprovers = steps.filter((s) => s.role === "APPROVER").length;
 
   return (
     <div className="space-y-0">
@@ -76,7 +79,9 @@ export function LetterSteps({
           <div className="pb-3 min-w-0 flex-1">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[11px] font-semibold text-status-success-text">
-                Pembuat (Drafter)
+                {direction === "INCOMING"
+                  ? "Pencatat (Surat Masuk)"
+                  : "Pembuat (Drafter)"}
               </span>
               {createdAt && (
                 <span className="text-[10px] text-text-muted shrink-0">
@@ -105,7 +110,11 @@ export function LetterSteps({
           step.role === "REVIEWER";
 
         const label =
-          step.role === "APPROVER" ? "Approver" : `Reviewer ${step.order}`;
+          step.role === "APPROVER"
+            ? totalApprovers > 1
+              ? `Approver ${step.order}${step.order === totalApprovers ? " (Penandatangan)" : ""}`
+              : "Approver"
+            : `Reviewer ${step.order}`;
 
         const stepActions = history.filter(
           (h) =>

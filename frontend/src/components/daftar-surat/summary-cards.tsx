@@ -49,14 +49,15 @@ export function SummaryCards({ counts, loading }: Props) {
     {
       label: "Proses Review & Approval",
       value: counts.IN_REVIEW + counts.IN_APPROVAL,
-      sub: `${counts.IN_REVIEW} Review • ${counts.IN_APPROVAL} Approval`,
+      sub: `${counts.IN_REVIEW} Review • ${counts.IN_APPROVAL} Approval / TTD`,
       icon: Clock,
       colorClass: "text-status-warn-text",
       bgClass: "bg-status-warn-bg",
     },
     {
-      label: "Disetujui",
+      label: "Disetujui / Selesai",
       value: counts.SENT,
+      sub: "Terbit & Surat Masuk",
       icon: CheckCircle2,
       colorClass: "text-status-success-text",
       bgClass: "bg-status-success-bg",

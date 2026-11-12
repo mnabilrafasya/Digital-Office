@@ -31,8 +31,10 @@ import {
 } from "@/lib/api/audit";
 import {
   getLetterVersions,
+  officialPdfUrl,
   type DocumentVersion,
 } from "@/lib/api/letter-document";
+import { activityLabel } from "@/components/audit/audit-presenter";
 import {
   formatBytes,
   type LetterDetail,
@@ -215,6 +217,11 @@ export function LetterTrackingPanel({
 
   const hasDiagram = Boolean(letter);
   const distCount = tracking?.distribution.length ?? 0;
+  const effectiveStatus = tracking?.status ?? letter?.status ?? "";
+  const isOfficialPdfActive =
+    effectiveStatus === "SENT" ||
+    effectiveStatus === "APPROVED" ||
+    effectiveStatus === "RECEIVED";
 
   return (
     <div className="w-full min-w-0 max-w-full border border-border rounded-xl bg-surface overflow-hidden">
@@ -246,7 +253,7 @@ export function LetterTrackingPanel({
         <div className="flex items-center gap-2 ml-auto">
           {tracking && (
             <span className="text-[11px] text-text-muted hidden sm:inline-flex items-center gap-1">
-              {tracking.status === "SENT" ? (
+              {tracking.status === "SENT" || tracking.status === "RECEIVED" ? (
                 <CheckCircle2 size={13} className="text-status-success-text" />
               ) : (
                 <Clock size={13} className="text-primary" />
@@ -361,34 +368,63 @@ export function LetterTrackingPanel({
             </ul>
           )}
 
-          {/* Konten Tab 3: Riwayat Versi Naskah (.docx) */}
+          {/* Konten Tab 3: Riwayat Versi Naskah (.docx / .pdf) */}
           {activeTab === "versions" && versions.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto">
-              {versions.map((v) => (
-                <div
-                  key={v.versionNumber}
-                  className="px-3 py-2 rounded-lg border border-border bg-panel/25 flex items-center justify-between gap-2 text-xs"
-                >
-                  <div className="min-w-0">
-                    <p className="font-semibold text-text">
-                      Versi {v.versionNumber}{" "}
-                      <span className="font-normal text-text-muted">
-                        ({formatBytes(v.fileSize)})
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-text-muted truncate">
-                      {v.createdBy.name} · {formatCompactTime(v.createdAt)}
-                    </p>
-                  </div>
-                  <a
-                    href={`/api/v1/letters/${letterId}/document?version=${v.versionNumber}`}
-                    download
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border text-primary font-semibold hover:bg-panel shrink-0 text-[11px]"
+              {versions.map((v) => {
+                const isFinalVersion =
+                  v.type === "FINAL" ||
+                  v.fileExtension.toLowerCase() === "pdf";
+                const canDownloadVersion = isFinalVersion
+                  ? isOfficialPdfActive
+                  : !isOfficialPdfActive;
+                const downloadHref = isFinalVersion
+                  ? officialPdfUrl(letterId)
+                  : `/api/v1/letters/${letterId}/document?version=${v.versionNumber}`;
+
+                return (
+                  <div
+                    key={v.versionNumber}
+                    className="px-3 py-2 rounded-lg border border-border bg-panel/25 flex items-center justify-between gap-2 text-xs"
                   >
-                    <Download size={11} /> .docx
-                  </a>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <p className="font-semibold text-text flex items-center gap-1.5 flex-wrap">
+                        <span>Versi {v.versionNumber}</span>
+                        <span
+                          className={cn(
+                            "text-[10px] px-1.5 py-0.2 rounded font-semibold",
+                            isFinalVersion
+                              ? "bg-status-success-bg text-status-success-text"
+                              : "bg-panel text-text-muted border border-border"
+                          )}
+                        >
+                          {isFinalVersion ? "PDF Resmi" : "Draf .docx"}
+                        </span>
+                        <span className="font-normal text-text-muted">
+                          ({formatBytes(v.fileSize)})
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-text-muted truncate">
+                        {v.createdBy.name} · {formatCompactTime(v.createdAt)}
+                      </p>
+                    </div>
+                    {canDownloadVersion ? (
+                      <a
+                        href={downloadHref}
+                        download={!isFinalVersion}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border text-primary font-semibold hover:bg-panel shrink-0 text-[11px]"
+                      >
+                        <Download size={11} />{" "}
+                        {isFinalVersion ? "PDF" : ".docx"}
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-text-muted shrink-0">
+                        Arsip Draf
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -401,10 +437,15 @@ export function LetterTrackingPanel({
                   className="px-3 py-2 flex items-center justify-between gap-2 text-xs hover:bg-panel/20"
                 >
                   <div className="min-w-0 truncate">
-                    <span className="font-mono font-semibold text-primary">
-                      {log.action}
+                    <span
+                      title={log.action}
+                      className="font-semibold text-primary"
+                    >
+                      {activityLabel(log.action)}
                     </span>{" "}
-                    <span className="text-text">oleh {log.actor.name}</span>
+                    <span className="text-text">
+                      oleh {log.actor.name || "Sistem"}
+                    </span>
                     {log.ipAddress && (
                       <span className="text-text-muted">
                         {" "}

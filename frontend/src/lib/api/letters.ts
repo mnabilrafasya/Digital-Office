@@ -42,12 +42,13 @@ function mapBackendLetter(b: BackendLetterItem): LetterListItem {
     b.status === "DRAFT" || b.status === "RETURNED_TO_DRAFTER";
   const isReviewable =
     b.status === "IN_REVIEW" || b.status === "RETURNED_TO_REVIEWER";
-  const isApprovable = b.status === "IN_APPROVAL";
+  const isApprovable = b.status === "IN_APPROVAL" || b.status === "APPROVED";
 
   const actions: string[] = [];
   if (isDrafterEditable) actions.push("EDIT");
   if (isReviewable) actions.push("REVIEW");
   if (isApprovable) actions.push("APPROVE");
+  if (b.status === "APPROVED") actions.push("UPLOAD_SIGNED");
 
   return {
     id: b.id,
@@ -85,10 +86,10 @@ function mapBackendLetter(b: BackendLetterItem): LetterListItem {
 
 const COUNT_GROUPS = {
   DRAFT: "DRAFT",
-  IN_REVIEW: "IN_REVIEW",
+  IN_REVIEW: "IN_REVIEW,RETURNED_TO_REVIEWER",
   RETURNED: "RETURNED_TO_DRAFTER,RETURNED_TO_REVIEWER",
-  IN_APPROVAL: "IN_APPROVAL",
-  SENT: "SENT",
+  IN_APPROVAL: "IN_APPROVAL,APPROVED",
+  SENT: "SENT,RECEIVED",
   CANCELLED: "CANCELLED",
 } as const;
 
@@ -122,7 +123,7 @@ export async function getPendingTaskCounts(): Promise<PendingTaskCounts> {
   try {
     const [review, approval, tasksTotal] = await Promise.all([
       fetchTotal("tasks", "IN_REVIEW,RETURNED_TO_REVIEWER"),
-      fetchTotal("tasks", "IN_APPROVAL"),
+      fetchTotal("tasks", "IN_APPROVAL,APPROVED"),
       fetchTotal("tasks", ""),
     ]);
     return { review, approval, tasksTotal };
@@ -150,12 +151,20 @@ export async function listLetters(
   if (status) {
     queryParams.set(
       "status",
-      status === "RETURNED_TO_DRAFTER" ? COUNT_GROUPS.RETURNED : status,
+      status === "RETURNED_TO_DRAFTER"
+        ? COUNT_GROUPS.RETURNED
+        : status === "IN_REVIEW"
+          ? COUNT_GROUPS.IN_REVIEW
+          : status === "IN_APPROVAL"
+            ? COUNT_GROUPS.IN_APPROVAL
+            : status === "SENT"
+              ? COUNT_GROUPS.SENT
+              : status,
     );
   } else if (scope === "review") {
     queryParams.set("status", "IN_REVIEW,RETURNED_TO_REVIEWER");
   } else if (scope === "approval") {
-    queryParams.set("status", "IN_APPROVAL");
+    queryParams.set("status", "IN_APPROVAL,APPROVED");
   }
 
   if (q && q.trim()) {

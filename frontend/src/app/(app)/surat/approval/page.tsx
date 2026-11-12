@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
 // ─────────────────────────────────────────────
 
 export default function MenungguApprovalPage() {
-  redirect("/surat/daftar?scope=tasks&status=IN_APPROVAL");
+  redirect("/surat/daftar?scope=tasks&status=IN_APPROVAL,APPROVED");
 }
