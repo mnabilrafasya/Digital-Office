@@ -20,7 +20,7 @@ const DefaultNumberFormat = "{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}"
 
 var romanMonths = [...]string{"I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"}
 
-// FormatLetterNumber mengisi format nomor surat. Token: {SEQ} (nomor urut per perusahaan per tahun,
+// FormatLetterNumber mengisi format nomor surat. Token: {SEQ} (nomor urut per perusahaan per bulan,
 // minimal 3 digit), {COMP} (kode perusahaan), {MM_ROMAN} (bulan romawi), {YYYY} (tahun), dan
 // {UNIT} (kode unit pengirim, opsional). Contoh format default: 015/PSP/X/2026.
 func FormatLetterNumber(format string, seq int, unitCode, companyCode string, at time.Time) string {
@@ -41,8 +41,8 @@ func FormatLetterNumber(format string, seq int, unitCode, companyCode string, at
 var numberTokens = []string{"{SEQ}", "{COMP}", "{MM_ROMAN}", "{YYYY}"}
 
 // requiredNumberTokens wajib ada supaya nomor surat unik: urutan, perusahaan (nomor unik di seluruh
-// sistem), dan tahun (urutan mulai lagi setiap tahun).
-var requiredNumberTokens = []string{"{SEQ}", "{COMP}", "{YYYY}"}
+// sistem), bulan, dan tahun (urutan mulai lagi setiap bulan).
+var requiredNumberTokens = []string{"{SEQ}", "{COMP}", "{MM_ROMAN}", "{YYYY}"}
 
 // maxLetterNumberLength adalah panjang kolom letters.letter_number dan companies.letter_number_format.
 const maxLetterNumberLength = 100
@@ -74,7 +74,7 @@ func ValidateNumberFormat(format string) error {
 	}
 	for _, tok := range requiredNumberTokens {
 		if !strings.Contains(format, tok) {
-			return apperr.Invalid("Format nomor surat wajib memuat {SEQ}, {COMP}, dan {YYYY}")
+			return apperr.Invalid("Format nomor surat wajib memuat {SEQ}, {COMP}, {MM_ROMAN}, dan {YYYY}")
 		}
 	}
 	// Nomor terpanjang: urutan 5 digit, kode perusahaan 20 karakter, bulan VIII
@@ -83,6 +83,22 @@ func ValidateNumberFormat(format string) error {
 		return apperr.Invalid(fmt.Sprintf("Nomor surat hasil format ini bisa lebih dari %d karakter", maxLetterNumberLength))
 	}
 	return nil
+}
+
+// EffectiveNumberFormat adalah format nomor yang benar-benar dipakai: format tersimpan perusahaan,
+// atau DefaultNumberFormat bila kosong atau tidak lagi memenuhi aturan (mis. format lama tanpa
+// {MM_ROMAN}, yang bisa menghasilkan nomor kembar setelah urutan direset bulanan).
+func EffectiveNumberFormat(format string) string {
+	if ValidateNumberFormat(format) != nil {
+		return DefaultNumberFormat
+	}
+	return format
+}
+
+// NumberPeriod adalah periode nomor urut (YYYYMM, kolom letters.number_period): urutan mulai lagi
+// dari 1 setiap bulan.
+func NumberPeriod(at time.Time) int {
+	return at.Year()*100 + int(at.Month())
 }
 
 // NumberPreview adalah contoh nomor surat ke-1 dengan format dan perusahaan tertentu.
@@ -94,7 +110,7 @@ func NumberPreview(format, companyCode string, at time.Time) string {
 type Publication struct {
 	Number     string
 	Seq        int
-	Year       int
+	Period     int // YYYYMM (NumberPeriod)
 	ApprovedAt time.Time
 	SignerID   int64
 	UnitHeads  map[int64]int64 // unit penerima -> pimpinan yang menerima (letter_recipients.resolved_head_id)
@@ -159,13 +175,14 @@ func (s *Service) publish(ctx context.Context, t publishTarget) (string, error) 
 // assignNumber memberi nomor, tanggal, dan penandatangan surat (heads: pimpinan penerima tiap unit).
 func (s *Service) assignNumber(ctx context.Context, t publishTarget, heads map[int64]int64) (string, error) {
 	now := time.Now().In(s.loc)
-	seq, unitCode, format, err := t.letters.NextNumber(ctx, t.letterID, now.Year())
+	period := NumberPeriod(now)
+	seq, unitCode, format, err := t.letters.NextNumber(ctx, t.letterID, period)
 	if err != nil {
 		return "", err
 	}
-	number := FormatLetterNumber(format, seq, unitCode, t.companyCode, now)
+	number := FormatLetterNumber(EffectiveNumberFormat(format), seq, unitCode, t.companyCode, now)
 	if err := t.letters.Publish(ctx, t.letterID, Publication{
-		Number: number, Seq: seq, Year: now.Year(), ApprovedAt: now, SignerID: t.signerID, UnitHeads: heads,
+		Number: number, Seq: seq, Period: period, ApprovedAt: now, SignerID: t.signerID, UnitHeads: heads,
 	}); err != nil {
 		return "", err
 	}

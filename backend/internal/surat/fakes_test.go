@@ -26,6 +26,8 @@ type fakeLetterStore struct {
 	participants map[int64]bool // untuk IsParticipant
 	reviewers    []int64
 	approvers    []int64
+	numberFormat string // format nomor perusahaan yang dikembalikan NextNumber
+	numberPeriod int    // periode yang diminta NextNumber
 	draft        *LetterDraft
 	detail       *LetterDetail
 	list         []LetterListItem
@@ -89,8 +91,9 @@ func (f *fakeLetterStore) LatestVersion(_ context.Context, _ int64, versionType 
 	return nil, db.ErrNotFound
 }
 
-func (f *fakeLetterStore) NextNumber(context.Context, int64, int) (int, string, string, error) {
-	return 15, "TI", "", nil
+func (f *fakeLetterStore) NextNumber(_ context.Context, _ int64, period int) (int, string, string, error) {
+	f.numberPeriod = period
+	return 15, "TI", f.numberFormat, nil
 }
 
 func (f *fakeLetterStore) Publish(_ context.Context, _ int64, p Publication) error {

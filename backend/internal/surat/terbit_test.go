@@ -31,6 +31,47 @@ func TestFormatLetterNumber(t *testing.T) {
 	}
 }
 
+// Nomor urut direset setiap bulan: periode = tahun dan bulan persetujuan.
+func TestNumberPeriod(t *testing.T) {
+	cases := map[time.Time]int{
+		time.Date(2026, 11, 30, 23, 59, 0, 0, time.UTC): 202611,
+		time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC):    202612,
+		time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC):     202701,
+	}
+	for at, want := range cases {
+		if got := NumberPeriod(at); got != want {
+			t.Errorf("NumberPeriod(%s) = %d, want %d", at, got, want)
+		}
+	}
+}
+
+// Format tersimpan yang tidak lagi memenuhi aturan (tanpa bulan) diganti format bawaan, supaya
+// nomor tidak kembar setelah urutan direset bulanan.
+func TestEffectiveNumberFormat(t *testing.T) {
+	for stored, want := range map[string]string{
+		"":                                 DefaultNumberFormat,
+		"{SEQ}/{COMP}/{YYYY}":              DefaultNumberFormat,
+		"B-{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}": "B-{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}",
+	} {
+		if got := EffectiveNumberFormat(stored); got != want {
+			t.Errorf("EffectiveNumberFormat(%q) = %q, want %q", stored, got, want)
+		}
+	}
+
+	store := letterAt(StatusInApproval, 3)
+	store.numberFormat = "{SEQ}/{COMP}/{YYYY}" // format lama tanpa bulan
+	refs := newFakeRefs()
+	refs.unitHeads = map[int64]int64{7: 50, 9: 51}
+	refs.aliasMembers = map[int64][]int64{60: {52}}
+	svc, _, _ := newTestLetterServiceFull(store, refs)
+	if _, err := svc.Approve(context.Background(), agusUser, TransitionInput{LetterID: testLetterID}); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if p := store.published; p == nil || p.Number != FormatLetterNumber(DefaultNumberFormat, 15, "", "PSP", p.ApprovedAt) {
+		t.Errorf("nomor dengan format lama = %+v", p)
+	}
+}
+
 func TestApproverPublishesLetter(t *testing.T) {
 	store := letterAt(StatusInApproval, 3)
 	refs := newFakeRefs()
@@ -46,7 +87,8 @@ func TestApproverPublishesLetter(t *testing.T) {
 		t.Errorf("transisi salah: %+v", store.applied)
 	}
 	p := store.published
-	if p == nil || p.SignerID != 3 || p.Seq != 15 || p.Year != p.ApprovedAt.Year() ||
+	if p == nil || p.SignerID != 3 || p.Seq != 15 || p.Period != NumberPeriod(p.ApprovedAt) ||
+		store.numberPeriod != p.Period ||
 		!strings.HasPrefix(p.Number, "015/PSP/") || p.UnitHeads[7] != 50 || p.UnitHeads[9] != 51 {
 		t.Errorf("publikasi salah: %+v", p)
 	}

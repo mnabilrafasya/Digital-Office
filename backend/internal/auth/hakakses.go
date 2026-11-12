@@ -9,8 +9,8 @@ import (
 // Nilainya harus sama dengan kolom permissions.code di database.
 //
 // Hak akses user = permission role-nya + permission dari posisinya (level jabatan). Role hanya
-// menentukan akses sistem. SUPERADMIN memiliki seluruh permission, termasuk approve dan
-// disposisi. Untuk role lain, kewenangan pejabat datang dari posisi.
+// menentukan akses sistem (SUPERADMIN, ADMIN, PEGAWAI); kewenangan surat pejabat (approve dan
+// disposisi) datang dari posisi untuk semua role, sehingga mutasi jabatan langsung mengubah haknya.
 const (
 	LetterCreate   = "LETTER_CREATE"
 	LetterReview   = "LETTER_REVIEW"
