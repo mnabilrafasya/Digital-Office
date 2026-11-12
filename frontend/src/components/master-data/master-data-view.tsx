@@ -118,7 +118,7 @@ function MasterDataContent({ user }: { user: AuthUser }) {
           aria-label="Breadcrumb"
           className="flex items-center gap-1.5 text-xs text-text-muted"
         >
-          <Link href="/surat/daftar" className="hover:text-primary transition-colors">
+          <Link href="/dashboard" className="hover:text-primary transition-colors">
             Beranda
           </Link>
           <ChevronRight size={12} />

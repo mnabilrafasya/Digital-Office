@@ -60,7 +60,7 @@ export function BuatSuratHeader({
   return (
     <div className="mb-6">
       <nav className="flex items-center gap-1 text-xs text-text-muted mb-2">
-        <Link href="/surat/daftar" className="hover:text-text transition-colors">
+        <Link href="/dashboard" className="hover:text-text transition-colors">
           Beranda
         </Link>
         <ChevronRight size={12} />

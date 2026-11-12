@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default async function LoginPage() {
   // Redirect hanya bila sesi VALID (cookie basi tidak boleh, kalau tidak jadi loop).
-  if (await getCurrentUser()) redirect("/surat/daftar");
+  if (await getCurrentUser()) redirect("/dashboard");
   return (
     <>
       <div className="flex flex-col items-center text-center mb-6">

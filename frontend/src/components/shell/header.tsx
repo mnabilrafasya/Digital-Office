@@ -27,7 +27,7 @@ export async function Header() {
       {/* Nav links */}
       <nav className="flex items-center gap-1">
         <Link
-          href="/surat/daftar"
+          href="/dashboard"
           className="flex items-center gap-1.5 text-slate-300 hover:text-white text-sm px-3 py-1.5 rounded-md hover:bg-white/10 transition-colors"
         >
           <Home size={14} />

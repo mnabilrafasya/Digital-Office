@@ -41,7 +41,7 @@ function inputClass(hasError: boolean) {
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") ?? "/surat/daftar";
+  const nextPath = searchParams.get("next") ?? "/dashboard";
 
   const [nikInput, setNikInput] = useState("");
   const passwordInputRef = useRef<HTMLInputElement>(null);
