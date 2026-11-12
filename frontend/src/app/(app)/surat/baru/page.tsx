@@ -26,7 +26,6 @@ import {
   DraftSaveError,
 } from "@/lib/api/letter-draft";
 import { isEditableByDrafter } from "@/lib/api/letter-detail";
-import { listLetters } from "@/lib/api/letters";
 
 import { ActionBar } from "@/components/surat/action-bar";
 import { BuatSuratHeader } from "@/components/surat/buat-surat-header";
@@ -84,7 +83,7 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
       letterTypeCode: initialTypeQuery ? initialTypeQuery.toUpperCase() : "",
     },
   });
-  const { control, reset, trigger } = methods;
+  const { control, reset } = methods;
 
   const [draftId, setDraftId] = useState<string | null>(draftQueryId || null);
   const [draftEtag, setDraftEtag] = useState<string | null>(null);
@@ -253,55 +252,6 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
 
   // ─── Handlers ────────────────────────────────
 
-  async function handleLoadDraft() {
-    setLoadingDraft(true);
-    try {
-      // Ambil draft terakhir milik user dari backend
-      const res = await listLetters({
-        scope: "mine",
-        status: "DRAFT",
-        page: 1,
-        pageSize: 1,
-      });
-      if (res.data.length === 0) {
-        alert("Belum ada draf tersimpan yang ditemukan di database.");
-        return;
-      }
-
-      const latestDraftId = res.data[0].id;
-      const { detail, etag } = await getDraftLetter(latestDraftId);
-
-      setDraftId(detail.id);
-      setDraftEtag(etag);
-      setServerVersionNumber(detail.currentVersion ?? 0);
-      draftIdRef.current = detail.id;
-      draftEtagRef.current = etag;
-      loadedDraftIdRef.current = detail.id;
-
-      const { formValues, attachments: loadedAttachments } =
-        detailToFormValues(detail);
-
-      setAttachments(loadedAttachments);
-      setSavedAttachmentsSignature(JSON.stringify(loadedAttachments));
-      setReturnedNote(
-        detail.status === "RETURNED_TO_DRAFTER"
-          ? detail.lastReturnNote || "Naskah dikembalikan untuk direvisi oleh Drafter."
-          : null
-      );
-
-      reset(formValues);
-      setLastSaved(new Date());
-      setSaveFailed(false);
-      window.history.replaceState(null, "", `/surat/baru?draft=${detail.id}`);
-      await trigger();
-    } catch (err: unknown) {
-      console.error("Gagal memuat draf terakhir:", err);
-      alert("Gagal memuat draf terakhir.");
-    } finally {
-      setLoadingDraft(false);
-    }
-  }
-
   async function handleSimpan() {
     setIsSavingDraft(true);
     setSaveFailed(false);
@@ -422,9 +372,15 @@ function BuatSuratFormInner({ onNew }: { onNew: () => void }) {
           isDirty={isDirty}
           saveFailed={saveFailed}
           lastSaved={lastSaved}
-          loadingDraft={loadingDraft}
-          onLoadDraft={handleLoadDraft}
+          isIncomingExternal={isIncomingExternal}
         />
+
+        {loadingDraft && (
+          <div className="mb-4 flex items-center gap-2 text-xs text-text-muted">
+            <Loader2 size={14} className="animate-spin text-primary" />
+            <span>Memuat data draf surat...</span>
+          </div>
+        )}
 
         {returnedNote && (
           <div className="mb-5 flex items-start gap-3 rounded-xl border border-status-warn-text/30 bg-status-warn-bg/60 px-4 py-3 text-xs text-status-warn-text">

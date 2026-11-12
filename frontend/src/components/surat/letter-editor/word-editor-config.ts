@@ -146,6 +146,10 @@ export function createWordEditorOptions({
     closePrintDialogWithHtmlPreview: true,
   };
 
+  // Nonaktifkan dialog konfirmasi bawaan browser dari DevExpress saat dokumen di-replace/submit,
+  // karena form Buat Surat sudah memiliki konfirmasi keluar sendiri.
+  options.confirmOnLosingChanges = { enabled: false };
+
   // Konfigurasi Ribbon: sembunyikan tab yang tidak relevan (File bawaan, MailMerge, References)
   // karena aksi file & sinkronisasi variabel ditangani oleh toolbar aplikasi di atas editor.
   options.ribbon.visible = showRibbon;

@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useFormContext } from "react-hook-form";
 import {
   Building2,
   Calendar,
@@ -18,6 +19,7 @@ import {
   FileText,
   Hash,
   Loader2,
+  Plus,
   Search,
   Send,
   Trash2,
@@ -29,10 +31,12 @@ import {
 } from "lucide-react";
 import {
   fetchCandidates,
+  fetchCurrentUserId,
   fetchRecipientAliases,
   type CandidateItem,
   type RecipientAliasItem,
 } from "@/lib/api/form";
+import type { BuatSuratFormValues } from "@/lib/schemas";
 import { createIncomingLetter } from "@/lib/api/letter-draft";
 import { formatBytes } from "@/lib/api/letter-detail";
 import { BasicFields } from "./basic-fields";
@@ -70,18 +74,21 @@ export function IncomingExternalForm({
   onResetNew: () => void;
 }) {
   const router = useRouter();
+  const { getValues } = useFormContext<BuatSuratFormValues>();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Field metadata surat masuk eksternal
   const [sender, setSender] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [letterDate, setLetterDate] = useState(() => todayIsoDate());
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(() => getValues("title") ?? "");
   const [note, setNote] = useState("");
 
-  // Tujuan disposisi (Orang & Alias Jabatan)
+  // Tujuan disposisi (Orang & Alias Jabatan) — dibuka saat diklik agar ringkas
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTab, setPickerTab] = useState<"user" | "alias">("user");
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [candidateUsers, setCandidateUsers] = useState<CandidateItem[]>([]);
   const [aliases, setAliases] = useState<RecipientAliasItem[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
@@ -128,14 +135,17 @@ export function IncomingExternalForm({
     };
   }, []);
 
-  // Ambil daftar alias jabatan sekali
+  // Ambil daftar alias jabatan & user saat ini sekali
   useEffect(() => {
     fetchRecipientAliases()
       .then((data) => setAliases(data))
       .catch(() => {});
+    fetchCurrentUserId()
+      .then((uid) => setCurrentUserId(uid))
+      .catch(() => {});
   }, []);
 
-  // Cari kandidat pegawai untuk disposisi
+  // Cari kandidat pegawai untuk disposisi hanya saat panel dibuka
   const searchUsers = useCallback(async (q: string) => {
     setSearchingUsers(true);
     try {
@@ -153,12 +163,16 @@ export function IncomingExternalForm({
   }, []);
 
   useEffect(() => {
-    if (pickerTab !== "user") return;
+    if (!pickerOpen || pickerTab !== "user") return;
     const t = setTimeout(() => {
       void searchUsers(searchQuery);
     }, 250);
     return () => clearTimeout(t);
-  }, [pickerTab, searchQuery, searchUsers]);
+  }, [pickerOpen, pickerTab, searchQuery, searchUsers]);
+
+  const visibleCandidates = currentUserId
+    ? candidateUsers.filter((u) => String(u.id) !== currentUserId)
+    : candidateUsers;
 
   const totalRecipients = selectedUsers.length + selectedAliases.length;
 
@@ -413,7 +427,7 @@ export function IncomingExternalForm({
                 </span>
               </div>
               <p className="text-xs text-text-muted">
-                Pilih pejabat/pegawai atau alias jabatan yang akan menerima disposisi surat masuk eksternal ini di Kotak Masuk (Kategori Eksternal).
+                Pilih minimal 1 pejabat/pegawai lain atau alias jabatan yang akan menerima disposisi surat masuk eksternal ini di Kotak Masuk (tujuan disposisi tidak boleh hanya diri sendiri).
               </p>
 
               {/* Chip penerima terpilih */}
@@ -474,8 +488,21 @@ export function IncomingExternalForm({
                 </div>
               )}
 
-              {/* Kotak pemilih Orang / Alias Jabatan */}
-              <div className="border border-border rounded-xl overflow-hidden bg-surface">
+              {/* Tombol pemicu pemilih Orang / Alias Jabatan */}
+              <button
+                type="button"
+                onClick={() => setPickerOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-sm text-primary hover:text-primary-dark border border-dashed border-primary/40 hover:border-primary px-3 py-2 rounded-lg w-full justify-center transition-colors"
+              >
+                <Plus size={14} />
+                {pickerOpen
+                  ? "Tutup Pilihan Tujuan Disposisi"
+                  : "+ Pilih Tujuan Disposisi (Orang / Alias Jabatan)"}
+              </button>
+
+              {/* Kotak pemilih Orang / Alias Jabatan (muncul saat diklik) */}
+              {pickerOpen && (
+              <div className="border border-border rounded-xl overflow-hidden bg-surface shadow-md">
                 <div className="flex items-center justify-between border-b border-border bg-panel/40 px-3">
                   <div className="flex gap-2">
                     <button
@@ -509,6 +536,13 @@ export function IncomingExternalForm({
                       <Users size={13} /> Alias Jabatan ({aliases.length})
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(false)}
+                    className="text-xs text-text-muted hover:text-text py-1.5"
+                  >
+                    Tutup
+                  </button>
                 </div>
 
                 {/* Bar pencarian */}
@@ -519,6 +553,7 @@ export function IncomingExternalForm({
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
                     />
                     <input
+                      autoFocus
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
@@ -549,12 +584,12 @@ export function IncomingExternalForm({
                         <Loader2 size={14} className="animate-spin" />
                         Mencari pegawai...
                       </div>
-                    ) : candidateUsers.length === 0 ? (
+                    ) : visibleCandidates.length === 0 ? (
                       <div className="py-6 text-center text-xs text-text-muted">
                         Pegawai tidak ditemukan.
                       </div>
                     ) : (
-                      candidateUsers.map((u) => {
+                      visibleCandidates.map((u) => {
                         const isSelected = selectedUsers.some(
                           (s) => s.id === u.id
                         );
@@ -646,6 +681,7 @@ export function IncomingExternalForm({
                   )}
                 </div>
               </div>
+              )}
               <FieldError message={fieldErrors.recipients} />
             </div>
 

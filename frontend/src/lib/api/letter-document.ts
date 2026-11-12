@@ -235,6 +235,75 @@ export function getLetterAttachmentDownloadUrl(
 }
 
 /**
+ * Membuka lampiran surat di tab baru tanpa memicu unduhan otomatis (untuk PDF/gambar/teks)
+ * dengan mengambil byte file melalui fetch lalu membungkusnya sebagai Blob URL bertipe MIME asli.
+ */
+export async function openLetterAttachmentInline(
+  letterId: string,
+  attachmentId: string,
+  mimeType: string,
+  fileName: string
+): Promise<void> {
+  const url = getLetterAttachmentDownloadUrl(letterId, attachmentId);
+  const lower = fileName.toLowerCase();
+  const resolvedMime =
+    mimeType && mimeType !== "application/octet-stream"
+      ? mimeType
+      : lower.endsWith(".pdf")
+        ? "application/pdf"
+        : lower.endsWith(".png")
+          ? "image/png"
+          : lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+            ? "image/jpeg"
+            : mimeType || "application/octet-stream";
+
+  const isViewable =
+    resolvedMime === "application/pdf" ||
+    resolvedMime.startsWith("image/") ||
+    resolvedMime.startsWith("text/");
+
+  if (!isViewable) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+
+  // Buka tab secara sinkron agar tidak terblokir popup blocker browser
+  const previewWin = window.open("", "_blank");
+  if (previewWin) {
+    previewWin.document.title = fileName;
+    previewWin.document.body.innerHTML =
+      '<p style="font-family:system-ui,sans-serif;padding:24px;color:#475569;font-size:14px;">Memuat pratinjau lampiran...</p>';
+  }
+
+  try {
+    const res = await fetch(url, { cache: "no-store", credentials: "include" });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const buf = await res.arrayBuffer();
+    const blob = new Blob([buf], { type: resolvedMime });
+    const blobUrl = URL.createObjectURL(blob);
+
+    if (previewWin && !previewWin.closed) {
+      previewWin.location.href = blobUrl;
+    } else {
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch (err) {
+    if (previewWin && !previewWin.closed) {
+      previewWin.close();
+    }
+    throw err;
+  }
+}
+
+/**
  * Mengunduh naskah terisi (.docx) surat yang sudah terbit (`GET /api/v1/letters/{letterId}/document/filled`):
  * penanda nomor, tanggal, penerima, penandatangan, dan QR sudah diisi backend. Ditampilkan editor
  * dalam mode baca dan diekspor menjadi PDF resmi.

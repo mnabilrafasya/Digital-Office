@@ -34,7 +34,7 @@ const FORMAT_TOKENS = [
     token: "{MM_ROMAN}",
     label: "Bulan Romawi",
     desc: "Bulan berjalan dalam angka Romawi (I–XII)",
-    required: false,
+    required: true,
   },
   {
     token: "{YYYY}",
@@ -111,8 +111,8 @@ function SettingsForm({ settings }: { settings: CompanySettings }) {
 
   const formatPresets = [
     "{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}",
-    "{SEQ}/{COMP}/{YYYY}",
     "{COMP}-{SEQ}/{MM_ROMAN}/{YYYY}",
+    "{SEQ}/{MM_ROMAN}/{COMP}/{YYYY}",
   ];
 
   return (

@@ -137,6 +137,7 @@ export default function RichEditSuratInner({
           }
           try {
             editor.exportToFile((file: File) => {
+              editor.hasUnsavedChanges = false;
               setHasUnsavedChanges(false);
               resolve({
                 file,
@@ -594,8 +595,10 @@ export default function RichEditSuratInner({
           setValue("templateId", newId, { shouldDirty: true });
         }}
         onSyncFormData={() => {
-          if (!confirmOverwrite()) return;
-          loadTemplateIntoEditor(appliedTemplateId, true, true);
+          const editor = instanceRef.current;
+          if (!editor || editor.isDisposed) return;
+          applyTemplateContextToEditor(editor, getTemplateContextRef.current());
+          showToast("Data form disinkronkan ke naskah");
         }}
         zoomLevel={zoomLevel}
         onZoomChange={applyZoom}

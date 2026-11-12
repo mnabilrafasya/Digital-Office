@@ -90,7 +90,7 @@ export const CATEGORIES: MasterCategory[] = [
   {
     key: "confidentiality",
     label: "Sifat Surat",
-    description: "Tingkat kerahasiaan dokumen (Biasa, Terbatas, Rahasia, Sangat Rahasia).",
+    description: "Tingkat kerahasiaan dokumen (Biasa, Terbatas, Rahasia).",
     group: "Persuratan",
     icon: ShieldCheck,
     category: "CONFIDENTIALITY",

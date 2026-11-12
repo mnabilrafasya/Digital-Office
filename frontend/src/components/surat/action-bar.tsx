@@ -6,8 +6,6 @@
 // ─────────────────────────────────────────────
 
 import { Info, Save, Send, X, Loader2 } from "lucide-react";
-import { useFormContext, useFormState } from "react-hook-form";
-import type { BuatSuratFormValues } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -17,8 +15,6 @@ interface Props {
 }
 
 export function ActionBar({ onBatal, onSimpan, isSaving = false }: Props) {
-  const { control } = useFormContext<BuatSuratFormValues>();
-  const { isValid } = useFormState({ control });
 
   return (
     <>

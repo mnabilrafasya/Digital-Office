@@ -38,6 +38,7 @@ export function UnitPicker({
   excludeIds = [],
 }: UnitPickerProps) {
   const [open, setOpen] = useState(false);
+  const [pickerTab, setPickerTab] = useState<"unit" | "alias">("unit");
   const [query, setQuery] = useState("");
   const [units, setUnits] = useState<UnitItem[]>([]);
   const [aliases, setAliases] = useState<RecipientAliasItem[]>([]);
@@ -145,105 +146,150 @@ export function UnitPicker({
         {label}
       </button>
 
-      {/* Panel pencarian */}
+      {/* Panel pencarian bertab (Unit / Departemen & Alias Jabatan) */}
       {open && (
-        <div className="border border-border rounded-lg shadow-md bg-surface overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-            <Search size={14} className="text-text-muted shrink-0" />
-            <input
-              autoFocus
-              type="text"
-              placeholder="Cari nama unit atau alias jabatan (mis. Seluruh VP)..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 text-sm outline-none bg-transparent text-text placeholder-text-muted"
-            />
-            {query && (
+        <div className="border border-border rounded-xl shadow-md bg-surface overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border bg-panel/40 px-3">
+            <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setQuery("")}
-                className="text-text-muted hover:text-text"
+                onClick={() => {
+                  setPickerTab("unit");
+                  setQuery("");
+                }}
+                className={cn(
+                  "px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors flex items-center gap-1.5",
+                  pickerTab === "unit"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-text-muted hover:text-text"
+                )}
               >
-                <X size={13} />
+                <Building2 size={13} /> Unit / Departemen
               </button>
-            )}
-          </div>
-
-          <ul className="max-h-52 overflow-y-auto divide-y divide-border">
-            {loading ? (
-              <li className="px-4 py-6 flex items-center justify-center gap-2 text-sm text-text-muted">
-                <Loader2 size={14} className="animate-spin" />
-                Mencari unit...
-              </li>
-            ) : fetchError ? (
-              <li className="px-4 py-6 text-center text-status-danger-text text-sm">
-                {fetchError}
-              </li>
-            ) : filteredAliases.length === 0 && filteredUnits.length === 0 ? (
-              <li className="px-4 py-6 text-center text-text-muted text-sm">
-                {query ? "Unit atau alias tidak ditemukan." : "Tidak ada unit tersedia."}
-              </li>
-            ) : (
-              <>
-                {filteredAliases.map((alias) => (
-                  <li key={`alias-${alias.levelId}`}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        addEntry({
-                          id: `alias-${alias.levelId}`,
-                          name: alias.label,
-                        })
-                      }
-                      className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-start gap-2 bg-primary/[0.02]"
-                    >
-                      <Users size={13} className="text-primary shrink-0 mt-0.5" />
-                      <div>
-                        <div className="text-sm font-medium text-text">
-                          {alias.label}
-                        </div>
-                        <div className="text-xs text-text-muted">
-                          Alias Jabatan &bull; {alias.memberCount} pimpinan unit aktif
-                        </div>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-                {filteredUnits.map((unit) => (
-                  <li key={unit.id}>
-                    <button
-                      type="button"
-                      onClick={() => addEntry({ id: unit.id, name: unit.name })}
-                      className="w-full text-left px-4 py-2.5 hover:bg-panel transition-colors flex items-start gap-2"
-                    >
-                      <Building2 size={13} className="text-text-muted shrink-0 mt-0.5" />
-                      <div>
-                        <div className="text-sm text-text">{unit.name}</div>
-                        {unit.headPositionName && (
-                          <div className="text-xs text-text-muted">
-                            {unit.headPositionName}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </>
-            )}
-          </ul>
-
-          <div className="px-3 py-2 border-t border-border flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setPickerTab("alias");
+                  setQuery("");
+                }}
+                className={cn(
+                  "px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors flex items-center gap-1.5",
+                  pickerTab === "alias"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-text-muted hover:text-text"
+                )}
+              >
+                <Users size={13} /> Alias Jabatan ({filteredAliases.length})
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => {
                 setOpen(false);
                 setQuery("");
               }}
-              className="text-xs text-text-muted hover:text-text"
+              className="text-xs text-text-muted hover:text-text py-1.5"
             >
               Tutup
             </button>
           </div>
+
+          <div className="p-2.5 border-b border-border">
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
+              />
+              <input
+                autoFocus
+                type="text"
+                placeholder={
+                  pickerTab === "unit"
+                    ? "Cari nama unit / departemen tujuan..."
+                    : "Cari alias jabatan (contoh: Seluruh VP)..."
+                }
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full pl-8 pr-8 py-1.5 text-sm border border-border rounded-lg bg-surface outline-none focus:border-primary"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <ul className="max-h-52 overflow-y-auto divide-y divide-border">
+            {pickerTab === "unit" ? (
+              loading ? (
+                <li className="px-4 py-6 flex items-center justify-center gap-2 text-xs text-text-muted">
+                  <Loader2 size={14} className="animate-spin" />
+                  Mencari unit...
+                </li>
+              ) : fetchError ? (
+                <li className="px-4 py-6 text-center text-status-danger-text text-xs">
+                  {fetchError}
+                </li>
+              ) : filteredUnits.length === 0 ? (
+                <li className="px-4 py-6 text-center text-text-muted text-xs">
+                  {query ? "Unit tidak ditemukan." : "Tidak ada unit tersedia."}
+                </li>
+              ) : (
+                filteredUnits.map((unit) => (
+                  <li key={unit.id}>
+                    <button
+                      type="button"
+                      onClick={() => addEntry({ id: unit.id, name: unit.name })}
+                      className="w-full text-left px-3.5 py-2.5 hover:bg-panel transition-colors flex items-start gap-2.5 text-xs"
+                    >
+                      <Building2 size={14} className="text-primary shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <div className="font-medium text-text">{unit.name}</div>
+                        <div className="text-[11px] text-text-muted">
+                          {unit.headPositionName
+                            ? `Pimpinan: ${unit.headPositionName}`
+                            : unit.unitType}
+                          {unit.code ? ` · Kode: ${unit.code}` : ""}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))
+              )
+            ) : filteredAliases.length === 0 ? (
+              <li className="px-4 py-6 text-center text-text-muted text-xs">
+                {query ? "Alias jabatan tidak ditemukan." : "Tidak ada alias jabatan tersedia."}
+              </li>
+            ) : (
+              filteredAliases.map((alias) => (
+                <li key={`alias-${alias.levelId}`}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      addEntry({
+                        id: `alias-${alias.levelId}`,
+                        name: alias.label,
+                      })
+                    }
+                    className="w-full text-left px-3.5 py-2.5 hover:bg-panel transition-colors flex items-start gap-2.5 text-xs"
+                  >
+                    <Users size={14} className="text-primary shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="font-medium text-text">{alias.label}</div>
+                      <div className="text-[11px] text-text-muted">
+                        Kode: {alias.code} &bull; {alias.memberCount} pimpinan unit aktif
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
         </div>
       )}
 

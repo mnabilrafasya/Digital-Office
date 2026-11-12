@@ -5,6 +5,7 @@
 // Breadcrumb, judul
 // ─────────────────────────────────────────────
 
+import Link from "next/link";
 import { ChevronRight, Clock } from "lucide-react";
 import { formatTimeWIB } from "@/lib/utils";
 
@@ -13,8 +14,7 @@ interface Props {
   isDirty: boolean;
   saveFailed: boolean;
   lastSaved: Date | null;
-  loadingDraft?: boolean;
-  onLoadDraft?: () => void;
+  isIncomingExternal?: boolean;
 }
 
 function SaveIndicator({
@@ -22,7 +22,7 @@ function SaveIndicator({
   isDirty,
   saveFailed,
   lastSaved,
-}: Omit<Props, "loadingDraft" | "onLoadDraft">) {
+}: Omit<Props, "isIncomingExternal">) {
   if (isSaving) {
     return (
       <span className="flex items-center gap-1.5 text-status-warn-text">
@@ -54,34 +54,42 @@ function SaveIndicator({
 }
 
 export function BuatSuratHeader({
-  loadingDraft: _loadingDraft,
-  onLoadDraft: _onLoadDraft,
+  isIncomingExternal = false,
   ...save
 }: Props) {
   return (
     <div className="mb-6">
       <nav className="flex items-center gap-1 text-xs text-text-muted mb-2">
-        <span>Beranda</span>
+        <Link href="/surat/daftar" className="hover:text-text transition-colors">
+          Beranda
+        </Link>
         <ChevronRight size={12} />
         <span>Penciptaan Surat</span>
         <ChevronRight size={12} />
-        <span className="text-text font-medium">Buat Surat Baru</span>
+        <span className="text-text font-medium">
+          {isIncomingExternal ? "Catat Surat Masuk Eksternal" : "Buat Surat Baru"}
+        </span>
       </nav>
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-text">Buat Surat Baru</h1>
+          <h1 className="text-2xl font-bold text-text">
+            {isIncomingExternal ? "Catat Surat Masuk Eksternal" : "Buat Surat Baru"}
+          </h1>
           <p className="text-text-muted text-sm mt-0.5">
-            Isi detail surat, pilih reviewer &amp; approver, lalu lampirkan
-            berkas pendukung.
+            {isIncomingExternal
+              ? "Catat metadata surat dari instansi luar, pilih tujuan disposisi, dan unggah scan PDF."
+              : "Isi detail surat, pilih reviewer & approver, lalu lampirkan berkas pendukung."}
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 mt-1">
-          <div className="text-xs text-text-muted" aria-live="polite">
-            <SaveIndicator {...save} />
+        {!isIncomingExternal && (
+          <div className="flex items-center gap-3 shrink-0 mt-1">
+            <div className="text-xs text-text-muted" aria-live="polite">
+              <SaveIndicator {...save} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

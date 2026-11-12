@@ -22,7 +22,10 @@ import { FieldError, FieldLabel, inputClass } from "./form-primitives";
 
 // ─── Hook: ambil lookups dari backend ────────
 
-function useLookups(category: Parameters<typeof fetchLookups>[0]) {
+function useLookups(
+  category: Parameters<typeof fetchLookups>[0],
+  retryKey = 0,
+) {
   const [items, setItems] = useState<LookupItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +50,7 @@ function useLookups(category: Parameters<typeof fetchLookups>[0]) {
     return () => {
       cancelled = true;
     };
-  }, [category]);
+  }, [category, retryKey]);
 
   return { items, loading, error };
 }
@@ -87,10 +90,12 @@ export function BasicFields({
   const kecepatan = useWatch({ control, name: "kecepatan" });
 
   // Lookup dari backend
-  const letterTypes = useLookups("LETTER_TYPE");
-  const urgencies   = useLookups("URGENCY");
   const [retryLT, setRetryLT] = useState(0);
   const [retryUG, setRetryUG] = useState(0);
+  const [retryCF, setRetryCF] = useState(0);
+  const letterTypes = useLookups("LETTER_TYPE", retryLT);
+  const urgencies = useLookups("URGENCY", retryUG);
+  const confidentialities = useLookups("CONFIDENTIALITY", retryCF);
 
   // Sinkronkan letterTypeCode setiap kali letterTypeId atau daftar letterTypes berubah
   useEffect(() => {
@@ -146,11 +151,14 @@ export function BasicFields({
     }
   }, [urgencies.items, kecepatan, setValue]);
 
-  const sifatOptions: LookupItem[] = [
-    { id: "sifat-biasa",    code: "BIASA",    name: "Biasa",    note: "Surat dapat diakses seluruh staf unit terkait.", sortOrder: 1 },
-    { id: "sifat-terbatas", code: "TERBATAS", name: "Terbatas", note: "Hanya pejabat dan staf berwenang yang dapat mengakses.", sortOrder: 2 },
-    { id: "sifat-rahasia",  code: "RAHASIA",  name: "Rahasia",  note: "Hanya pejabat yang mendapat otorisasi khusus.", sortOrder: 3 },
-  ];
+  const sifatOptions: LookupItem[] =
+    confidentialities.items.length > 0
+      ? confidentialities.items
+      : [
+          { id: "sifat-biasa",    code: "BIASA",    name: "Biasa",    note: "Boleh diketahui umum di internal perusahaan", sortOrder: 1 },
+          { id: "sifat-terbatas", code: "TERBATAS", name: "Terbatas", note: "Hanya untuk unit atau pejabat terkait", sortOrder: 2 },
+          { id: "sifat-rahasia",  code: "RAHASIA",  name: "Rahasia",  note: "Hanya untuk penerima yang dituju", sortOrder: 3 },
+        ];
 
   const selectedSifat = sifatOptions.find((s) => s.code === sifat);
 
@@ -251,7 +259,7 @@ export function BasicFields({
               }}
               className={inputClass()}
             >
-              <option value="">— Pilih template (opsional) —</option>
+              <option value="">— Pilih template —</option>
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
@@ -326,6 +334,11 @@ export function BasicFields({
       {/* Sifat Kerahasiaan */}
       <div>
         <FieldLabel label="Sifat Kerahasiaan" required />
+        {confidentialities.loading ? (
+          <SelectLoading label="pilihan sifat" />
+        ) : confidentialities.error ? (
+          <SelectError message={confidentialities.error} onRetry={() => setRetryCF((n) => n + 1)} />
+        ) : (
         <Controller
           name="sifat"
           control={control}
@@ -346,7 +359,7 @@ export function BasicFields({
                       type="radio"
                       value={opt.code}
                       checked={field.value === opt.code}
-                      onChange={() => field.onChange(opt.code)}
+                      onChange={() => field.onChange(opt.code as BuatSuratFormValues["sifat"])}
                       className="accent-primary"
                     />
                     {opt.name}
@@ -362,6 +375,7 @@ export function BasicFields({
             </div>
           )}
         />
+        )}
         <FieldError message={errors.sifat?.message} />
       </div>
 

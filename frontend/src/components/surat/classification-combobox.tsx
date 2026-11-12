@@ -21,24 +21,35 @@ export function ClassificationCombobox({ value, onChange, hasError }: Props) {
   const [items, setItems] = useState<LookupItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Fetch saat mount
+  // Fetch saat mount atau saat tombol Coba lagi ditekan
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setFetchError(null);
     fetchLookups("CLASSIFICATION")
-      .then((data) => { if (!cancelled) setItems(data); })
-      .catch((e: unknown) => {
-        if (!cancelled)
-          setFetchError(e instanceof Error ? e.message : "Gagal memuat klasifikasi.");
+      .then((data) => {
+        if (!cancelled) {
+          setItems(data);
+          setFetchError(null);
+        }
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setFetchError(
+            e instanceof Error ? e.message : "Gagal memuat klasifikasi."
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [retryTick]);
 
   const selected = items.find((c) => c.id === value);
   const q = query.toLowerCase();
@@ -78,7 +89,11 @@ export function ClassificationCombobox({ value, onChange, hasError }: Props) {
         <span>{fetchError}</span>
         <button
           type="button"
-          onClick={() => { setFetchError(null); setLoading(true); }}
+          onClick={() => {
+            setFetchError(null);
+            setLoading(true);
+            setRetryTick((t) => t + 1);
+          }}
           className="underline shrink-0"
         >
           Coba lagi

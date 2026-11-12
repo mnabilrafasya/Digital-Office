@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   X,
@@ -33,7 +39,10 @@ import {
   updateTemplate,
   invalidateTemplateCache,
 } from "@/lib/templates/letter-templates";
-import { WordZoomControl, useWordZoomInteractivity } from "@/components/ui/word-zoom-control";
+import {
+  WordZoomControl,
+  useWordZoomInteractivity,
+} from "@/components/ui/word-zoom-control";
 import type { MasterRow } from "@/lib/api/master-data";
 import { loadChoices } from "./config";
 import {
@@ -77,8 +86,8 @@ export function TemplateDocxEditorModal({
   const [isLoadingDoc, setIsLoadingDoc] = useState(true);
   const [sourceLabel, setSourceLabel] = useState<string>(
     mode === "edit"
-      ? `Berkas server: ${String(row?.name ?? "Template")}.docx`
-      : "Dokumen Kosong A4 (.docx)",
+      ? `${String(row?.name ?? "Template")}.docx`
+      : "Dokumen Kosong (Blank)",
   );
   const [uploadedFallbackFile, setUploadedFallbackFile] = useState<File | null>(
     null,
@@ -119,13 +128,15 @@ export function TemplateDocxEditorModal({
     }
   }, []);
 
-  const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity({
-    wrapperRef,
-    containerRef,
-    zoomLevel,
-    onZoomChange: applyZoom,
-    isReady,
-  });
+  const { feedbackPercent, handleDevExpressKeyDown } = useWordZoomInteractivity(
+    {
+      wrapperRef,
+      containerRef,
+      zoomLevel,
+      onZoomChange: applyZoom,
+      isReady,
+    },
+  );
 
   const keyDownHandlerRef = useRef(handleDevExpressKeyDown);
   useEffect(() => {
@@ -275,7 +286,8 @@ export function TemplateDocxEditorModal({
       ).toLowerCase();
       const matchedStarter =
         LETTER_TEMPLATE_LIST.find(
-          (item) => item.name.trim().toLowerCase() === tplName.trim().toLowerCase(),
+          (item) =>
+            item.name.trim().toLowerCase() === tplName.trim().toLowerCase(),
         ) ??
         (rowTypeCode
           ? LETTER_TEMPLATE_LIST.find((item) =>
@@ -285,14 +297,14 @@ export function TemplateDocxEditorModal({
       loadFromUrl(
         `/api/v1/templates/${id}/file`,
         `${tplName.replace(/\s+/g, "_")}.docx`,
-        `Berkas server: ${tplName}.docx`,
+        `${tplName}.docx`,
         matchedStarter?.fallbackFileUrl ?? "/templates/dokumen-kosong.docx",
       );
     } else {
       loadFromUrl(
         "/templates/dokumen-kosong.docx",
         "Template_Baru.docx",
-        "Dokumen Kosong A4 (.docx)",
+        "Dokumen Kosong (Blank)",
       );
     }
   }, [isReady, mode, row?.id, row?.name, row?.letterType, loadFromUrl]);
@@ -536,7 +548,7 @@ export function TemplateDocxEditorModal({
           )}
 
           {/* Metadata Form Row */}
-          <div className="grid gap-3.5 md:grid-cols-3 rounded-xl border border-border bg-panel/30 p-4">
+          <div className="grid gap-3.5 md:grid-cols-2 rounded-xl border border-border bg-panel/30 p-4">
             <label className="block space-y-1.5 text-xs font-semibold text-text">
               <span>
                 Nama Template Surat{" "}
@@ -568,14 +580,15 @@ export function TemplateDocxEditorModal({
               </select>
             </label>
 
-            <label className="block space-y-1.5 text-xs font-semibold text-text">
+            <label className="block space-y-1.5 text-xs font-semibold text-text md:col-span-2">
               <span>Deskripsi Penggunaan</span>
-              <input
+              <textarea
+                rows={2}
                 maxLength={500}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="Keterangan singkat kapan template ini dipakai..."
-                className={inputClass}
+                placeholder="Keterangan singkat kapan dan untuk keperluan apa template ini dipakai..."
+                className={`${inputClass} resize-none`}
               />
             </label>
           </div>
@@ -621,7 +634,11 @@ export function TemplateDocxEditorModal({
                       (item) => item.id === tplId,
                     );
                     if (starter) {
-                      if (mode === "create" && !name.trim() && starter.id !== "tmpl-kosong") {
+                      if (
+                        mode === "create" &&
+                        !name.trim() &&
+                        starter.id !== "tmpl-kosong"
+                      ) {
                         setName(starter.name);
                         if (!description.trim() && starter.description) {
                           setDescription(starter.description);
@@ -631,7 +648,7 @@ export function TemplateDocxEditorModal({
                       loadFromUrl(
                         starter.fileUrl,
                         `${starter.name.replace(/\s+/g, "_")}.docx`,
-                        `Contoh dasar: ${starter.name}`,
+                        `${starter.name}`,
                       );
                     }
                     event.target.value = "";
@@ -706,7 +723,9 @@ export function TemplateDocxEditorModal({
                 );
               })}
               <span className="text-[11px] text-text-muted ml-2 shrink-0">
-                (Wajib memuat <code className="font-mono text-text">###*QRCode*###</code> untuk surat internal)
+                (Wajib memuat{" "}
+                <code className="font-mono text-text">###*QRCode*###</code>{" "}
+                untuk surat internal)
               </span>
             </div>
 
@@ -780,4 +799,3 @@ export function TemplateDocxEditorModal({
     </div>
   );
 }
-

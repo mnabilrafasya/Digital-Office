@@ -111,3 +111,12 @@ export async function fetchCandidates(
   if (query.limit) params.set("limit", String(query.limit));
   return get<CandidateItem[]>(`/users/candidates?${params.toString()}`);
 }
+
+export async function fetchCurrentUserId(): Promise<string | null> {
+  try {
+    const me = await get<{ id: string }>("/auth/me");
+    return me?.id ? String(me.id) : null;
+  } catch {
+    return null;
+  }
+}

@@ -14,6 +14,7 @@ import {
   Presentation,
   File,
   Eye,
+  Download,
   Trash2,
   RefreshCw,
   Search,
@@ -32,6 +33,7 @@ import {
   uploadLetterAttachment,
   deleteLetterAttachment,
   getLetterAttachmentDownloadUrl,
+  openLetterAttachmentInline,
 } from "@/lib/api/letter-document";
 import type { LetterAttachment } from "@/lib/types";
 
@@ -276,14 +278,21 @@ export function LampiranSection({
     );
   }
 
-  function handleViewAttachment(att: LetterAttachment) {
+  async function handleViewAttachment(att: LetterAttachment) {
     const activeLetterId = letterIdRef.current;
     if (!activeLetterId) return;
-    window.open(
-      getLetterAttachmentDownloadUrl(activeLetterId, att.id),
-      "_blank",
-      "noopener,noreferrer"
-    );
+    try {
+      await openLetterAttachmentInline(
+        activeLetterId,
+        att.id,
+        att.mimeType,
+        att.fileName
+      );
+    } catch (err) {
+      alert(
+        err instanceof Error ? err.message : "Gagal membuka pratinjau lampiran."
+      );
+    }
   }
 
   // Gabungkan: attachment yang sudah selesai + yang error/sedang upload
@@ -456,7 +465,7 @@ export function LampiranSection({
               <thead>
                 <tr className="bg-panel text-text-muted text-xs">
                   <th className="px-4 py-2.5 text-left font-semibold w-8">#</th>
-                  <th className="px-4 py-2.5 text-left font-semibold w-20">
+                  <th className="px-4 py-2.5 text-left font-semibold w-28">
                     Aksi
                   </th>
                   <th className="px-4 py-2.5 text-left font-semibold">
@@ -490,16 +499,33 @@ export function LampiranSection({
                       >
                         <td className="px-4 py-3 text-text-muted">{idx + 1}</td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              title="Unduh / Lihat Lampiran"
+                              title="Lihat Lampiran"
                               disabled={!letterId}
-                              onClick={() => handleViewAttachment(att)}
+                              onClick={() => void handleViewAttachment(att)}
                               className="p-1.5 rounded hover:bg-panel text-text-muted hover:text-primary transition-colors disabled:opacity-40"
                             >
                               <Eye size={13} />
                             </button>
+                            {letterId ? (
+                              <a
+                                href={getLetterAttachmentDownloadUrl(
+                                  letterId,
+                                  att.id
+                                )}
+                                download={att.fileName}
+                                title="Unduh Lampiran"
+                                className="p-1.5 rounded hover:bg-panel text-text-muted hover:text-primary transition-colors"
+                              >
+                                <Download size={13} />
+                              </a>
+                            ) : (
+                              <span className="p-1.5 text-text-muted opacity-40">
+                                <Download size={13} />
+                              </span>
+                            )}
                             <button
                               type="button"
                               title="Hapus"
