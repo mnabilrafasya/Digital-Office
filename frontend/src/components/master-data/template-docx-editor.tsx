@@ -37,10 +37,15 @@ import {
 import { WordZoomControl, useWordZoomInteractivity } from "@/components/ui/word-zoom-control";
 import type { MasterRow } from "@/lib/api/master-data";
 import { loadChoices } from "./config";
-import { buttonClass, inputClass } from "./master-form";
+import {
+  buttonClass,
+  primaryButtonClass,
+  softPrimaryButtonClass,
+  inputClass,
+} from "./master-form";
 
 const LICENSE_KEY = process.env.NEXT_PUBLIC_DEVEXPRESS_LICENSE_KEY ?? "";
-const DEFAULT_EDITOR_HEIGHT = "680px";
+const DEFAULT_EDITOR_HEIGHT = "clamp(420px, 52vh, 640px)";
 const FULLSCREEN_EDITOR_HEIGHT = "calc(100vh - 180px)";
 
 export function TemplateDocxEditorModal({
@@ -470,7 +475,6 @@ export function TemplateDocxEditorModal({
                     : `Edit Template Surat — ${String(row?.name ?? "")}`}
                 </h2>
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-[11px] font-semibold">
-                  <Sparkles size={11} />
                   DevExpress Word Editor
                 </span>
               </div>
@@ -588,7 +592,7 @@ export function TemplateDocxEditorModal({
                   type="button"
                   disabled={!isReady || busy}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`${buttonClass} bg-primary/10 text-primary border-primary/25 hover:bg-primary hover:text-white`}
+                  className={softPrimaryButtonClass}
                 >
                   <Upload size={14} />
                   Unggah / Buka .docx dari Komputer
@@ -736,7 +740,7 @@ export function TemplateDocxEditorModal({
               <button
                 type="submit"
                 disabled={busy || !isReady || isLoadingDoc}
-                className={`${buttonClass} bg-primary text-white hover:bg-primary/90 hover:text-white border-primary shadow-2xs`}
+                className={primaryButtonClass}
               >
                 {busy ? (
                   <Loader2 size={14} className="animate-spin" />

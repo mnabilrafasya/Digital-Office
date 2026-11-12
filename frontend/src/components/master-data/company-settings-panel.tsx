@@ -15,7 +15,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { masterRequest, type CompanySettings } from "@/lib/api/master-data";
-import { buttonClass, inputClass } from "./master-form";
+import { buttonClass, primaryButtonClass, inputClass } from "./master-form";
 
 const FORMAT_TOKENS = [
   {
@@ -459,7 +459,7 @@ function SettingsForm({ settings }: { settings: CompanySettings }) {
         <button
           type="submit"
           disabled={busy}
-          className={`${buttonClass} bg-primary text-white hover:bg-primary/90 border-primary shadow-2xs`}
+          className={primaryButtonClass}
         >
           <Save size={14} />
           {busy ? "Menyimpan..." : "Simpan Pengaturan Perusahaan"}

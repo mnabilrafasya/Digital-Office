@@ -24,7 +24,14 @@ import {
   type MasterRow,
 } from "@/lib/api/master-data";
 import { invalidateTemplateCache } from "@/lib/templates/letter-templates";
-import { MasterForm, inputClass, buttonClass } from "./master-form";
+import {
+  MasterForm,
+  inputClass,
+  buttonClass,
+  primaryButtonClass,
+  rowActionButtonClass,
+  rowDangerButtonClass,
+} from "./master-form";
 
 const TemplateDocxEditorModal = dynamic(
   () =>
@@ -127,7 +134,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
               setNotice("");
               setAction({ kind: "create" });
             }}
-            className={`${buttonClass} bg-primary text-white border-primary hover:bg-primary/90 hover:text-white shadow-2xs`}
+            className={primaryButtonClass}
           >
             <Plus size={15} />
             Tambah & Desain Template
@@ -302,13 +309,13 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                       !active ? "opacity-75" : ""
                     }`}
                   >
-                    <td className="px-4 py-3.5 align-top">
-                      <div className="flex gap-3 items-start min-w-60">
-                        <span className="p-2.5 bg-primary/10 rounded-xl text-primary shrink-0 mt-0.5">
-                          <FileText size={18} />
+                    <td className="px-3.5 py-3 align-top">
+                      <div className="flex gap-2.5 items-start min-w-0">
+                        <span className="p-2 bg-primary/10 rounded-xl text-primary shrink-0 mt-0.5">
+                          <FileText size={17} />
                         </span>
-                        <div className="space-y-1">
-                          <p className="font-semibold text-text">
+                        <div className="space-y-1 min-w-0">
+                          <p className="font-semibold text-text leading-snug">
                             {String(row.name)}
                           </p>
                           <p className="text-xs text-text-muted max-w-md leading-relaxed">
@@ -320,14 +327,14 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 align-top">
-                      <span className="inline-flex items-center gap-1.5 rounded-md bg-panel border border-border px-2.5 py-1 text-xs font-medium text-text">
+                    <td className="px-3.5 py-3 align-top">
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-panel border border-border px-2.5 py-1 text-xs font-medium text-text whitespace-nowrap">
                         <Tags size={12} className="text-primary" />
                         {String(letterType?.name ?? "Semua Jenis Surat")}
                       </span>
                     </td>
                     {manage && (
-                      <td className="px-4 py-3.5 align-top text-xs">
+                      <td className="px-3.5 py-3 align-top text-xs whitespace-nowrap">
                         <span className="rounded-md bg-panel px-2 py-1 font-medium text-text-muted border border-border">
                           <strong className="text-text">
                             {Number(row.usedBy ?? 0)}
@@ -336,7 +343,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                         </span>
                       </td>
                     )}
-                    <td className="px-4 py-3.5 align-top">
+                    <td className="px-3.5 py-3 align-top whitespace-nowrap">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full text-xs font-semibold px-2.5 py-1 ${
                           active
@@ -352,13 +359,13 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                         {active ? "Aktif" : "Nonaktif"}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 align-top">
+                    <td className="px-3.5 py-3 align-top">
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <a
                           aria-label={`Unduh ${row.name}`}
                           title="Unduh berkas .docx"
                           href={`/api/v1/templates/${encodeURIComponent(String(row.id))}/file`}
-                          className={buttonClass}
+                          className={rowActionButtonClass}
                         >
                           <Download size={13} />
                           <span>.docx</span>
@@ -366,7 +373,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                         {create && active && (
                           <button
                             type="button"
-                            className={buttonClass}
+                            className={rowActionButtonClass}
                             onClick={() => setAction({ kind: "edit", row })}
                           >
                             <Pencil size={13} />
@@ -377,7 +384,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                           <>
                             <button
                               type="button"
-                              className={buttonClass}
+                              className={rowActionButtonClass}
                               title={
                                 active
                                   ? "Nonaktifkan template"
@@ -390,7 +397,7 @@ export function TemplatesPanel({ permissions }: { permissions: string[] }) {
                             </button>
                             <button
                               type="button"
-                              className={`${buttonClass} hover:border-status-danger-text/40 hover:text-status-danger-text`}
+                              className={rowDangerButtonClass}
                               title={`Hapus template ${String(row.name)}`}
                               onClick={() => setAction({ kind: "delete", row })}
                             >

@@ -176,9 +176,9 @@ function MasterDataContent({ user }: { user: AuthUser }) {
             })}
           </div>
 
-          <div className="flex flex-col xl:flex-row items-start gap-5">
+          <div className="flex flex-col xl:flex-row items-start gap-4">
             {/* Desktop Sticky Navigation Sidebar */}
-            <aside className="hidden xl:block w-64 shrink-0 rounded-xl border border-border bg-surface p-2.5 sticky top-20 shadow-2xs">
+            <aside className="hidden xl:block w-56 shrink-0 rounded-xl border border-border bg-surface p-2 sticky top-20 shadow-2xs">
               <button
                 type="button"
                 onClick={() => select("overview")}
@@ -237,7 +237,7 @@ function MasterDataContent({ user }: { user: AuthUser }) {
             </aside>
 
             {/* Main Workspace Card */}
-            <div className="flex-1 min-w-0 w-full rounded-xl border border-border bg-surface p-4 sm:p-6 shadow-2xs">
+            <div className="flex-1 min-w-0 w-full rounded-xl border border-border bg-surface p-4 sm:p-5 shadow-2xs">
               {!allowed ? (
                 <div className="text-center py-16 max-w-md mx-auto">
                   <span className="inline-flex rounded-2xl p-4 bg-panel text-text-muted mb-4 border border-border">

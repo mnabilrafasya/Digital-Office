@@ -41,7 +41,14 @@ import {
   type Resource,
   type Field,
 } from "./config";
-import { MasterForm, buttonClass, inputClass } from "./master-form";
+import {
+  MasterForm,
+  buttonClass,
+  primaryButtonClass,
+  rowActionButtonClass,
+  rowDangerButtonClass,
+  inputClass,
+} from "./master-form";
 
 type Action = {
   kind: "edit" | "create" | "status" | "delete" | "password" | "admin";
@@ -75,24 +82,28 @@ function renderCell(
       const email = String(row.email ?? "—");
       const nik = String(row.employeeNumber ?? "—");
       return (
-        <div className="flex items-start gap-3 min-w-56">
-          <div className="w-9 h-9 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 border border-primary/15">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 border border-primary/15">
             {initials(name) || "U"}
           </div>
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-semibold text-text text-sm">{name}</span>
+              <span className="font-semibold text-text text-sm leading-snug">
+                {name}
+              </span>
               {meta.ownUser && (
                 <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
                   Akun Anda
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-text-muted">
               <span className="font-mono text-[11px] bg-panel px-1.5 py-0.5 rounded border border-border text-text">
                 NIK {nik}
               </span>
-              <span className="truncate">{email}</span>
+              <span className="truncate max-w-48" title={email}>
+                {email}
+              </span>
             </div>
           </div>
         </div>
@@ -106,16 +117,18 @@ function renderCell(
       const isUnitHead = Boolean(valueAt(row, "position.isUnitHead"));
       const isOfficial = Boolean(valueAt(row, "position.isOfficial"));
       return (
-        <div className="space-y-1 min-w-48">
+        <div className="space-y-1 min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium text-text text-xs">{posName}</span>
+            <span className="font-medium text-text text-xs leading-snug">
+              {posName}
+            </span>
             {levelCode && (
               <span className="rounded bg-panel px-1.5 py-0.5 text-[10px] font-mono text-text-muted border border-border">
                 {levelCode}
               </span>
             )}
           </div>
-          <p className="text-xs text-text-muted">{unitName}</p>
+          <p className="text-xs text-text-muted leading-snug">{unitName}</p>
           {(isUnitHead || isOfficial) && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {isUnitHead && (
@@ -147,7 +160,7 @@ function renderCell(
             : "bg-panel text-text-muted border-border";
       return (
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tone}`}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${tone}`}
         >
           {roleName}
         </span>
@@ -161,13 +174,15 @@ function renderCell(
       const name = String(row.name ?? "—");
       const city = String(row.city ?? "");
       return (
-        <div className="flex items-start gap-3 min-w-56">
-          <div className="px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary font-mono font-bold text-xs border border-primary/20 shrink-0 mt-0.5">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="px-2 py-1 rounded-lg bg-primary/10 text-primary font-mono font-bold text-xs border border-primary/20 shrink-0 mt-0.5">
             {code}
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5 min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-semibold text-text text-sm">{name}</span>
+              <span className="font-semibold text-text text-sm leading-snug">
+                {name}
+              </span>
               {meta.ownCompany && (
                 <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
                   Perusahaan Aktif Anda
@@ -186,13 +201,13 @@ function renderCell(
       const format = String(row.letterNumberFormat ?? "—");
       const watermark = row.watermarkText ? String(row.watermarkText) : null;
       return (
-        <div className="space-y-1.5 min-w-52">
-          <div className="inline-flex items-center gap-1.5 rounded-md bg-panel px-2 py-1 text-xs font-mono text-text border border-border">
-            <Hash size={12} className="text-primary shrink-0" />
+        <div className="space-y-1 min-w-0">
+          <div className="inline-flex items-center gap-1.5 rounded-md bg-panel px-2 py-0.5 text-[11px] font-mono text-text border border-border break-all">
+            <Hash size={11} className="text-primary shrink-0" />
             <span>{format}</span>
           </div>
           <div className="flex items-center gap-1.5 text-xs">
-            <Stamp size={12} className="text-text-muted shrink-0" />
+            <Stamp size={11} className="text-text-muted shrink-0" />
             {watermark ? (
               <span className="text-text font-medium">
                 Watermark: <strong className="font-mono">{watermark}</strong>
@@ -207,19 +222,19 @@ function renderCell(
 
     if (columnKey === "activeUnits") {
       return (
-        <div className="flex flex-wrap gap-1.5 min-w-44">
-          <span className="inline-flex items-center gap-1 rounded-md bg-panel px-2 py-1 text-xs text-text-muted border border-border">
-            <Building2 size={12} className="text-primary" />
+        <div className="flex flex-wrap gap-1 min-w-0">
+          <span className="inline-flex items-center gap-1 rounded-md bg-panel px-2 py-0.5 text-xs text-text-muted border border-border whitespace-nowrap">
+            <Building2 size={11} className="text-primary" />
             <strong className="text-text">{Number(row.activeUnits ?? 0)}</strong>{" "}
             unit
           </span>
-          <span className="inline-flex items-center gap-1 rounded-md bg-panel px-2 py-1 text-xs text-text-muted border border-border">
-            <Users size={12} className="text-primary" />
+          <span className="inline-flex items-center gap-1 rounded-md bg-panel px-2 py-0.5 text-xs text-text-muted border border-border whitespace-nowrap">
+            <Users size={11} className="text-primary" />
             <strong className="text-text">{Number(row.activeUsers ?? 0)}</strong>{" "}
             user
           </span>
-          <span className="inline-flex items-center gap-1 rounded-md bg-panel px-2 py-1 text-xs text-text-muted border border-border">
-            <FileText size={12} className="text-primary" />
+          <span className="inline-flex items-center gap-1 rounded-md bg-panel px-2 py-0.5 text-xs text-text-muted border border-border whitespace-nowrap">
+            <FileText size={11} className="text-primary" />
             <strong className="text-text">{Number(row.letters ?? 0)}</strong>{" "}
             surat
           </span>
@@ -230,18 +245,23 @@ function renderCell(
 
   if (resource.key === "units") {
     if (columnKey === "name") {
+      const code = String(row.code ?? "—");
+      const shortCode = code.length > 14 ? `${code.slice(0, 8)}…` : code;
       return (
-        <div className="space-y-1 min-w-52">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-text text-sm">
+        <div className="space-y-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-semibold text-text text-sm leading-snug">
               {String(row.name ?? "—")}
             </span>
-            <span className="rounded-md bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+            <span className="rounded-md bg-primary/10 text-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
               {String(row.unitType ?? "UNIT")}
             </span>
           </div>
-          <p className="text-[11px] font-mono text-text-muted">
-            Kode: {String(row.code ?? "—")}
+          <p
+            className="text-[11px] font-mono text-text-muted truncate max-w-44"
+            title={`Kode Unit: ${code}`}
+          >
+            Kode: {shortCode}
           </p>
         </div>
       );
@@ -249,11 +269,11 @@ function renderCell(
 
     if (columnKey === "parentName") {
       return row.parentName ? (
-        <span className="text-xs font-medium text-text">
+        <span className="text-xs font-medium text-text leading-snug">
           {String(row.parentName)}
         </span>
       ) : (
-        <span className="inline-flex rounded-md bg-panel px-2 py-0.5 text-[11px] text-text-muted border border-border">
+        <span className="inline-flex rounded-md bg-panel px-2 py-0.5 text-[11px] text-text-muted border border-border whitespace-nowrap">
           Unit Puncak (Utama)
         </span>
       );
@@ -263,17 +283,17 @@ function renderCell(
       if (!row.headName && !row.headPosition) {
         return (
           <span className="text-xs text-text-muted italic">
-            Belum ada jabatan pimpinan
+            Belum ada pimpinan
           </span>
         );
       }
       return (
-        <div className="space-y-0.5 min-w-44">
-          <p className="text-xs font-semibold text-text">
+        <div className="space-y-0.5 min-w-0">
+          <p className="text-xs font-semibold text-text leading-snug">
             {row.headName ? String(row.headName) : "Belum ada pejabat aktif"}
           </p>
           {Boolean(row.headPosition) && (
-            <p className="text-[11px] text-text-muted">
+            <p className="text-[11px] text-text-muted leading-snug">
               {String(row.headPosition)}
             </p>
           )}
@@ -283,14 +303,14 @@ function renderCell(
 
     if (columnKey === "activeUsers") {
       return (
-        <div className="flex flex-wrap gap-1.5">
-          <span className="rounded-md bg-panel px-2 py-1 text-xs text-text-muted border border-border">
+        <div className="flex flex-wrap gap-1 min-w-0">
+          <span className="rounded-md bg-panel px-2 py-0.5 text-xs text-text-muted border border-border whitespace-nowrap">
             <strong className="text-text">
               {Number(row.activePositions ?? 0)}
             </strong>{" "}
             jabatan
           </span>
-          <span className="rounded-md bg-panel px-2 py-1 text-xs text-text-muted border border-border">
+          <span className="rounded-md bg-panel px-2 py-0.5 text-xs text-text-muted border border-border whitespace-nowrap">
             <strong className="text-text">{Number(row.activeUsers ?? 0)}</strong>{" "}
             pegawai
           </span>
@@ -304,11 +324,11 @@ function renderCell(
       const isUnitHead = Boolean(row.isUnitHead);
       const isOfficial = Boolean(row.isOfficial);
       return (
-        <div className="space-y-1.5 min-w-52">
-          <p className="font-semibold text-text text-sm">
+        <div className="space-y-1 min-w-0">
+          <p className="font-semibold text-text text-sm leading-snug">
             {String(row.name ?? "—")}
           </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {isUnitHead && (
               <span className="inline-flex items-center gap-1 rounded-full bg-status-warn-bg text-status-warn-text px-2 py-0.5 text-[10px] font-semibold">
                 <Crown size={10} />
@@ -332,7 +352,7 @@ function renderCell(
 
     if (columnKey === "unitName") {
       return (
-        <span className="text-xs font-medium text-text">
+        <span className="text-xs font-medium text-text leading-snug">
           {String(row.unitName ?? "—")}
         </span>
       );
@@ -363,7 +383,7 @@ function renderCell(
         );
       }
       return (
-        <div className="flex flex-wrap gap-1 max-w-xs">
+        <div className="flex flex-wrap gap-1 max-w-56">
           {holders.slice(0, 3).map((holder) => (
             <span
               key={holder}
@@ -620,7 +640,7 @@ export function ResourcePanel({
         {resource.fields.length > 0 && (
           <button
             type="button"
-            className={`${buttonClass} bg-primary text-white hover:bg-primary/90 border-primary shadow-2xs`}
+            className={primaryButtonClass}
             onClick={() => {
               setNotice("");
               setAction({ kind: "create" });
@@ -850,12 +870,12 @@ export function ResourcePanel({
             <thead className="bg-panel/70 text-[11px] uppercase tracking-wider text-text-muted border-b border-border">
               <tr>
                 {resource.columns.map((column) => (
-                  <th key={column.key} className="px-4 py-3 font-semibold">
+                  <th key={column.key} className="px-3.5 py-3 font-semibold">
                     {column.label}
                   </th>
                 ))}
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 font-semibold text-right">Tindakan</th>
+                <th className="px-3.5 py-3 font-semibold">Status</th>
+                <th className="px-3.5 py-3 font-semibold text-right">Tindakan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -878,7 +898,7 @@ export function ResourcePanel({
                     }`}
                   >
                     {resource.columns.map((column) => (
-                      <td key={column.key} className="px-4 py-3.5 align-top">
+                      <td key={column.key} className="px-3.5 py-3 align-top">
                         {renderCell(resource, row, column.key, {
                           ownUser,
                           ownCompany,
@@ -888,7 +908,7 @@ export function ResourcePanel({
                       </td>
                     ))}
 
-                    <td className="px-4 py-3.5 align-top whitespace-nowrap">
+                    <td className="px-3.5 py-3 align-top whitespace-nowrap">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                           row.isActive
@@ -905,14 +925,14 @@ export function ResourcePanel({
                       </span>
                     </td>
 
-                    <td className="px-4 py-3.5 align-top">
-                      <div className="flex flex-wrap justify-end gap-1.5 min-w-40">
+                    <td className="px-3.5 py-3 align-top">
+                      <div className="flex flex-wrap justify-end gap-1.5">
                         {resource.fields.length > 0 &&
                           !protectedUser &&
                           !readOnly && (
                             <button
                               type="button"
-                              className={buttonClass}
+                              className={rowActionButtonClass}
                               onClick={() => setAction({ kind: "edit", row })}
                             >
                               <Pencil size={13} />
@@ -924,7 +944,7 @@ export function ResourcePanel({
                           <>
                             <button
                               type="button"
-                              className={buttonClass}
+                              className={rowActionButtonClass}
                               disabled={ownUser || ownCompany || protectedUser}
                               title={
                                 ownUser || ownCompany
@@ -938,7 +958,7 @@ export function ResourcePanel({
                             </button>
                             <button
                               type="button"
-                              className={`${buttonClass} hover:border-status-danger-text/40 hover:text-status-danger-text`}
+                              className={rowDangerButtonClass}
                               disabled={ownUser || ownCompany || protectedUser}
                               title={
                                 ownUser || ownCompany
@@ -960,7 +980,7 @@ export function ResourcePanel({
                         {resource.key === "users" && !protectedUser && (
                           <button
                             type="button"
-                            className={buttonClass}
+                            className={rowActionButtonClass}
                             onClick={() => setAction({ kind: "password", row })}
                           >
                             <KeyRound size={13} />
@@ -971,7 +991,7 @@ export function ResourcePanel({
                         {resource.key === "companies" && (
                           <button
                             type="button"
-                            className={buttonClass}
+                            className={rowActionButtonClass}
                             onClick={() => setAction({ kind: "admin", row })}
                           >
                             <UserPlus size={13} />
