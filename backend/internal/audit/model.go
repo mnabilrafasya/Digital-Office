@@ -19,13 +19,14 @@ const SystemActor = "Sistem"
 
 // Jenis data yang dicatat (kolom entity_type).
 const (
-	EntityLetter   = "LETTER"
-	EntityTemplate = "TEMPLATE" // template surat
-	EntityAudit    = "AUDIT"    // tindakan atas audit log itu sendiri, misalnya ekspor
-	EntityCompany  = "COMPANY"  // perusahaan (entity_id 0; kodenya di snapshot)
-	EntityUnit     = "UNIT"     // unit kerja
-	EntityPosition = "POSITION" // jabatan
-	EntityUser     = "USER"     // user
+	EntityLetter     = "LETTER"
+	EntityTemplate   = "TEMPLATE"   // template surat
+	EntityAudit      = "AUDIT"      // tindakan atas audit log itu sendiri, misalnya ekspor
+	EntityCompany    = "COMPANY"    // perusahaan (entity_id 0; kodenya di snapshot)
+	EntityUnit       = "UNIT"       // unit kerja
+	EntityPosition   = "POSITION"   // jabatan
+	EntityUser       = "USER"       // user
+	EntityDelegation = "DELEGATION" // jadwal delegasi tugas
 )
 
 // Aksi yang dicatat (kolom action). Transisi alur surat memakai nama aksinya sendiri
@@ -71,4 +72,11 @@ const (
 	ActionUserStatus      = "USER_STATUS"
 	ActionUserDelete      = "USER_DELETE"
 	ActionUserPassword    = "USER_PASSWORD_RESET"
+)
+
+// Aksi delegasi tugas (kolom action). Snapshot berisi jadwal sebelum dan/atau sesudahnya.
+const (
+	ActionDelegationCreate = "DELEGATION_CREATE"
+	ActionDelegationUpdate = "DELEGATION_UPDATE"
+	ActionDelegationDelete = "DELEGATION_DELETE"
 )

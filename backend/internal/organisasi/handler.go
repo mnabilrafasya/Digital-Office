@@ -27,7 +27,7 @@ func (h *Handler) Units(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, items)
 }
 
-// Candidates menangani GET /api/v1/users/candidates?type=REVIEWER|APPROVER&q=...&limit=...
+// Candidates menangani GET /api/v1/users/candidates?type=REVIEWER|APPROVER|DELEGATE&q=...&limit=...
 func (h *Handler) Candidates(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	items, err := h.svc.Candidates(r.Context(), auth.CurrentUserFrom(r.Context()), CandidateQuery{

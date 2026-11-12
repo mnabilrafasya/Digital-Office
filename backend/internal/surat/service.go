@@ -34,6 +34,10 @@ type Store interface {
 	Participants(ctx context.Context, letterID int64) (reviewers, approvers []int64, err error)
 	ApplyTransition(ctx context.Context, letterID, actorID int64, d Decision, note *string) error
 	RecordRead(ctx context.Context, letterID, userID int64, role string) error
+	// ActiveDelegation: delegasi userID yang berlaku pada day (YYYY-MM-DD), nil bila tidak ada.
+	ActiveDelegation(ctx context.Context, companyCode string, userID int64, day string) (*Delegation, error)
+	// HasActed: userID pernah melakukan aksi alur atau menyimpan naskah pada surat (mis. sebagai pengganti).
+	HasActed(ctx context.Context, letterID, userID int64) (bool, error)
 
 	// Naskah
 	AddVersion(ctx context.Context, v NewVersion) (version int, rowVersion []byte, err error)
@@ -74,6 +78,8 @@ type InboxStore interface {
 	// mendisposisikannya ke setiap penerima.
 	DeliverIncoming(ctx context.Context, letterID, fromUserID int64, fromName, fromPosition string, recipients []int64, note *string) error
 	HasItem(ctx context.Context, letterID, userID int64) (bool, error)
+	// CopyToDelegates menembuskan surat ke pengganti para userIDs yang sedang mendelegasikan pada day.
+	CopyToDelegates(ctx context.Context, letterID int64, userIDs []int64, day string) error
 }
 
 // Lookups memeriksa data acuan yang dirujuk surat (dipenuhi repository masterdata).

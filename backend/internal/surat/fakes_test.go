@@ -26,8 +26,11 @@ type fakeLetterStore struct {
 	participants map[int64]bool // untuk IsParticipant
 	reviewers    []int64
 	approvers    []int64
-	numberFormat string // format nomor perusahaan yang dikembalikan NextNumber
-	numberPeriod int    // periode yang diminta NextNumber
+	numberFormat string                // format nomor perusahaan yang dikembalikan NextNumber
+	numberPeriod int                   // periode yang diminta NextNumber
+	delegations  map[int64]*Delegation // delegasi yang sedang berlaku per user
+	acted        map[int64]bool        // user yang pernah bertindak (HasActed)
+	appliedActor int64                 // pelaku transisi terakhir
 	draft        *LetterDraft
 	detail       *LetterDetail
 	list         []LetterListItem
@@ -134,14 +137,22 @@ func (f *fakeLetterStore) Participants(context.Context, int64) ([]int64, []int64
 	return f.reviewers, f.approvers, nil
 }
 
-func (f *fakeLetterStore) ApplyTransition(_ context.Context, _, _ int64, d Decision, note *string) error {
-	f.applied, f.appliedNote = &d, note
+func (f *fakeLetterStore) ApplyTransition(_ context.Context, _, actorID int64, d Decision, note *string) error {
+	f.applied, f.appliedNote, f.appliedActor = &d, note, actorID
 	return nil
 }
 
 func (f *fakeLetterStore) RecordRead(context.Context, int64, int64, string) error {
 	f.reads++
 	return nil
+}
+
+func (f *fakeLetterStore) ActiveDelegation(_ context.Context, _ string, userID int64, _ string) (*Delegation, error) {
+	return f.delegations[userID], nil
+}
+
+func (f *fakeLetterStore) HasActed(_ context.Context, _, userID int64) (bool, error) {
+	return f.acted[userID], nil
 }
 
 func (f *fakeLetterStore) FindDetail(context.Context, string, string) (*LetterDetail, error) {
@@ -354,6 +365,12 @@ type fakeInbox struct {
 	to, cc   []int64
 	holders  map[int64]bool
 	incoming *fakeIncoming
+	copied   []int64 // penerima yang diminta ditembuskan ke penggantinya
+}
+
+func (f *fakeInbox) CopyToDelegates(_ context.Context, _ int64, userIDs []int64, _ string) error {
+	f.copied = append(f.copied, userIDs...)
+	return nil
 }
 
 // fakeIncoming adalah surat masuk eksternal yang dikirim ke inbox.

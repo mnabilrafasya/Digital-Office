@@ -38,6 +38,31 @@ FROM OPENJSON(@items) WITH (user_id BIGINT '$.user', recipient_type VARCHAR(10) 
 	return nil
 }
 
+// CopyToDelegates menembuskan surat (item DIRECT CC, UNREAD) ke pengganti setiap userIDs yang
+// sedang mendelegasikan tugasnya pada day (YYYY-MM-DD, tabel delegations), kecuali pengganti yang
+// sudah punya item untuk surat itu atau sudah tidak aktif. Dipanggil setelah surat masuk ke inbox
+// userIDs, di dalam transaksi yang sama.
+func (r *Repository) CopyToDelegates(ctx context.Context, letterID int64, userIDs []int64, day string) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	raw, _ := json.Marshal(userIDs) // []int64 selalu berhasil di-marshal
+	const q = `
+INSERT INTO inbox_items (letter_id, user_id, source_type, recipient_type, status)
+SELECT DISTINCT @letterId, dl.delegate_id, 'DIRECT', 'CC', 'UNREAD'
+FROM OPENJSON(@users) WITH (user_id BIGINT '$') j
+JOIN delegations dl ON dl.user_id = j.user_id
+JOIN users g        ON g.id = dl.delegate_id
+WHERE dl.deleted_at IS NULL AND @day BETWEEN dl.start_date AND dl.end_date
+  AND g.is_active = 1 AND g.deleted_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM inbox_items x WHERE x.letter_id = @letterId AND x.user_id = dl.delegate_id)`
+	if _, err := r.q.ExecContext(ctx, q, sql.Named("letterId", letterID), sql.Named("users", string(raw)),
+		sql.Named("day", day)); err != nil {
+		return fmt.Errorf("menembuskan surat ke pengganti: %w", err)
+	}
+	return nil
+}
+
 // DeliverIncoming memasukkan surat masuk eksternal ke inbox pengunggahnya (DIRECT, langsung
 // DISPOSED: ia mencatat sekaligus mendisposisikan) lalu mendisposisikannya ke setiap penerima
 // (FORWARD, UNREAD). Dipanggil alur surat di dalam transaksi pencatatan surat masuk.

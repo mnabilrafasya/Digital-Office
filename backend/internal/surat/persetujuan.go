@@ -68,11 +68,15 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 			Status: l.Status, DrafterID: l.DrafterID, AssigneeID: l.AssigneeID,
 			Reviewers: reviewers, Approvers: approvers, External: l.TypeCode == masterdata.TypeExternalOut,
 		}
-		if !involves(l.DrafterID, approvers, reviewers, user.ID) {
+		actorID, onBehalf, err := s.actingFor(ctx, letters, user, l)
+		if err != nil {
+			return err
+		}
+		if !onBehalf && !involves(l.DrafterID, approvers, reviewers, user.ID) {
 			return ErrLetterNotFound
 		}
 
-		dec, err := Decide(state, action, user.ID)
+		dec, err := Decide(state, action, actorID)
 		switch {
 		case errors.Is(err, ErrInvalidState):
 			return &apperr.InvalidStateError{Message: "Surat sudah diproses atau bukan giliran Anda. Muat ulang halaman untuk melihat status terbaru."}
@@ -81,8 +85,8 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 		case err != nil:
 			return err
 		}
-		if perm := rolePermission(dec.ActorRole); perm != "" && !user.HasPermission(perm) {
-			return apperr.ErrForbidden
+		if err := s.checkRolePermission(ctx, user, actorID, onBehalf, dec.ActorRole); err != nil {
+			return err
 		}
 		if action == Submit {
 			if err := s.checkSubmittable(ctx, letters, user.Company.Code, l.ID); err != nil {
@@ -129,7 +133,7 @@ func (s *Service) transition(ctx context.Context, user *auth.CurrentUser, action
 			ActorID:     user.ID,
 			ActorName:   user.Name,
 			IPAddress:   in.ClientIP,
-			Snapshot:    transitionSnapshot{From: dec.From, To: dec.To, AssigneeID: dec.AssigneeID, LetterNumber: number},
+			Snapshot:    transitionSnapshot{From: dec.From, To: dec.To, AssigneeID: dec.AssigneeID, LetterNumber: number, OnBehalfOfID: onBehalfOf(actorID, onBehalf)},
 		})
 	})
 	if err != nil {
@@ -144,6 +148,15 @@ type transitionSnapshot struct {
 	To           string  `json:"to"`
 	AssigneeID   int64   `json:"assigneeId,omitempty"`
 	LetterNumber *string `json:"letterNumber"`
+	OnBehalfOfID int64   `json:"onBehalfOfId,omitempty"` // pelaku adalah pengganti delegasi user ini
+}
+
+// onBehalfOf adalah ID orang yang diwakili pelaku (0 bila pelaku bertindak untuk dirinya sendiri).
+func onBehalfOf(actorID int64, onBehalf bool) int64 {
+	if onBehalf {
+		return actorID
+	}
+	return 0
 }
 
 // checkSubmittable memastikan surat siap dikirim: isi lengkap, semua rujukan masih valid

@@ -55,7 +55,7 @@ SELECT l.id, CONVERT(char(36), l.uuid), l.row_ver, l.status,
        su.id, su.code, COALESCE(l.sender_unit_name, su.name),
        d.id, d.name, dp.name,
        a.id, a.name, ap.name, l.external_info,
-       sb.id, sb.name, sbp.name, sb.employee_number,
+       sb.id, sb.name, sbp.name, sb.employee_number, ob.id, ob.name, obp.name,
        (SELECT TOP 1 ra.note FROM letter_actions ra
         WHERE ra.letter_id = l.id AND ra.action = 'RETURN'
         ORDER BY ra.id DESC),
@@ -74,6 +74,17 @@ LEFT JOIN users a           ON a.id = l.current_assignee_id
 LEFT JOIN positions ap      ON ap.id = a.position_id
 LEFT JOIN users sb          ON sb.id = l.signed_by_id
 LEFT JOIN positions sbp     ON sbp.id = sb.position_id
+-- Penerima tugas sebelum aksi SIGN (target aksi alur sebelumnya); bila bukan penandatangan, surat
+-- disetujui pengganti delegasi atas nama orang itu
+OUTER APPLY (SELECT TOP 1 pv.target_user_id AS owner_id
+             FROM letter_actions sa
+             CROSS APPLY (SELECT TOP 1 p.target_user_id FROM letter_actions p
+                          WHERE p.letter_id = sa.letter_id AND p.id < sa.id AND p.action NOT IN ('READ', 'SAVE')
+                          ORDER BY p.id DESC) pv
+             WHERE sa.letter_id = l.id AND sa.action = 'SIGN'
+             ORDER BY sa.id DESC) sg
+LEFT JOIN users ob          ON ob.id = sg.owner_id AND ob.id <> l.signed_by_id
+LEFT JOIN positions obp     ON obp.id = ob.position_id
 WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 
 	var (
@@ -82,8 +93,9 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		templateID, assigneeID           sql.NullInt64
 		templateName                     sql.NullString
 		assigneeName, assigneePos        sql.NullString
-		signerID                         sql.NullInt64
+		signerID, ownerID                sql.NullInt64
 		signerName, signerPos, signerNIK sql.NullString
+		ownerName, ownerPos              sql.NullString
 		attachments, externalInfo        sql.NullString
 	)
 	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode)).Scan(
@@ -95,7 +107,7 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		&d.SenderUnit.ID, &d.SenderUnit.Code, &d.SenderUnit.Name,
 		&d.Drafter.ID, &d.Drafter.Name, &d.Drafter.PositionName,
 		&assigneeID, &assigneeName, &assigneePos, &externalInfo,
-		&signerID, &signerName, &signerPos, &signerNIK, &d.LastReturnNote,
+		&signerID, &signerName, &signerPos, &signerNIK, &ownerID, &ownerName, &ownerPos, &d.LastReturnNote,
 		&d.CurrentVersion, &d.CreatedAt, &d.UpdatedAt, &attachments, &d.WatermarkText,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -127,6 +139,9 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 			ApprovedAt:     *d.LetterDate,
 			ApprovedBy:     PersonRef{ID: signerID.Int64, Name: signerName.String, PositionName: signerPos.String},
 			EmployeeNumber: signerNIK.String,
+		}
+		if ownerID.Valid {
+			d.Approval.OnBehalfOf = &PersonRef{ID: ownerID.Int64, Name: ownerName.String, PositionName: ownerPos.String}
 		}
 		if d.Direction == masterdata.DirectionInternal { // surat eksternal ditandatangani basah, tanpa QR
 			d.Approval.QRURL = "/api/v1/letters/" + d.ID + "/qr"

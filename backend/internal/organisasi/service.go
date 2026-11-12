@@ -15,6 +15,7 @@ import (
 const (
 	CandidateReviewer = "REVIEWER"
 	CandidateApprover = "APPROVER"
+	CandidateDelegate = "DELEGATE" // calon pengganti delegasi: semua user aktif
 )
 
 const (
@@ -77,8 +78,9 @@ func (s *Service) Candidates(ctx context.Context, user *auth.CurrentUser, cq Can
 		f.PermissionCode = auth.LetterReview
 	case CandidateApprover:
 		f.PermissionCode = auth.LetterApprove
+	case CandidateDelegate: // tanpa syarat permission (pengganti memakai kewenangan yang diwakili)
 	default:
-		return nil, apperr.Invalid("Parameter type wajib REVIEWER atau APPROVER")
+		return nil, apperr.Invalid("Parameter type wajib REVIEWER, APPROVER, atau DELEGATE")
 	}
 
 	f.Limit = defaultCandidateLimit

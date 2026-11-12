@@ -11,6 +11,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/delegasi"
 	"office.backend/internal/inbox"
 	"office.backend/internal/masterdata"
 	"office.backend/internal/organisasi"
@@ -118,8 +119,11 @@ func run() error {
 			ReadTimeout: cfg.UploadReadTimeout,
 			Timeout:     cfg.UploadTimeout,
 		}),
-		Inbox:             inbox.NewHandler(inboxService),
-		Audit:             audit.NewHandler(audit.NewService(conn, cfg.Location)),
+		Inbox: inbox.NewHandler(inboxService),
+		Audit: audit.NewHandler(audit.NewService(conn, cfg.Location)),
+		Delegasi: delegasi.NewHandler(delegasi.NewService(db.NewRunner(conn, deadlockAttempts), conn,
+			func(q db.DBTX) delegasi.Store { return delegasi.NewRepository(q) },
+			func(q db.DBTX) delegasi.AuditStore { return audit.NewRepository(q) }, cfg.Location)),
 		Tokens:            tokens,
 		Users:             users,
 		CORSOrigins:       cfg.CORSAllowedOrigins,

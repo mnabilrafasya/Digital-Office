@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"office.backend/internal/audit"
@@ -191,6 +192,15 @@ func (s *Service) forward(ctx context.Context, user *auth.CurrentUser, itemID, k
 			if err := add(TargetUnit, unitID, heads[unitID]); err != nil {
 				return err
 			}
+		}
+		// Penerima yang sedang mendelegasikan tugasnya: penggantinya mendapat tembusan
+		recipients := make([]int64, 0, len(received))
+		for id := range received {
+			recipients = append(recipients, id)
+		}
+		slices.Sort(recipients)
+		if err := items.CopyToDelegates(ctx, it.LetterID, recipients, time.Now().In(s.loc).Format(time.DateOnly)); err != nil {
+			return err
 		}
 
 		status := StatusDisposed

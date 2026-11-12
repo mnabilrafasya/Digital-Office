@@ -1,0 +1,5 @@
+-- 000021_create_delegations.down.sql
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+DROP TABLE delegations;
+COMMIT TRANSACTION;
