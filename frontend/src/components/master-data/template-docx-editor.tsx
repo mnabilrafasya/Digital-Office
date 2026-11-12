@@ -15,7 +15,6 @@ import {
   Check,
   Loader2,
   AlertCircle,
-  Sparkles,
 } from "lucide-react";
 
 import "devextreme/dist/css/dx.light.css";
@@ -271,11 +270,23 @@ export function TemplateDocxEditorModal({
     if (mode === "edit" && row?.id) {
       const id = encodeURIComponent(String(row.id));
       const tplName = String(row.name ?? "Template");
+      const rowTypeCode = String(
+        (row.letterType as MasterRow | null)?.code ?? "",
+      ).toLowerCase();
+      const matchedStarter =
+        LETTER_TEMPLATE_LIST.find(
+          (item) => item.name.trim().toLowerCase() === tplName.trim().toLowerCase(),
+        ) ??
+        (rowTypeCode
+          ? LETTER_TEMPLATE_LIST.find((item) =>
+              item.letterTypeKeywords.some((kw) => rowTypeCode.includes(kw)),
+            )
+          : undefined);
       loadFromUrl(
         `/api/v1/templates/${id}/file`,
         `${tplName.replace(/\s+/g, "_")}.docx`,
         `Berkas server: ${tplName}.docx`,
-        "/templates/dokumen-kosong.docx",
+        matchedStarter?.fallbackFileUrl ?? "/templates/dokumen-kosong.docx",
       );
     } else {
       loadFromUrl(
@@ -284,7 +295,7 @@ export function TemplateDocxEditorModal({
         "Dokumen Kosong A4 (.docx)",
       );
     }
-  }, [isReady, mode, row?.id, row?.name, loadFromUrl]);
+  }, [isReady, mode, row?.id, row?.name, row?.letterType, loadFromUrl]);
 
   // Sesuaikan ukuran saat toggle fullscreen
   useEffect(() => {
@@ -610,6 +621,12 @@ export function TemplateDocxEditorModal({
                       (item) => item.id === tplId,
                     );
                     if (starter) {
+                      if (mode === "create" && !name.trim() && starter.id !== "tmpl-kosong") {
+                        setName(starter.name);
+                        if (!description.trim() && starter.description) {
+                          setDescription(starter.description);
+                        }
+                      }
                       setIsLoadingDoc(true);
                       loadFromUrl(
                         starter.fileUrl,
@@ -663,7 +680,7 @@ export function TemplateDocxEditorModal({
             <div className="px-3.5 py-2 bg-panel/45 border-b border-border flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-muted shrink-0 mr-1">
                 <Hash size={12} className="text-primary" />
-                Sisipkan Penanda Sistem:
+                Sisipkan 4 Penanda Sistem Otomatis:
               </span>
               {SYSTEM_PLACEHOLDERS.map((item) => {
                 const isCopied = copiedCode === item.code;
@@ -688,6 +705,9 @@ export function TemplateDocxEditorModal({
                   </button>
                 );
               })}
+              <span className="text-[11px] text-text-muted ml-2 shrink-0">
+                (Wajib memuat <code className="font-mono text-text">###*QRCode*###</code> untuk surat internal)
+              </span>
             </div>
 
             {/* DevExpress RichEdit Host Canvas */}

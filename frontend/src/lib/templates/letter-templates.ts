@@ -18,14 +18,15 @@ export interface SystemPlaceholderDefinition {
 }
 
 /**
- * Daftar 12 penanda sistem (`###*Nama*###`) yang dikenali backend (`internal/surat/penanda.go`).
+ * Daftar 4 penanda sistem (`###*Nama*###`) yang diisi otomatis oleh backend (`internal/surat/penanda.go`).
  * Backend juga menerima bentuk tanpa bintang (`###Nama###`) dan tidak peka huruf besar/kecil.
+ * Penanda lainnya (Perihal, Kepada, NamaPenandatangan, dsb.) ditulis oleh drafter di editor.
  */
 export const SYSTEM_PLACEHOLDERS: SystemPlaceholderDefinition[] = [
   {
     code: "###*NoSurat*###",
     label: "Nomor Surat",
-    description: "Nomor surat resmi (diisi otomatis saat disetujui Approver)",
+    description: "Nomor surat resmi (diisi otomatis saat disetujui Approver terakhir)",
   },
   {
     code: "###*TglSurat*###",
@@ -33,55 +34,15 @@ export const SYSTEM_PLACEHOLDERS: SystemPlaceholderDefinition[] = [
     description: "Tanggal surat disetujui (contoh: 5 November 2026)",
   },
   {
-    code: "###*Perihal*###",
-    label: "Perihal",
-    description: "Perihal / judul surat dari metadata form",
-  },
-  {
     code: "###*Sifat*###",
     label: "Sifat Surat",
     description: "Sifat kerahasiaan surat (Biasa / Terbatas / Rahasia)",
   },
   {
-    code: "###*Lampiran*###",
-    label: "Jumlah Lampiran",
-    description: "Jumlah berkas lampiran (contoh: 2 (dua) berkas atau -)",
-  },
-  {
-    code: "###*Kepada*###",
-    label: "Tujuan (Kepada)",
-    description:
-      "Jabatan pemilik salinan (untuk penerima langsung) atau daftar penerima tujuan",
-  },
-  {
-    code: "###*Tembusan*###",
-    label: "Tembusan (CC)",
-    description: "Daftar penerima tembusan bernomor (atau kosong bila tanpa CC)",
-  },
-  {
-    code: "###*Dari*###",
-    label: "Unit Pengirim",
-    description: "Nama unit kerja pengirim surat",
-  },
-  {
-    code: "###*JabatanPenandatangan*###",
-    label: "Jabatan Penandatangan",
-    description: "Jabatan pejabat Approver yang menandatangani surat",
-  },
-  {
-    code: "###*NamaPenandatangan*###",
-    label: "Nama Penandatangan",
-    description: "Nama lengkap pejabat Approver penandatangan",
-  },
-  {
-    code: "###*NoBadge*###",
-    label: "NIK / Nomor Badge",
-    description: "Nomor induk karyawan (employeeNumber) Approver penandatangan",
-  },
-  {
     code: "###*QRCode*###",
     label: "QR Code Persetujuan",
-    description: "Posisi gambar QR pengesahan resmi berukuran 3 × 3 cm",
+    description:
+      "Posisi gambar QR pengesahan resmi berukuran 3 × 3 cm (wajib untuk surat internal, dikosongkan untuk surat eksternal)",
   },
 ];
 
@@ -92,6 +53,12 @@ export interface LetterTemplateContext {
   classificationCode?: string;
   classificationName?: string;
   recipients?: Array<{ name: string; position?: string }>;
+  ccRecipients?: Array<{ name: string }>;
+  externalRecipient?: {
+    name?: string;
+    address?: string;
+    attention?: string;
+  };
   approver?: { name: string; position?: string; employeeNumber?: string };
   drafter?: { name: string; position?: string };
   date?: string;
@@ -130,17 +97,17 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
     legacyId: "tmpl-dinas-standar",
     name: "Surat Dinas Resmi Standar",
     description:
-      "Format surat resmi dengan Kop PT Pupuk Sriwidjaja Palembang, Nomor ###*NoSurat*###, Yth, TTD & Tembusan.",
+      "Format surat resmi dengan kop PT Pupuk Sriwidjaja Palembang, nomor ###NoSurat###, Yth, tanda tangan, dan tembusan.",
     fileUrl: "/templates/surat-dinas-standar.docx",
     fallbackFileUrl: "/templates/surat-dinas-standar.docx",
-    letterTypeKeywords: ["surat", "antar", "keluar", "standar", "korporat"],
+    letterTypeKeywords: ["dinas", "antar", "standar", "korporat"],
   },
   {
     id: "tmpl-nota-dinas",
     legacyId: "tmpl-nota-dinas",
     name: "Nota Dinas Internal",
     description:
-      "Format korespondensi internal (Yth, Dari, Tanggal, Perihal, Pembahasan, TTD Elektronik).",
+      "Format korespondensi internal (Yth, Dari, Tanggal, Perihal, Pembahasan, tanda tangan elektronik).",
     fileUrl: "/templates/nota-dinas.docx",
     fallbackFileUrl: "/templates/nota-dinas.docx",
     letterTypeKeywords: ["nota", "dinas"],
@@ -150,7 +117,7 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
     legacyId: "tmpl-undangan",
     name: "Surat Undangan Rapat",
     description:
-      "Format undangan kegiatan/rapat koordinasi lengkap dengan tabel Hari, Waktu, Tempat, Agenda.",
+      "Format undangan kegiatan atau rapat koordinasi dengan tabel hari, waktu, tempat, dan agenda.",
     fileUrl: "/templates/undangan-rapat.docx",
     fallbackFileUrl: "/templates/undangan-rapat.docx",
     letterTypeKeywords: ["undangan", "rapat", "acara"],
@@ -160,10 +127,20 @@ export const LETTER_TEMPLATE_LIST: LetterTemplateDefinition[] = [
     legacyId: "tmpl-tugas",
     name: "Surat Perintah Tugas (SPT)",
     description:
-      "Format penugasan kedinasan resmi dengan tabel daftar pegawai dan pejabat penandatangan.",
+      "Format penugasan kedinasan dengan tabel daftar pegawai dan pejabat penandatangan.",
     fileUrl: "/templates/surat-tugas.docx",
     fallbackFileUrl: "/templates/surat-tugas.docx",
     letterTypeKeywords: ["tugas", "perintah", "spt"],
+  },
+  {
+    id: "tmpl-eksternal",
+    legacyId: "tmpl-eksternal",
+    name: "Surat Eksternal",
+    description:
+      "Format surat keluar kepada perusahaan atau instansi di luar perusahaan.",
+    fileUrl: "/templates/surat-external.docx",
+    fallbackFileUrl: "/templates/surat-external.docx",
+    letterTypeKeywords: ["eksternal", "external", "surat_eksternal"],
   },
   {
     id: "tmpl-kosong",
@@ -230,6 +207,7 @@ function sortTemplatesForDisplay(
     "nota dinas internal",
     "surat undangan rapat",
     "surat perintah tugas (spt)",
+    "surat eksternal",
   ];
   return [...items].sort((a, b) => {
     const aLower = a.name.trim().toLowerCase();
@@ -444,6 +422,27 @@ export async function resolveTemplateDocxBlob(
     console.warn(`[Template] Gagal mengambil template "${tpl.name}" dari ${tpl.fileUrl}:`, err);
   }
 
+  // Coba file cadangan statis di `frontend/public/templates/*.docx` bila sesuai jenis template
+  if (tpl.fallbackFileUrl && tpl.fallbackFileUrl !== tpl.fileUrl) {
+    try {
+      const fallbackRes = await fetch(tpl.fallbackFileUrl, {
+        cache: "no-store",
+      });
+      if (fallbackRes.ok) {
+        const blob = await fallbackRes.blob();
+        return {
+          blob,
+          template: {
+            ...tpl,
+            fileUrl: tpl.fallbackFileUrl,
+          },
+        };
+      }
+    } catch {
+      // Lanjut ke dokumen kosong di bawah
+    }
+  }
+
   // Fallback otomatis jika berkas template tidak ada di MinIO (mis. terhapus):
   // langsung beralih ke Dokumen Kosong (Blank) agar editor naskah tetap bisa terbuka
   const blankTpl =
@@ -500,10 +499,10 @@ function replacePlaceholderInSubDoc(
 }
 
 /**
- * Menyinkronkan data form (Perihal, Penerima, Pejabat Penandatangan)
- * ke dalam placeholder statis (`[...]`) di naskah .docx yang sedang dimuat di DevExpress RichEdit.
- * Penanda sistem `###*Nama*###` / `###Nama###` sengaja TIDAK ditimpa agar tetap diisi
- * secara dinamis oleh backend (`penanda.go`) saat surat disetujui Approver & dibuatkan salinan per penerima.
+ * Menyinkronkan data form (Perihal, Penerima, Tembusan, Lampiran, Pejabat Penandatangan)
+ * ke dalam naskah .docx yang sedang dimuat di DevExpress RichEdit.
+ * Empat penanda sistem backend (`###*NoSurat*###`, `###*TglSurat*###`, `###*Sifat*###`, `###*QRCode*###`)
+ * sengaja TIDAK ditimpa agar tetap diisi secara dinamis oleh backend (`penanda.go`) saat surat disetujui Approver.
  */
 export function applyTemplateContextToEditor(
   editor: RichEdit | null | undefined,
@@ -523,6 +522,10 @@ export function applyTemplateContextToEditor(
     editor.beginUpdate();
     try {
       if (ctx.title?.trim()) {
+        replacePlaceholderInSubDoc(subDoc, "###*Perihal*###", ctx.title);
+        replacePlaceholderInSubDoc(subDoc, "###Perihal###", ctx.title);
+        replacePlaceholderInSubDoc(subDoc, "###*NamaRapat*###", ctx.title);
+        replacePlaceholderInSubDoc(subDoc, "###NamaRapat###", ctx.title);
         replacePlaceholderInSubDoc(subDoc, "[Perihal / Hal Surat]", ctx.title);
         replacePlaceholderInSubDoc(
           subDoc,
@@ -541,8 +544,23 @@ export function applyTemplateContextToEditor(
         );
       }
 
-      if (ctx.recipients && ctx.recipients.length > 0) {
+      if (ctx.externalRecipient?.name?.trim()) {
+        const extName = ctx.externalRecipient.name.trim();
+        const extAttention = ctx.externalRecipient.attention?.trim();
+        const extLabel = extAttention
+          ? `${extName} (u.p. ${extAttention})`
+          : extName;
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Nama perusahaan yang dituju",
+          extLabel
+        );
+        replacePlaceholderInSubDoc(subDoc, "###*Kepada*###", extLabel);
+        replacePlaceholderInSubDoc(subDoc, "###Kepada###", extLabel);
+      } else if (ctx.recipients && ctx.recipients.length > 0) {
         const recipientText = ctx.recipients.map((r) => r.name).join(", ");
+        replacePlaceholderInSubDoc(subDoc, "###*Kepada*###", recipientText);
+        replacePlaceholderInSubDoc(subDoc, "###Kepada###", recipientText);
         replacePlaceholderInSubDoc(
           subDoc,
           "Pimpinan Unit Kerja Terkait",
@@ -560,7 +578,43 @@ export function applyTemplateContextToEditor(
         );
       }
 
+      if (ctx.externalRecipient?.address?.trim()) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "Alamat Perusahaan yang dituju",
+          ctx.externalRecipient.address.trim()
+        );
+      }
+
+      if (ctx.ccRecipients && ctx.ccRecipients.length > 0) {
+        const ccText = ctx.ccRecipients.map((r) => r.name).join(", ");
+        replacePlaceholderInSubDoc(subDoc, "###*Tembusan*###", ccText);
+        replacePlaceholderInSubDoc(subDoc, "###Tembusan###", ccText);
+      }
+
+      if (ctx.attachmentsCount != null) {
+        const attText =
+          ctx.attachmentsCount > 0 ? `${ctx.attachmentsCount} Berkas` : "-";
+        replacePlaceholderInSubDoc(subDoc, "###*Lampiran*###", attText);
+        replacePlaceholderInSubDoc(subDoc, "###Lampiran###", attText);
+      }
+
       if (ctx.approver?.name) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "###*NamaPenandatangan*###",
+          ctx.approver.name
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "###NamaPenandatangan###",
+          ctx.approver.name
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "NamaPenandatangan",
+          ctx.approver.name
+        );
         replacePlaceholderInSubDoc(
           subDoc,
           "[Nama Pejabat Penandatangan]",
@@ -571,6 +625,21 @@ export function applyTemplateContextToEditor(
       if (ctx.approver?.position) {
         replacePlaceholderInSubDoc(
           subDoc,
+          "###*JabatanPenandatangan*###",
+          ctx.approver.position
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "###JabatanPenandatangan###",
+          ctx.approver.position
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "JabatanPenandatangan",
+          ctx.approver.position
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
           "[Jabatan Pejabat Penandatangan]",
           ctx.approver.position
         );
@@ -579,12 +648,28 @@ export function applyTemplateContextToEditor(
       if (ctx.approver?.employeeNumber) {
         replacePlaceholderInSubDoc(
           subDoc,
+          "###*NoBadge*###",
+          ctx.approver.employeeNumber
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "###NoBadge###",
+          ctx.approver.employeeNumber
+        );
+        replacePlaceholderInSubDoc(
+          subDoc,
           "NIP. ..............................",
           `NIP. ${ctx.approver.employeeNumber}`
         );
       }
 
       if (ctx.drafter?.position) {
+        replacePlaceholderInSubDoc(
+          subDoc,
+          "###*Dari*###",
+          ctx.drafter.position
+        );
+        replacePlaceholderInSubDoc(subDoc, "###Dari###", ctx.drafter.position);
         replacePlaceholderInSubDoc(
           subDoc,
           "Staf Pengembang Sistem / Unit TI",

@@ -44,6 +44,7 @@ export interface LetterEditorHandle {
 export interface RichEditSuratInnerProps {
   letterId?: string | null;
   serverVersionNumber?: number | null;
+  attachmentsCount?: number;
   editorHandleRef?: React.MutableRefObject<LetterEditorHandle | null>;
   onDocumentChange?: () => void;
   onQuickSaveDraft?: () => void;
@@ -52,6 +53,7 @@ export interface RichEditSuratInnerProps {
 export default function RichEditSuratInner({
   letterId,
   serverVersionNumber,
+  attachmentsCount,
   editorHandleRef,
   onDocumentChange,
   onQuickSaveDraft,
@@ -157,23 +159,62 @@ export default function RichEditSuratInner({
   const formSifat = useWatch({ control, name: "sifat" });
   const formKecepatan = useWatch({ control, name: "kecepatan" });
   const formTemplateId = useWatch({ control, name: "templateId" });
+  const formLetterTypeCode = useWatch({ control, name: "letterTypeCode" });
   const formToUnits = useWatch({ control, name: "toUnits" });
+  const formCcUnits = useWatch({ control, name: "ccUnits" });
+  const formExternalRecipient = useWatch({ control, name: "externalRecipient" });
   const formApprovers = useWatch({ control, name: "approvers" });
 
   const getTemplateContext = useCallback((): LetterTemplateContext => {
+    const finalApprover =
+      formApprovers && formApprovers.length > 0
+        ? formApprovers[formApprovers.length - 1]
+        : undefined;
+    const isExt =
+      (formLetterTypeCode ?? "").toUpperCase() === "SURAT_EKSTERNAL";
+    const extName = formExternalRecipient?.name?.trim();
     return {
       title: formTitle,
       sifat: formSifat,
       kecepatan: formKecepatan,
-      recipients: (formToUnits ?? []).map((u) => ({ name: u.name })),
-      approver: formApprovers?.[0]
+      recipients:
+        isExt && extName
+          ? [
+              {
+                name: extName,
+                position: formExternalRecipient?.attention?.trim() || undefined,
+              },
+            ]
+          : (formToUnits ?? []).map((u) => ({ name: u.name })),
+      ccRecipients: isExt
+        ? []
+        : (formCcUnits ?? []).map((u) => ({ name: u.name })),
+      externalRecipient: isExt
         ? {
-            name: formApprovers[0].employeeName,
-            position: formApprovers[0].jabatan,
+            name: formExternalRecipient?.name ?? "",
+            address: formExternalRecipient?.address ?? "",
+            attention: formExternalRecipient?.attention ?? "",
           }
         : undefined,
+      approver: finalApprover
+        ? {
+            name: finalApprover.employeeName,
+            position: finalApprover.jabatan,
+          }
+        : undefined,
+      attachmentsCount,
     };
-  }, [formTitle, formSifat, formKecepatan, formToUnits, formApprovers]);
+  }, [
+    formTitle,
+    formSifat,
+    formKecepatan,
+    formLetterTypeCode,
+    formToUnits,
+    formCcUnits,
+    formExternalRecipient,
+    formApprovers,
+    attachmentsCount,
+  ]);
 
   const getTemplateContextRef = useRef(getTemplateContext);
   useEffect(() => {

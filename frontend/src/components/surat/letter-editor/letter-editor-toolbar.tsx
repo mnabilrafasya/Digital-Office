@@ -4,7 +4,7 @@
 // Command bar terpadu gaya Microsoft Word / Office 365 di bagian atas editor naskah:
 // - Grup 1: Pilihan Template Naskah (.docx dari /api/v1/templates) & Sinkronkan Data Form
 // - Grup 2: Operasi Berkas terintegrasi (Buka .docx, Unduh .docx, Cetak / PDF)
-// - Grup 3: Menu interaktif salin 12 Penanda Sistem (`###*Nama*###`) & indikator versi dokumen (.docx)
+// - Grup 3: Menu interaktif salin 4 Penanda Sistem (`###*Nama*###`) & indikator versi dokumen (.docx)
 // - Grup 4: Kontrol Zoom ringkas, Panduan Pintasan Keyboard, & Layar Penuh
 
 import { useState, useRef, useEffect } from "react";
@@ -217,7 +217,7 @@ export function LetterEditorToolbar({
           </div>
         ) : (
           <div className="hidden xl:flex items-center gap-1.5 shrink-0">
-            {/* Segmented Chip & Menu 12 Penanda Sistem (`###*Nama*###`) */}
+            {/* Segmented Chip & Menu 4 Penanda Sistem (`###*Nama*###`) */}
             <div
               ref={placeholderRef}
               className="relative inline-flex items-center rounded-lg border border-border bg-surface shadow-2xs"
@@ -225,7 +225,7 @@ export function LetterEditorToolbar({
               <button
                 type="button"
                 onClick={() => handleCopyCode("###*NoSurat*###")}
-                title="Klik untuk menyalin ###*NoSurat*###. Penanda ini otomatis diganti nomor resmi oleh server saat disetujui Approver."
+                title="Klik untuk menyalin ###*NoSurat*###. Penanda ini otomatis diganti nomor resmi oleh server saat disetujui Approver terakhir."
                 className="inline-flex items-center gap-1.5 px-2 min-[1600px]:px-2.5 py-1 rounded-l-lg hover:bg-bg text-[11px] text-text-muted hover:text-text transition-colors whitespace-nowrap"
               >
                 <span className="hidden min-[1600px]:inline">Penanda:</span>
@@ -247,7 +247,7 @@ export function LetterEditorToolbar({
               <button
                 type="button"
                 onClick={() => setShowPlaceholders((v) => !v)}
-                title="Lihat daftar lengkap 12 Penanda Sistem (###*...*###)"
+                title="Lihat daftar 4 Penanda Sistem Otomatis (###*...*###)"
                 aria-label="Daftar Penanda Sistem"
                 className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-r-lg text-[11px] text-text-muted hover:text-text hover:bg-bg transition-colors"
               >
@@ -263,8 +263,9 @@ export function LetterEditorToolbar({
                         Penanda Sistem Otomatis ({SYSTEM_PLACEHOLDERS.length})
                       </span>
                       <span className="text-[11px] text-text-muted">
-                        Klik untuk menyalin ke naskah. Diisi server saat surat
-                        disetujui Approver.
+                        Klik untuk menyalin ke naskah. Hanya 4 penanda ini yang
+                        diisi otomatis oleh server saat surat disetujui Approver
+                        terakhir.
                       </span>
                     </div>
                     <button
@@ -318,6 +319,11 @@ export function LetterEditorToolbar({
                       );
                     })}
                   </ul>
+                  <p className="mt-2 pt-2 border-t border-border text-[11px] text-text-muted leading-snug">
+                    Bagian isi lainnya (Perihal, Kepada, Nama/Jabatan
+                    Penandatangan) diketik langsung di editor atau diisi lewat
+                    tombol <strong className="text-text">Sinkronkan Form</strong>.
+                  </p>
                 </div>
               )}
             </div>
