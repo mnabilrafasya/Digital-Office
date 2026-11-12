@@ -126,11 +126,26 @@ type LetterDetail struct {
 	Attachments     []Attachment     `json:"attachments"`
 	CurrentVersion  int              `json:"currentVersion"`
 	CurrentAssignee *PersonRef       `json:"currentAssignee"`
+	DelegatedTo     *DelegationRef   `json:"delegatedTo"` // penerima tugas sedang mendelegasikan tugasnya
+	OnBehalfOf      *PersonRef       `json:"onBehalfOf"`  // yang melihat adalah pengganti: bertindak atas nama orang ini
 	LastReturnNote  *string          `json:"lastReturnNote"`
 	Approval        *Approval        `json:"approval"` // null sampai approver menyetujui
 	AllowedActions  []string         `json:"allowedActions"`
 	CreatedAt       time.Time        `json:"createdAt"`
 	UpdatedAt       time.Time        `json:"updatedAt"`
+}
+
+// Delegation adalah delegasi tugas yang sedang berlaku untuk seorang penerima tugas.
+type Delegation struct {
+	UserID   int64
+	Delegate PersonRef
+	Until    string // YYYY-MM-DD, hari terakhir delegasi
+}
+
+// DelegationRef adalah pengganti penerima tugas saat ini, untuk ditampilkan.
+type DelegationRef struct {
+	Delegate PersonRef `json:"delegate"`
+	Until    string    `json:"until"` // YYYY-MM-DD
 }
 
 // IsParticipant mengecek apakah user adalah drafter, reviewer, atau approver surat ini.
@@ -182,9 +197,10 @@ type NewVersion struct {
 
 // Approval adalah persetujuan akhir surat oleh approver.
 type Approval struct {
-	ApprovedAt time.Time `json:"approvedAt"`
-	ApprovedBy PersonRef `json:"approvedBy"`
-	QRURL      string    `json:"qrUrl"` // gambar PNG QR persetujuan (GET, wajib login)
+	ApprovedAt time.Time  `json:"approvedAt"`
+	ApprovedBy PersonRef  `json:"approvedBy"`
+	OnBehalfOf *PersonRef `json:"onBehalfOf"` // penandatangan menyetujui sebagai pengganti (a.n.) orang ini
+	QRURL      string     `json:"qrUrl"`      // gambar PNG QR persetujuan (GET, wajib login)
 	// EmployeeNumber adalah NIK penandatangan, untuk penanda ###*NoBadge*### di PDF resmi.
 	EmployeeNumber string `json:"-"`
 }
@@ -308,19 +324,21 @@ type TemplateData struct {
 
 // LetterListItem adalah satu baris di daftar surat.
 type LetterListItem struct {
-	ID              string     `json:"id"`
-	LetterNumber    *string    `json:"letterNumber"`
-	Title           *string    `json:"title"`
-	Status          string     `json:"status"`
-	LetterType      *LookupRef `json:"letterType"`
-	Confidentiality *LookupRef `json:"confidentiality"`
-	Urgency         *LookupRef `json:"urgency"`
-	SenderUnit      UnitRef    `json:"senderUnit"`
-	CurrentAssignee *PersonRef `json:"currentAssignee"`
-	CurrentStep     *StepRef   `json:"currentStep"`
-	AssigneeStep    int        `json:"-"` // step assignee di perannya (reviewer/approver); 0 = tidak ada
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	ID              string         `json:"id"`
+	LetterNumber    *string        `json:"letterNumber"`
+	Title           *string        `json:"title"`
+	Status          string         `json:"status"`
+	LetterType      *LookupRef     `json:"letterType"`
+	Confidentiality *LookupRef     `json:"confidentiality"`
+	Urgency         *LookupRef     `json:"urgency"`
+	SenderUnit      UnitRef        `json:"senderUnit"`
+	CurrentAssignee *PersonRef     `json:"currentAssignee"`
+	DelegatedTo     *DelegationRef `json:"delegatedTo"` // penerima tugas sedang mendelegasikan tugasnya
+	OnBehalfOf      *PersonRef     `json:"onBehalfOf"`  // tugas saya sebagai pengganti: atas nama orang ini
+	CurrentStep     *StepRef       `json:"currentStep"`
+	AssigneeStep    int            `json:"-"` // step assignee di perannya (reviewer/approver); 0 = tidak ada
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
 }
 
 // StepRef menunjuk tahap yang sedang berjalan.
@@ -335,6 +353,7 @@ type LetterAction struct {
 	ActorRole     string     `json:"actorRole"`
 	Actor         PersonRef  `json:"actor"`
 	Target        *PersonRef `json:"target"`
+	OnBehalfOf    *PersonRef `json:"onBehalfOf"` // pelaku adalah pengganti delegasi orang ini
 	FromStatus    *string    `json:"fromStatus"`
 	ToStatus      string     `json:"toStatus"`
 	Note          *string    `json:"note"`

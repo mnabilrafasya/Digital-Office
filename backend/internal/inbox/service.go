@@ -41,6 +41,8 @@ type Store interface {
 	LockItem(ctx context.Context, companyCode string, userID, itemID int64) (*ItemLock, error)
 	AddForward(ctx context.Context, f NewForward) error
 	SetForwarded(ctx context.Context, itemID int64, status string) error
+	// CopyToDelegates menembuskan surat ke pengganti para userIDs yang sedang mendelegasikan pada day.
+	CopyToDelegates(ctx context.Context, letterID int64, userIDs []int64, day string) error
 }
 
 // Directory adalah data organisasi untuk memeriksa tujuan penerusan (dipenuhi repository organisasi).

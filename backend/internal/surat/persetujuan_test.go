@@ -246,7 +246,7 @@ func TestLetterList(t *testing.T) {
 
 	store = &fakeLetterStore{}
 	_, _, err = newTestLetterService(store, newFakeRefs()).List(ctx, fajarUser, page(ScopeTasks, "in_review, SENT"))
-	if err != nil || store.filter.AssigneeID != 9 || strings.Join(store.filter.Statuses, ",") != StatusInReview {
+	if err != nil || store.filter.TaskUserID != 9 || strings.Join(store.filter.Statuses, ",") != StatusInReview {
 		t.Errorf("tasks: err=%v filter=%+v", err, store.filter)
 	}
 

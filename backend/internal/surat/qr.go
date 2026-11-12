@@ -87,10 +87,17 @@ func approvalQRText(d *LetterDetail) string {
 	if d.LetterNumber != nil {
 		lines = append(lines, "Nomor: "+*d.LetterNumber)
 	}
-	lines = append(lines,
-		"Disetujui oleh: "+a.ApprovedBy.Name,
-		"Jabatan: "+a.ApprovedBy.PositionName,
-		"Waktu: "+a.ApprovedAt.Format("02-01-2006 15:04:05 MST"),
-	)
+	if a.OnBehalfOf != nil { // disetujui pengganti delegasi atas nama approver
+		lines = append(lines,
+			"Disetujui oleh: "+a.ApprovedBy.Name+" a.n. "+a.OnBehalfOf.Name,
+			"Jabatan: "+a.OnBehalfOf.PositionName,
+		)
+	} else {
+		lines = append(lines,
+			"Disetujui oleh: "+a.ApprovedBy.Name,
+			"Jabatan: "+a.ApprovedBy.PositionName,
+		)
+	}
+	lines = append(lines, "Waktu: "+a.ApprovedAt.Format("02-01-2006 15:04:05 MST"))
 	return strings.Join(lines, "\n")
 }

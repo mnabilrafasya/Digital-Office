@@ -88,15 +88,19 @@ func (s *Service) SaveDocument(ctx context.Context, user *auth.CurrentUser, in D
 		if err != nil {
 			return err
 		}
-		if !involves(l.DrafterID, approvers, reviewers, user.ID) {
+		actorID, onBehalf, err := s.actingFor(ctx, letters, user, l)
+		if err != nil {
+			return err
+		}
+		if !onBehalf && !involves(l.DrafterID, approvers, reviewers, user.ID) {
 			return ErrLetterNotFound
 		}
-		role := documentEditorRole(l, reviewers, user.ID)
+		role := documentEditorRole(l, reviewers, actorID)
 		if role == "" {
 			return &apperr.InvalidStateError{Message: "Naskah hanya bisa diubah pembuat surat saat draf, atau reviewer yang sedang memeriksa surat."}
 		}
-		if perm := rolePermission(role); perm != "" && !user.HasPermission(perm) {
-			return apperr.ErrForbidden
+		if err := s.checkRolePermission(ctx, user, actorID, onBehalf, role); err != nil {
+			return err
 		}
 
 		// Diulang saat deadlock: objek lama tertinggal tanpa baris versi (tidak pernah dirujuk)
@@ -152,7 +156,8 @@ func (s *Service) Versions(ctx context.Context, user *auth.CurrentUser, letterID
 	return versions, nil
 }
 
-// readable memastikan surat ada dan user adalah drafter atau peserta (selain itu ErrLetterNotFound).
+// readable memastikan surat ada dan user adalah drafter, peserta, pengganti penerima tugas saat ini,
+// atau pernah bertindak atas surat itu sebagai pengganti (selain itu ErrLetterNotFound).
 func (s *Service) readable(ctx context.Context, user *auth.CurrentUser, letterID string) (*LetterLock, error) {
 	id, ok := parseLetterID(letterID)
 	if !ok {
@@ -168,7 +173,13 @@ func (s *Service) readable(ctx context.Context, user *auth.CurrentUser, letterID
 			return nil, err
 		}
 		if !isParticipant {
-			return nil, ErrLetterNotFound
+			visible, err := s.visibleToNonParticipant(ctx, user.Company.Code, l.ID, l.Status, l.AssigneeID, user.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !visible {
+				return nil, ErrLetterNotFound
+			}
 		}
 	}
 	return l, nil

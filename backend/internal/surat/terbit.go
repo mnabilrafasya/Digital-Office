@@ -163,6 +163,9 @@ func (s *Service) publish(ctx context.Context, t publishTarget) (string, error) 
 	if err := t.inbox.DeliverDirect(ctx, t.letterID, to, cc); err != nil {
 		return "", err
 	}
+	if err := t.inbox.CopyToDelegates(ctx, t.letterID, slices.Concat(to, cc), s.today()); err != nil {
+		return "", err
+	}
 	if err := t.audit.Record(ctx, audit.Entry{
 		CompanyCode: t.companyCode, EntityType: audit.EntityLetter, EntityID: t.letterID, EntityUUID: t.letterUUID,
 		Action: audit.ActionDeliver, Snapshot: deliverSnapshot{LetterNumber: number, To: to, CC: cc},

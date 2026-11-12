@@ -13,7 +13,7 @@ import (
 // CandidateFilter adalah kriteria pencarian kandidat reviewer/approver
 type CandidateFilter struct {
 	CompanyCode    string
-	PermissionCode string
+	PermissionCode string // "" = semua user aktif (calon pengganti delegasi)
 	Search         string // "" = tidak mencari; selain itu dicari di nama user, jabatan, dan unit
 	Limit          int
 }
@@ -62,11 +62,14 @@ func (r *Repository) ListCandidates(ctx context.Context, f CandidateFilter) ([]C
 SELECT TOP (@limit)
        u.id, u.name, u.employee_number,
        p.name  AS position_name,
-       un.name AS unit_name` + eligibleUserSQL
-	args := append([]any{
-		sql.Named("limit", f.Limit),
-		sql.Named("companyCode", f.CompanyCode),
-	}, eligibleArgs(f.PermissionCode)...)
+       un.name AS unit_name`
+	args := []any{sql.Named("limit", f.Limit), sql.Named("companyCode", f.CompanyCode)}
+	if f.PermissionCode == "" {
+		q += activeUserSQL
+	} else {
+		q += eligibleUserSQL
+		args = append(args, eligibleArgs(f.PermissionCode)...)
+	}
 	if f.Search != "" {
 		q += "\n  AND (u.name LIKE @pattern ESCAPE '\\' OR p.name LIKE @pattern ESCAPE '\\' OR un.name LIKE @pattern ESCAPE '\\')"
 		args = append(args, sql.Named("pattern", db.ContainsPattern(f.Search)))

@@ -46,25 +46,37 @@ func (s *Service) detail(ctx context.Context, user *auth.CurrentUser, id string)
 	if err != nil {
 		return nil, notFoundAs(err)
 	}
-	if !d.IsParticipant(user.ID) {
-		if d.Status != StatusSent && d.Status != StatusReceived {
-			return nil, ErrLetterNotFound
-		}
-		received, err := s.inbox.HasItem(ctx, d.InternalID, user.ID)
+	var assigneeID int64
+	if d.CurrentAssignee != nil {
+		assigneeID = d.CurrentAssignee.ID
+	}
+	del, err := s.assigneeDelegation(ctx, s.reader, user.Company.Code, d.Status, assigneeID)
+	if err != nil {
+		return nil, err
+	}
+	if !d.IsParticipant(user.ID) && (del == nil || del.Delegate.ID != user.ID) {
+		visible, err := s.reader.HasActed(ctx, d.InternalID, user.ID) // pernah bertindak sebagai pengganti
 		if err != nil {
 			return nil, err
 		}
-		if !received {
+		if !visible && (d.Status == StatusSent || d.Status == StatusReceived) {
+			if visible, err = s.inbox.HasItem(ctx, d.InternalID, user.ID); err != nil {
+				return nil, err
+			}
+		}
+		if !visible {
 			return nil, ErrLetterNotFound
 		}
 	}
-	s.present(d, user)
+	s.present(d, user, del)
 	return d, nil
 }
 
 // present melengkapi detail untuk user yang melihat: keadaan tiap tahap, catatan pengembalian,
-// tombol yang boleh ditampilkan, dan zona waktu.
-func (s *Service) present(d *LetterDetail, user *auth.CurrentUser) {
+// delegasi penerima tugas (del), tombol yang boleh ditampilkan, dan zona waktu. Pengganti mendapat
+// tombol penerima tugas yang diwakilinya; penerima tugas yang sedang mendelegasikan tidak mendapat
+// tombol alur.
+func (s *Service) present(d *LetterDetail, user *auth.CurrentUser, del *Delegation) {
 	state := detailState(d)
 	for i := range d.Steps {
 		d.Steps[i].State = StepState(state, d.Steps[i].Role, d.Steps[i].Order)
@@ -77,9 +89,23 @@ func (s *Service) present(d *LetterDetail, user *auth.CurrentUser) {
 	if d.Drafter.ID == user.ID && isEditable(d.Status) {
 		d.AllowedActions = append(d.AllowedActions, ActionEdit)
 	}
-	for _, a := range AllowedActions(state, user.ID) {
-		// Tombol disembunyikan bila permission peran yang dibutuhkan sudah dicabut
-		if perm := rolePermission(actorRoleFor(a, d.Status)); perm == "" || user.HasPermission(perm) {
+	actor := user.ID
+	if del != nil && d.CurrentAssignee != nil {
+		d.DelegatedTo = &DelegationRef{Delegate: del.Delegate, Until: del.Until}
+		switch user.ID {
+		case del.Delegate.ID:
+			actor = d.CurrentAssignee.ID
+			owner := *d.CurrentAssignee
+			d.OnBehalfOf = &owner
+		case d.CurrentAssignee.ID:
+			actor = 0 // sedang mendelegasikan: dikerjakan pengganti
+		}
+	}
+	for _, a := range AllowedActions(state, actor) {
+		// Tombol disembunyikan bila permission peran yang dibutuhkan sudah dicabut (pengganti memakai
+		// kewenangan orang yang diwakilinya; diperiksa saat aksi dijalankan)
+		perm := rolePermission(actorRoleFor(a, d.Status))
+		if perm == "" || d.OnBehalfOf != nil || user.HasPermission(perm) {
 			d.AllowedActions = append(d.AllowedActions, string(a))
 		}
 	}

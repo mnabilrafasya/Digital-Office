@@ -9,6 +9,7 @@ import (
 
 	"office.backend/internal/audit"
 	"office.backend/internal/auth"
+	"office.backend/internal/delegasi"
 	"office.backend/internal/inbox"
 	"office.backend/internal/masterdata"
 	"office.backend/internal/organisasi"
@@ -31,6 +32,7 @@ type routerDeps struct {
 	Surat       *surat.Handler
 	Inbox       *inbox.Handler
 	Audit       *audit.Handler
+	Delegasi    *delegasi.Handler
 
 	Tokens auth.TokenVerifier
 	Users  auth.UserLoader
@@ -68,6 +70,14 @@ func newRouter(d routerDeps) http.Handler {
 
 			r.Post("/auth/logout", d.Auth.Logout)
 			r.Get("/auth/me", d.Auth.Me)
+
+			// Delegasi tugas milik user sendiri (semua user)
+			r.Route("/me/delegations", func(r chi.Router) {
+				r.Get("/", d.Delegasi.Mine)
+				r.Post("/", d.Delegasi.CreateMine)
+				r.Put("/{delegationId}", d.Delegasi.UpdateMine)
+				r.Delete("/{delegationId}", d.Delegasi.DeleteMine)
+			})
 			r.Get("/lookups", d.MasterData.Lookups)
 			r.Get("/units", d.Organisasi.Units)
 			r.With(auth.RequirePermission(auth.LetterCreate)).
@@ -135,6 +145,14 @@ func newRouter(d routerDeps) http.Handler {
 			// Master data. Admin perusahaan selalu mengelola perusahaannya sendiri; SUPERADMIN
 			// mengelola perusahaan dan admin-nya.
 			r.Route("/admin", func(r chi.Router) {
+				// Delegasi tugas pegawai mana pun di perusahaan admin
+				r.Route("/delegations", func(r chi.Router) {
+					r.Use(auth.RequirePermission(auth.UserManage))
+					r.Get("/", d.Delegasi.List)
+					r.Post("/", d.Delegasi.Create)
+					r.Put("/{delegationId}", d.Delegasi.Update)
+					r.Delete("/{delegationId}", d.Delegasi.Delete)
+				})
 				r.Route("/lookups/{category}", func(r chi.Router) {
 					r.Use(auth.RequirePermission(auth.OrgManage))
 					r.Get("/", d.LookupAdmin.List)
