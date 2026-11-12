@@ -56,7 +56,10 @@ import { cn } from "@/lib/utils";
 
 // ─── Helper ──────────────────────────────────
 
-function formatDateTime(iso: string) {
+function formatDateTime(iso?: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
   return new Intl.DateTimeFormat("id-ID", {
     day: "numeric",
     month: "long",
@@ -64,7 +67,7 @@ function formatDateTime(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
     timeZoneName: "short",
-  }).format(new Date(iso));
+  }).format(d);
 }
 
 function fileIcon(contentType: string) {
@@ -408,7 +411,7 @@ export default function InboxDetailPage() {
               onPdfReadyChange={handlePdfReadyChange}
             />
           ) : (
-            <div className="border border-border rounded-xl bg-panel/30 flex items-center justify-center gap-2 text-text-muted p-8 min-h-[240px]">
+            <div className="border border-border rounded-xl bg-panel/30 flex items-center justify-center gap-2 text-text-muted p-8 min-h-60">
               <Loader2 size={18} className="animate-spin text-primary" />
               <span className="text-xs">Memuat naskah resmi surat...</span>
             </div>
@@ -419,9 +422,15 @@ export default function InboxDetailPage() {
             <div className="border border-border rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <QrCode size={15} className="text-primary" />
+                  {letter.direction === "OUTGOING" ? (
+                    <CheckCircle2 size={15} className="text-status-success-text" />
+                  ) : (
+                    <QrCode size={15} className="text-primary" />
+                  )}
                   <h3 className="text-sm font-semibold text-text">
-                    QR Persetujuan & Dokumen Resmi
+                    {letter.direction === "OUTGOING"
+                      ? "Pengesahan Surat Eksternal Keluar & Dokumen Resmi"
+                      : "QR Persetujuan & Dokumen Resmi"}
                   </h3>
                 </div>
                 {copyFor && (
@@ -431,17 +440,19 @@ export default function InboxDetailPage() {
                 )}
               </div>
               <div className="p-4 flex items-start gap-4 flex-wrap">
-                <div className="w-24 h-24 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
-                  <img
-                    src={letter.approval.qrUrl}
-                    alt="QR Persetujuan"
-                    className="w-full h-full object-contain"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display =
-                        "none";
-                    }}
-                  />
-                </div>
+                {letter.direction !== "OUTGOING" && letter.approval.qrUrl && (
+                  <div className="w-24 h-24 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
+                    <img
+                      src={letter.approval.qrUrl}
+                      alt="QR Persetujuan"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display =
+                          "none";
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0 space-y-2">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-0.5">
@@ -589,20 +600,59 @@ export default function InboxDetailPage() {
               <MetaRow label="Unit Pengirim">
                 {item.letter.senderUnit.name}
               </MetaRow>
+              {item.letter.external?.sender && (
+                <MetaRow label="Pengirim Eksternal">
+                  <span className="font-semibold text-text">
+                    {item.letter.external.sender}
+                  </span>
+                </MetaRow>
+              )}
+              {item.letter.external?.referenceNumber && (
+                <MetaRow label="Nomor Surat Asal">
+                  <span className="font-mono text-xs">
+                    {item.letter.external.referenceNumber}
+                  </span>
+                </MetaRow>
+              )}
               {letter?.drafter && (
-                <MetaRow label="Pejabat Pembuat">
+                <MetaRow
+                  label={
+                    item.letter.direction === "INCOMING"
+                      ? "Dicatat Oleh"
+                      : "Pejabat Pembuat"
+                  }
+                >
                   {letter.drafter.name}
                   <span className="block text-xs text-text-muted">
                     {letter.drafter.positionName}
                   </span>
                 </MetaRow>
               )}
-              <MetaRow label="Penandatangan">
-                {item.letter.approver.name}
-                <span className="block text-xs text-text-muted">
-                  {item.letter.approver.positionName}
-                </span>
-              </MetaRow>
+              {item.letter.approver && (
+                <MetaRow label="Penandatangan">
+                  {item.letter.approver.name}
+                  <span className="block text-xs text-text-muted">
+                    {item.letter.approver.positionName}
+                  </span>
+                </MetaRow>
+              )}
+              {item.letter.external?.recipient && (
+                <MetaRow label="Tujuan Eksternal">
+                  <span className="font-semibold text-text block">
+                    {item.letter.external.recipient.name}
+                  </span>
+                  {item.letter.external.recipient.attention && (
+                    <span className="block text-xs text-text-muted">
+                      U.p. {item.letter.external.recipient.attention}
+                    </span>
+                  )}
+                  {item.letter.external.recipient.address && (
+                    <span className="block text-xs text-text-muted">
+                      {item.letter.external.recipient.address}
+                    </span>
+                  )}
+                </MetaRow>
+              )}
               <MetaRow label="Tanggal Surat">
                 {formatDateTime(item.letter.letterDate)}
               </MetaRow>

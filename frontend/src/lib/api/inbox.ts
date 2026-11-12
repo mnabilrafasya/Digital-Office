@@ -4,7 +4,7 @@
 // POST /inbox/{itemId}/disposition | redirect
 // ─────────────────────────────────────────────
 
-import type { LookupRef, UnitRef, PersonRef } from "./letter-detail";
+import type { LookupRef, UnitRef, PersonRef, ExternalInfo } from "./letter-detail";
 import {
   fetchCandidates,
   fetchUnits,
@@ -26,14 +26,16 @@ export interface InboxSource {
 
 export interface InboxLetter {
   id: string;
-  letterNumber: string;
+  direction?: "INTERNAL" | "OUTGOING" | "INCOMING";
+  letterNumber: string | null;
   title: string | null;
-  letterDate: string;
-  letterType: LookupRef;
-  confidentiality: LookupRef;
-  urgency: LookupRef;
+  letterDate: string | null;
+  letterType: LookupRef | null;
+  confidentiality: LookupRef | null;
+  urgency: LookupRef | null;
   senderUnit: UnitRef;
-  approver: PersonRef;
+  approver: PersonRef | null;
+  external?: ExternalInfo | null;
 }
 
 export interface InboxItem {
@@ -86,13 +88,17 @@ const API = "/api/v1";
 
 // ─── Fetch daftar inbox ───────────────────────
 
+export type InboxCategory = "" | "INTERNAL" | "EXTERNAL";
+
 export async function getInboxList(params: {
+  category?: InboxCategory;
   status?: string;
   q?: string;
   page?: number;
   pageSize?: number;
 }): Promise<InboxListResponse> {
   const qs = new URLSearchParams();
+  if (params.category) qs.set("category", params.category);
   if (params.status) qs.set("status", params.status);
   if (params.q) qs.set("q", params.q);
   if (params.page) qs.set("page", String(params.page));

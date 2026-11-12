@@ -81,12 +81,19 @@ export function InboxMessageRow({
   onQuickRedirect,
 }: InboxMessageRowProps) {
   const isUnread = item.status === "UNREAD";
-  const canForward = item.status === "UNREAD" || item.status === "READ";
+  const isOutgoingExternal = item.letter.direction === "OUTGOING";
+  const isIncomingExternal = item.letter.direction === "INCOMING";
+  const canForward =
+    (item.status === "UNREAD" || item.status === "READ") && !isOutgoingExternal;
 
   const senderPrimary =
-    item.source.type === "FORWARD" && item.source.forwardedBy
-      ? item.source.forwardedBy.name
-      : item.letter.senderUnit.name;
+    isIncomingExternal && item.letter.external?.sender
+      ? item.letter.external.sender
+      : isOutgoingExternal && item.letter.external?.recipient?.name
+        ? `Ke: ${item.letter.external.recipient.name}`
+        : item.source.type === "FORWARD" && item.source.forwardedBy
+          ? item.source.forwardedBy.name
+          : item.letter.senderUnit.name;
 
   const snippetParts: string[] = [];
   if (item.source.note) {
@@ -97,6 +104,8 @@ export function InboxMessageRow({
   }
   if (item.letter.approver?.name) {
     snippetParts.push(`TTD: ${item.letter.approver.name}`);
+  } else if (isIncomingExternal && item.letter.external?.sender) {
+    snippetParts.push(`Dari: ${item.letter.external.sender}`);
   }
   const snippetText = snippetParts.join(" · ");
 
@@ -238,7 +247,7 @@ export function InboxMessageRow({
         )}
 
         {/* Badge Sifat (Rahasia / Terbatas) */}
-        {(isSecret || isRestricted) && (
+        {(isSecret || isRestricted) && item.letter.confidentiality && (
           <span
             className={cn(
               "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0",
@@ -253,7 +262,7 @@ export function InboxMessageRow({
         )}
 
         {/* Badge Urgensi (Sangat Segera / Segera) */}
-        {(isVeryUrgent || isUrgent) && (
+        {(isVeryUrgent || isUrgent) && item.letter.urgency && (
           <span
             className={cn(
               "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0",
@@ -267,9 +276,18 @@ export function InboxMessageRow({
           </span>
         )}
 
-        {/* Badge Jenis Surat */}
+        {/* Badge Jenis Surat / Eksternal */}
         {item.letter.letterType && (
-          <span className="hidden md:inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-panel text-text-muted border border-border shrink-0">
+          <span
+            className={cn(
+              "hidden md:inline-block text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 border",
+              isIncomingExternal
+                ? "bg-status-info-bg text-status-info-text border-status-info-text/20"
+                : isOutgoingExternal
+                  ? "bg-primary/10 text-primary border-primary/20"
+                  : "bg-panel text-text-muted border-border"
+            )}
+          >
             {item.letter.letterType.name}
           </span>
         )}

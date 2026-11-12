@@ -655,14 +655,21 @@ export function InboxForwardingTrail({
                       <Send size={10} />
                     </span>
                     <span className="text-[10px] font-bold uppercase tracking-wide text-status-success-text truncate">
-                      Penerbit Surat
+                      {item.letter.direction === "INCOMING"
+                        ? "Pengirim Eksternal"
+                        : "Penerbit Surat"}
                     </span>
                   </div>
                   <p className="text-xs font-semibold text-text truncate">
-                    {item.letter.senderUnit.name}
+                    {item.letter.direction === "INCOMING" &&
+                    item.letter.external?.sender
+                      ? item.letter.external.sender
+                      : item.letter.senderUnit.name}
                   </p>
                   <p className="text-[11px] text-text-muted truncate">
-                    {item.letter.approver.name}
+                    {item.letter.approver?.name ??
+                      item.letter.external?.referenceNumber ??
+                      item.letter.senderUnit.name}
                   </p>
                 </div>
                 <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-text-muted">

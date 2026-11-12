@@ -11,15 +11,19 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import Link from "next/link";
 import {
   Inbox,
   Loader2,
   AlertCircle,
   MailOpen,
-  Keyboard,
+  Building2,
+  Globe,
+  Plus,
 } from "lucide-react";
 import {
   getInboxList,
+  type InboxCategory,
   type InboxItem,
   type InboxCounts,
   type InboxItemDetail,
@@ -69,6 +73,10 @@ function InboxView() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const [activeCategory, setActiveCategory] = useState<InboxCategory>(() => {
+    const c = (searchParams.get("category") ?? "").toUpperCase();
+    return c === "INTERNAL" || c === "EXTERNAL" ? c : "";
+  });
   const [activeTab, setActiveTab] = useState<TabStatus>(
     (searchParams.get("status") as TabStatus) ?? ""
   );
@@ -119,13 +127,14 @@ function InboxView() {
   // Sinkronkan URL query string
   useEffect(() => {
     const params = new URLSearchParams();
+    if (activeCategory) params.set("category", activeCategory);
     if (activeTab) params.set("status", activeTab);
     if (debouncedQuery) params.set("q", debouncedQuery);
     if (page > 1) params.set("page", String(page));
     const qs = params.toString();
     const targetUrl = qs ? `${pathname}?${qs}` : pathname;
     window.history.replaceState(null, "", targetUrl);
-  }, [activeTab, debouncedQuery, page, pathname]);
+  }, [activeCategory, activeTab, debouncedQuery, page, pathname]);
 
   // Fetch daftar inbox dari backend
   useEffect(() => {
@@ -136,6 +145,7 @@ function InboxView() {
       setError(null);
 
       getInboxList({
+        category: activeCategory || undefined,
         status: activeTab || undefined,
         q: debouncedQuery || undefined,
         page,
@@ -163,7 +173,7 @@ function InboxView() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [activeTab, debouncedQuery, page, reloadTick]);
+  }, [activeCategory, activeTab, debouncedQuery, page, reloadTick]);
 
   // Hitung jumlah putaran per surat (letter.id) dan gabungkan baris surat yang sama
   // seperti thread percakapan Gmail agar surat yang dikembalikan/didisposisi ulang
@@ -371,7 +381,7 @@ function InboxView() {
 
   return (
     <div className="space-y-3">
-      {/* ── Header Ringkas ── */}
+      {/* ── Header Ringkas + Switcher Kategori Internal / Eksternal ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -380,7 +390,11 @@ function InboxView() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-text leading-tight">
-                Kotak Masuk (Inbox)
+                {activeCategory === "EXTERNAL"
+                  ? "Kotak Masuk — Surat Eksternal"
+                  : activeCategory === "INTERNAL"
+                    ? "Kotak Masuk — Surat Internal"
+                    : "Kotak Masuk (Inbox)"}
               </h1>
               {counts.UNREAD > 0 && (
                 <span className="bg-status-danger-bg text-status-danger-text text-xs font-bold px-2 py-0.5 rounded-full">
@@ -389,9 +403,63 @@ function InboxView() {
               )}
             </div>
             <p className="text-xs text-text-muted">
-              Surat resmi terkirim, tembusan (CC), disposisi, dan pengalihan masuk
+              {activeCategory === "EXTERNAL"
+                ? "Surat masuk dari instansi luar & arsip surat eksternal keluar bertanda tangan basah"
+                : "Surat resmi terkirim, tembusan (CC), disposisi, dan surat eksternal"}
             </p>
           </div>
+        </div>
+
+        {/* Switcher Kategori Internal vs Eksternal + Pintasan Catat Surat Masuk Eksternal */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex items-center rounded-xl border border-border bg-surface p-1 shadow-2xs">
+            {(
+              [
+                { value: "" as InboxCategory, label: "Semua", icon: Inbox },
+                {
+                  value: "INTERNAL" as InboxCategory,
+                  label: "Surat Internal",
+                  icon: Building2,
+                },
+                {
+                  value: "EXTERNAL" as InboxCategory,
+                  label: "Surat Eksternal",
+                  icon: Globe,
+                },
+              ] as const
+            ).map((cat) => {
+              const Icon = cat.icon;
+              const isSelected = activeCategory === cat.value;
+              return (
+                <button
+                  key={cat.value || "ALL"}
+                  type="button"
+                  onClick={() => {
+                    setActiveCategory(cat.value);
+                    setPage(1);
+                    setSelectedIds(new Set());
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                    isSelected
+                      ? "bg-primary text-white shadow-2xs"
+                      : "text-text-muted hover:text-text hover:bg-panel"
+                  )}
+                >
+                  <Icon size={13} />
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <Link
+            href="/surat/baru?type=SURAT_MASUK_EKSTERNAL"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary border border-primary/20 text-xs font-semibold transition-colors"
+          >
+            <Plus size={14} />
+            <span>Catat Surat Masuk Eksternal</span>
+          </Link>
         </div>
       </div>
 

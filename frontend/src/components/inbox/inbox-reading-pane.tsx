@@ -186,7 +186,7 @@ export function InboxReadingPane({
           <MailOpen size={22} className="text-primary/70" />
         </div>
         <p className="text-sm font-semibold text-text">
-           belum ada surat yang dipilih
+          Belum ada surat yang dipilih
         </p>
         <p className="text-xs text-text-muted mt-1 max-w-xs">
           Klik salah satu baris surat di sebelah kiri (atau tekan tombol{" "}
@@ -377,15 +377,39 @@ export function InboxReadingPane({
               </div>
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm font-bold text-text truncate">
-                  {item.letter.senderUnit.name}
+                  {item.letter.direction === "INCOMING" &&
+                  item.letter.external?.sender
+                    ? item.letter.external.sender
+                    : item.letter.senderUnit.name}
                 </p>
-                <p className="text-xs text-text-muted">
-                  Penandatangan:{" "}
-                  <strong className="text-text">
-                    {item.letter.approver.name}
-                  </strong>{" "}
-                  ({item.letter.approver.positionName})
-                </p>
+                {item.letter.approver ? (
+                  <p className="text-xs text-text-muted">
+                    Penandatangan:{" "}
+                    <strong className="text-text">
+                      {item.letter.approver.name}
+                    </strong>{" "}
+                    ({item.letter.approver.positionName})
+                  </p>
+                ) : item.letter.external?.referenceNumber ? (
+                  <p className="text-xs text-text-muted">
+                    No. Surat Asal:{" "}
+                    <strong className="text-text font-mono">
+                      {item.letter.external.referenceNumber}
+                    </strong>{" "}
+                    &bull; Dicatat oleh {item.letter.senderUnit.name}
+                  </p>
+                ) : null}
+                {item.letter.external?.recipient && (
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Tujuan Eksternal:{" "}
+                    <strong className="text-text">
+                      {item.letter.external.recipient.name}
+                    </strong>
+                    {item.letter.external.recipient.attention
+                      ? ` (U.p. ${item.letter.external.recipient.attention})`
+                      : ""}
+                  </p>
+                )}
               </div>
             </div>
             <div className="text-right text-[11px] text-text-muted shrink-0">
@@ -554,7 +578,13 @@ export function InboxReadingPane({
             {letter?.approval && (
               <span className="inline-flex items-center gap-1 text-[11px] text-status-success-text font-medium">
                 <CheckCircle2 size={12} />
-                <QrCode size={12} /> Tersertifikasi QR Resmi
+                {letter.direction === "OUTGOING" ? (
+                  "Bertanda Tangan Basah Resmi"
+                ) : (
+                  <>
+                    <QrCode size={12} /> Tersertifikasi QR Resmi
+                  </>
+                )}
               </span>
             )}
           </div>
