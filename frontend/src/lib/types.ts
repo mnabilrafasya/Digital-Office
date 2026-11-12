@@ -159,6 +159,11 @@ export interface LetterListItem {
   currentAssignee: CurrentAssigneeSummary | null;
   lastReturnNote: string | null;
   allowedActions: string[];
+  onBehalfOf?: { id: string; name: string; positionName?: string } | null;
+  delegatedTo?: {
+    delegate: { id: string; name: string; positionName?: string };
+    until: string;
+  } | null;
 }
 
 export interface ListLettersResponse {

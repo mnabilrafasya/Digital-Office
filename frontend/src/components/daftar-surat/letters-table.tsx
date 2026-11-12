@@ -33,7 +33,19 @@ function getCurrentStageLabel(item: LetterListItem): string {
       : a.order > 1
         ? `Approver ${a.order}`
         : "Approver";
-  return `${roleLabel} · ${a.name}`;
+
+  const baseLabel = `${roleLabel} · ${a.name}`;
+  if (item.delegatedTo) {
+    const formattedUntil = item.delegatedTo.until
+      ? format(new Date(item.delegatedTo.until), "d MMM yyyy", {
+          locale: idLocale,
+        })
+      : "";
+    return `${baseLabel} (Didelegasikan ke ${item.delegatedTo.delegate.name}${
+      formattedUntil ? ` s.d. ${formattedUntil}` : ""
+    })`;
+  }
+  return baseLabel;
 }
 
 // ─── Helper: Tombol Tindakan ─────────────────
@@ -248,20 +260,27 @@ export function LettersTable({ items, loading, error, isFiltered, onRetry }: Pro
 
                   {/* Judul */}
                   <td className="px-4 py-3 max-w-55">
-                    <div className="flex items-start gap-1.5">
-                      {isReturned && item.lastReturnNote && (
-                        <span
-                          title={`Catatan: ${item.lastReturnNote}`}
-                          className="shrink-0 mt-0.5"
-                        >
-                          <AlertTriangle size={12} className="text-status-danger-text" />
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-start gap-1.5">
+                        {isReturned && item.lastReturnNote && (
+                          <span
+                            title={`Catatan: ${item.lastReturnNote}`}
+                            className="shrink-0 mt-0.5"
+                          >
+                            <AlertTriangle size={12} className="text-status-danger-text" />
+                          </span>
+                        )}
+                        <span className="line-clamp-2 text-text font-medium leading-snug">
+                          {item.title ?? (
+                            <span className="text-text-muted/70 italic font-normal">(Tanpa perihal)</span>
+                          )}
+                        </span>
+                      </div>
+                      {item.onBehalfOf && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded w-fit">
+                          Mewakili {item.onBehalfOf.name}
                         </span>
                       )}
-                      <span className="line-clamp-2 text-text font-medium leading-snug">
-                        {item.title ?? (
-                          <span className="text-text-muted/70 italic font-normal">(Tanpa perihal)</span>
-                        )}
-                      </span>
                     </div>
                   </td>
 

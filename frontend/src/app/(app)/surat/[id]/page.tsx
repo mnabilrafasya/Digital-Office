@@ -24,6 +24,8 @@ import {
   UploadCloud,
   Building2,
   Inbox,
+  UserCheck,
+  Info,
 } from "lucide-react";
 import {
   getLetter,
@@ -272,7 +274,7 @@ export default function SuratDetailPage() {
     <div className={cn("space-y-4", hasActions && "pb-20")}>
       {/* ── Breadcrumb ── */}
       <nav className="flex items-center gap-1 text-xs text-text-muted flex-wrap">
-        <Link href="/surat/daftar" className="hover:text-text transition-colors">
+        <Link href="/dashboard" className="hover:text-text transition-colors">
           Beranda
         </Link>
         <ChevronRight size={12} />
@@ -333,6 +335,36 @@ export default function SuratDetailPage() {
       <h1 className="text-xl font-bold text-text leading-snug">
         {letter.title ?? "(Tanpa perihal)"}
       </h1>
+
+      {/* ── Banner: Pengerjaan Atas Nama Delegasi ── */}
+      {letter.onBehalfOf && (
+        <div className="flex items-start gap-2.5 bg-primary/10 border border-primary/25 text-primary rounded-xl px-4 py-3 text-sm">
+          <UserCheck size={16} className="shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p className="font-semibold text-xs uppercase tracking-wide">
+              Pengerjaan Surat Atas Nama Rekan Kerja
+            </p>
+            <p className="text-xs text-text">
+              Anda memeriksa dan memproses surat ini atas nama{" "}
+              <strong>{letter.onBehalfOf.name}</strong>{" "}
+              ({letter.onBehalfOf.positionName}) berdasarkan jadwal delegasi yang sedang aktif.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Info: Tugas Sedang Didelegasikan ── */}
+      {letter.delegatedTo && (
+        <div className="flex items-center gap-2.5 bg-panel border border-border text-text-muted rounded-xl px-4 py-2.5 text-xs">
+          <Info size={14} className="shrink-0 text-primary" />
+          <span>
+            Tugas penerima saat ini sedang didelegasikan ke{" "}
+            <strong className="text-text">{letter.delegatedTo.delegate.name}</strong>{" "}
+            ({letter.delegatedTo.delegate.positionName}) sampai{" "}
+            <strong className="text-text">{letter.delegatedTo.until}</strong>.
+          </span>
+        </div>
+      )}
 
       {/* ── Banner: dikembalikan ke Reviewer ── */}
       {status === "RETURNED_TO_REVIEWER" && letter.lastReturnNote && (
@@ -573,6 +605,11 @@ export default function SuratDetailPage() {
                     </p>
                     <p className="text-sm font-bold text-text">
                       {letter.approval.approvedBy.name}
+                      {letter.approval.onBehalfOf && (
+                        <span className="font-normal text-xs text-text-muted ml-1.5">
+                          a.n. {letter.approval.onBehalfOf.name} ({letter.approval.onBehalfOf.positionName})
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-text-muted">
                       {letter.approval.approvedBy.positionName}

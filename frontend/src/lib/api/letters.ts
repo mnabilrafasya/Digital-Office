@@ -23,6 +23,11 @@ interface BackendLetterItem {
   urgency: { id: string; code: string; name: string } | null;
   senderUnit: { id: string; code: string; name: string };
   currentAssignee: { id: string; name: string; positionName: string } | null;
+  delegatedTo?: {
+    delegate: { id: string; name: string; positionName: string };
+    until: string;
+  } | null;
+  onBehalfOf?: { id: string; name: string; positionName: string } | null;
   currentStep: { role: string; order: number } | null;
   createdAt: string;
   updatedAt: string;
@@ -86,6 +91,8 @@ function mapBackendLetter(
       : null,
     lastReturnNote: null,
     allowedActions: actions,
+    onBehalfOf: b.onBehalfOf ?? null,
+    delegatedTo: b.delegatedTo ?? null,
   };
 }
 

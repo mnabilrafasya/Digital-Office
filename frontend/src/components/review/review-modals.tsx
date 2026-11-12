@@ -99,6 +99,11 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
 
     if (!res.ok) {
       setErr(res.error ?? "Terjadi kesalahan. Coba lagi.");
+      if (res.error?.toLowerCase().includes("didelegasikan")) {
+        setTimeout(() => {
+          onDone();
+        }, 1500);
+      }
       return;
     }
 

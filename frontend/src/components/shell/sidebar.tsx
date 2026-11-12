@@ -20,6 +20,7 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
+  UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, Suspense } from "react";
@@ -111,6 +112,11 @@ const NAV_ITEMS: NavItem[] = [
     href: "/inbox",
     icon: <Inbox size={16} />,
     dynamicBadge: "inbox", // badge dari backend, bukan hardcode
+  },
+  {
+    label: "Delegasi",
+    href: "/delegasi",
+    icon: <UserCheck size={16} />,
   },
   {
     label: "Monitoring Surat",
