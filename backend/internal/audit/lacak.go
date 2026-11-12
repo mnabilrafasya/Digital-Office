@@ -31,7 +31,7 @@ func (s *Service) Tracking(ctx context.Context, user *auth.CurrentUser, letterID
 	if !ok {
 		return nil, ErrLetterNotFound
 	}
-	c, err := s.repo.findLetter(ctx, user.Company.Code, id)
+	c, err := s.repo.findLetter(ctx, user.Company.Code, id, s.today())
 	if errors.Is(err, db.ErrNotFound) {
 		return nil, ErrLetterNotFound
 	}
@@ -43,7 +43,8 @@ func (s *Service) Tracking(ctx context.Context, user *auth.CurrentUser, letterID
 		return nil, err
 	}
 	scope := ScopeFull
-	if user.ID != c.Drafter.ID && !participant {
+	delegate := c.HolderDelegate != nil && c.HolderDelegate.Delegate.ID == user.ID // pengganti pemegang surat
+	if user.ID != c.Drafter.ID && !participant && !delegate {
 		if !recipient || (c.Status != statusSent && c.Status != statusReceived) {
 			return nil, ErrLetterNotFound // keberadaan surat tidak dibocorkan
 		}
@@ -116,6 +117,11 @@ func position(c *letterCore, now time.Time) Position {
 	default:
 		p.Label = c.Status
 	}
+	if p.Holder != nil && c.HolderDelegate != nil {
+		p.DelegatedTo = c.HolderDelegate
+		p.Label += fmt.Sprintf(" – %s (didelegasikan ke %s s.d. %s)",
+			p.Holder.Name, c.HolderDelegate.Delegate.Name, tanggal(c.HolderDelegate.Until))
+	}
 	if p.Holder != nil {
 		h := waitingHours(p.Since, now)
 		p.WaitingHours = &h
@@ -133,15 +139,47 @@ func timeline(c *letterCore, acts []letterAction, scope string) []TimelineEvent 
 		out = append(out, TimelineEvent{At: c.CreatedAt, Action: ActionCreate, Label: "Draf dibuat",
 			Actor: c.Drafter, Role: &drafter})
 	}
+	// Pemegang surat sebelum suatu aksi adalah target aksi alur sebelumnya; pelaku yang berbeda
+	// berarti pengganti delegasi yang bertindak atas nama pemegang itu.
+	var holder *PersonRef
 	for _, a := range acts {
+		var onBehalf *PersonRef
+		if holder != nil && a.Action != "READ" && a.Action != "SUBMIT" && a.Actor.ID != holder.ID {
+			h := *holder
+			onBehalf = &h
+		}
+		if a.Action != "READ" && a.Action != "SAVE" {
+			holder = a.Target
+		}
 		if scope == ScopeRecipient && a.Action != "SIGN" && a.Action != "RECEIVE" && a.Action != "UPLOAD_SIGNED" {
 			continue
 		}
 		role := a.ActorRole
-		out = append(out, TimelineEvent{At: a.At, Action: a.Action, Label: actionLabel(a),
-			Actor: a.Actor, Role: &role, Target: a.Target, Note: a.Note})
+		label := actionLabel(a)
+		if onBehalf != nil {
+			label += " (oleh " + a.Actor.Name + " a.n. " + onBehalf.Name + ")"
+		}
+		out = append(out, TimelineEvent{At: a.At, Action: a.Action, Label: label,
+			Actor: a.Actor, Role: &role, Target: a.Target, OnBehalfOf: onBehalf, Note: a.Note})
 	}
 	return out
+}
+
+var bulan = [...]string{"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus",
+	"September", "Oktober", "November", "Desember"}
+
+// tanggal menulis tanggal YYYY-MM-DD sebagai "15 November 2026" (apa adanya bila formatnya lain).
+func tanggal(day string) string {
+	t, err := time.Parse(time.DateOnly, day)
+	if err != nil {
+		return day
+	}
+	return fmt.Sprintf("%d %s %d", t.Day(), bulan[t.Month()-1], t.Year())
+}
+
+// today adalah tanggal hari ini (YYYY-MM-DD) di zona waktu tampilan.
+func (s *Service) today() string {
+	return s.now().In(s.loc).Format(time.DateOnly)
 }
 
 // actionLabel adalah kalimat untuk satu aksi alur surat.

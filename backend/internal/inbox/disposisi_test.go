@@ -3,6 +3,7 @@ package inbox
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -74,6 +75,10 @@ func TestDispose(t *testing.T) {
 	}
 	if e := audit.entries[0]; e.Action != "DISPOSITION" || e.EntityUUID != "uuid-surat" || e.EntityID != 500 {
 		t.Errorf("audit salah: %+v", e)
+	}
+	// Penerima yang sedang mendelegasikan tugasnya: penggantinya ditembuskan (sekali per orang)
+	if !slices.Equal(repo.copied, []int64{40, 41}) {
+		t.Errorf("tembusan pengganti diminta untuk %v, want [40 41]", repo.copied)
 	}
 }
 

@@ -82,11 +82,15 @@ func (s *Service) UploadSigned(ctx context.Context, user *auth.CurrentUser, in F
 		}
 		state := State{Status: l.Status, DrafterID: l.DrafterID, AssigneeID: l.AssigneeID,
 			Reviewers: reviewers, Approvers: approvers, External: l.TypeCode == masterdata.TypeExternalOut}
-		if !CanUploadSigned(state, user.ID) {
+		actorID, onBehalf, err := s.actingFor(ctx, letters, user, l)
+		if err != nil {
+			return err
+		}
+		if !CanUploadSigned(state, actorID) {
 			return errNotSignable
 		}
-		if !user.HasPermission(auth.LetterApprove) {
-			return apperr.ErrForbidden
+		if err := s.checkRolePermission(ctx, user, actorID, onBehalf, RoleApprover); err != nil {
+			return err
 		}
 		key := uuid.NewString()
 		if err := s.repos.Files.PutDocument(ctx, key, in.Data, PDFContentType); err != nil {
@@ -210,6 +214,9 @@ func (s *Service) CreateIncoming(ctx context.Context, user *auth.CurrentUser, in
 		}
 		if err := s.repos.Inbox(q).DeliverIncoming(ctx, letterID, user.ID, user.Name, user.Position.Name,
 			recipients, data.note); err != nil {
+			return err
+		}
+		if err := s.repos.Inbox(q).CopyToDelegates(ctx, letterID, recipients, s.today()); err != nil {
 			return err
 		}
 		e := letterEntry(user, letterID, uid, audit.ActionIncoming, snap)

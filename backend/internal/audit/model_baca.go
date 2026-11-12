@@ -31,24 +31,32 @@ type Tracking struct {
 // Position adalah tempat surat saat ini. Holder nil bila surat tidak sedang dipegang siapa pun
 // (sudah terbit atau dibatalkan).
 type Position struct {
-	Label        string     `json:"label"` // contoh "Sedang diperiksa Reviewer 2"
-	Holder       *PersonRef `json:"holder"`
-	Role         *string    `json:"role"` // DRAFTER, REVIEWER, atau APPROVER
-	Step         *int       `json:"step"` // urutan reviewer
-	Since        time.Time  `json:"since"`
-	WaitingHours *int       `json:"waitingHours"` // lama surat di tangan Holder
-	Stuck        bool       `json:"stuck"`        // menunggu >= StuckAfterHours
+	Label        string         `json:"label"` // contoh "Sedang diperiksa Reviewer 2"
+	Holder       *PersonRef     `json:"holder"`
+	Role         *string        `json:"role"` // DRAFTER, REVIEWER, atau APPROVER
+	Step         *int           `json:"step"` // urutan reviewer
+	Since        time.Time      `json:"since"`
+	WaitingHours *int           `json:"waitingHours"` // lama surat di tangan Holder
+	Stuck        bool           `json:"stuck"`        // menunggu >= StuckAfterHours
+	DelegatedTo  *DelegationRef `json:"delegatedTo"`  // Holder sedang mendelegasikan tugasnya
+}
+
+// DelegationRef adalah pengganti pemegang surat yang sedang mendelegasikan tugasnya.
+type DelegationRef struct {
+	Delegate PersonRef `json:"delegate"`
+	Until    string    `json:"until"` // YYYY-MM-DD, hari terakhir delegasi
 }
 
 // TimelineEvent adalah satu kejadian pada surat, urut dari yang paling lama.
 type TimelineEvent struct {
-	At     time.Time  `json:"at"`
-	Action string     `json:"action"`
-	Label  string     `json:"label"` // kalimat siap tampil
-	Actor  PersonRef  `json:"actor"`
-	Role   *string    `json:"role"`
-	Target *PersonRef `json:"target"`
-	Note   *string    `json:"note"`
+	At         time.Time  `json:"at"`
+	Action     string     `json:"action"`
+	Label      string     `json:"label"` // kalimat siap tampil
+	Actor      PersonRef  `json:"actor"`
+	Role       *string    `json:"role"`
+	Target     *PersonRef `json:"target"`
+	OnBehalfOf *PersonRef `json:"onBehalfOf"` // pelaku adalah pengganti delegasi orang ini
+	Note       *string    `json:"note"`
 }
 
 // DistributionNode adalah satu penerima surat terbit beserta penerusan darinya (berjenjang).

@@ -24,6 +24,12 @@ type fakeRepo struct {
 	ownerID  int64 // pemilik item
 	forwards []NewForward
 	marked   bool
+	copied   []int64 // penerima yang diminta ditembuskan ke penggantinya
+}
+
+func (f *fakeRepo) CopyToDelegates(_ context.Context, _ int64, userIDs []int64, _ string) error {
+	f.copied = append(f.copied, userIDs...)
+	return nil
 }
 
 func (f *fakeRepo) List(_ context.Context, filter Filter) ([]Item, error) {

@@ -16,6 +16,7 @@ func (s *Service) History(ctx context.Context, user *auth.CurrentUser, letterID 
 	if err != nil {
 		return nil, err
 	}
+	markOnBehalf(actions)
 	for i := range actions {
 		actions[i].CreatedAt = actions[i].CreatedAt.In(s.loc)
 	}

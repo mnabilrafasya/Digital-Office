@@ -19,9 +19,10 @@ type letterCore struct {
 	Number, Title   *string
 	Confidentiality string // kode lookup CONFIDENTIALITY, "" bila belum diisi
 	Drafter         PersonRef
-	Holder          *PersonRef // current_assignee
-	HolderStep      *int       // step reviewer milik Holder
-	Since           time.Time  // waktu perpindahan terakhir (atau dibuat, bila belum pernah berpindah)
+	Holder          *PersonRef     // current_assignee
+	HolderStep      *int           // step reviewer milik Holder
+	HolderDelegate  *DelegationRef // Holder sedang mendelegasikan tugas review/approval-nya
+	Since           time.Time      // waktu perpindahan terakhir (atau dibuat, bila belum pernah berpindah)
 	ApprovedAt      *time.Time
 	CreatedAt       time.Time
 }
@@ -39,17 +40,28 @@ const holderStepSQL = `(SELECT TOP 1 lp.step_order FROM letter_participants lp
             AND lp.deleted_at IS NULL)`
 
 // findLetter memuat data pelacakan satu surat milik companyCode (db.ErrNotFound bila tidak ada).
-func (r *Repository) findLetter(ctx context.Context, companyCode, uuid string) (*letterCore, error) {
+// today (YYYY-MM-DD) menentukan delegasi pemegang surat yang sedang berlaku.
+func (r *Repository) findLetter(ctx context.Context, companyCode, uuid, today string) (*letterCore, error) {
 	q := `
 SELECT l.id, CONVERT(char(36), l.uuid), l.status, l.letter_number, l.title, ISNULL(cf.code, ''),
        d.id, d.name, dp.name, a.id, a.name, ap.name, ` + holderStepSQL + `,
-       ` + lastMoveSQL + `, l.approved_at, l.created_at
+       ` + lastMoveSQL + `, l.approved_at, l.created_at,
+       dg.delegate_id, dg.delegate_name, dg.delegate_position, dg.until
 FROM letters l
 JOIN users d           ON d.id = l.drafter_id
 JOIN positions dp      ON dp.id = d.position_id
 LEFT JOIN lookups cf   ON cf.id = l.confidentiality_level_id
 LEFT JOIN users a      ON a.id = l.current_assignee_id
 LEFT JOIN positions ap ON ap.id = a.position_id
+OUTER APPLY (SELECT TOP 1 g.id AS delegate_id, g.name AS delegate_name, gp.name AS delegate_position,
+                    CONVERT(char(10), dl.end_date, 23) AS until
+             FROM delegations dl
+             JOIN users g      ON g.id = dl.delegate_id
+             JOIN positions gp ON gp.id = g.position_id
+             WHERE dl.user_id = l.current_assignee_id
+               AND l.status IN ('IN_REVIEW', 'RETURNED_TO_REVIEWER', 'IN_APPROVAL', 'APPROVED')
+               AND dl.deleted_at IS NULL AND @today BETWEEN dl.start_date AND dl.end_date
+               AND g.is_active = 1 AND g.deleted_at IS NULL) dg
 WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 	var (
 		c                     letterCore
@@ -57,11 +69,15 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 		holderName, holderPos sql.NullString
 		holderStep            sql.NullInt32
 		approvedAt            sql.NullTime
+		delegateID            sql.NullInt64
+		delegateName          sql.NullString
+		delegatePos, until    sql.NullString
 	)
-	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode)).Scan(
+	err := r.q.QueryRowContext(ctx, q, sql.Named("uuid", uuid), sql.Named("companyCode", companyCode),
+		sql.Named("today", today)).Scan(
 		&c.ID, &c.UUID, &c.Status, &c.Number, &c.Title, &c.Confidentiality,
 		&c.Drafter.ID, &c.Drafter.Name, &c.Drafter.PositionName, &holderID, &holderName, &holderPos, &holderStep,
-		&c.Since, &approvedAt, &c.CreatedAt)
+		&c.Since, &approvedAt, &c.CreatedAt, &delegateID, &delegateName, &delegatePos, &until)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, db.ErrNotFound
 	}
@@ -79,14 +95,23 @@ WHERE l.uuid = @uuid AND l.company_code = @companyCode AND l.deleted_at IS NULL`
 	if approvedAt.Valid {
 		c.ApprovedAt = &approvedAt.Time
 	}
+	if delegateID.Valid {
+		c.HolderDelegate = &DelegationRef{
+			Delegate: PersonRef{ID: delegateID.Int64, Name: delegateName.String, PositionName: delegatePos.String},
+			Until:    until.String,
+		}
+	}
 	return &c, nil
 }
 
-// involvement menentukan hubungan user dengan surat: peserta (reviewer/approver) dan penerima inbox.
+// involvement menentukan hubungan user dengan surat: peserta (reviewer/approver, atau pernah
+// bertindak atas surat sebagai pengganti delegasi) dan penerima inbox.
 func (r *Repository) involvement(ctx context.Context, letterID, userID int64) (participant, recipient bool, err error) {
 	const q = `
 SELECT CASE WHEN EXISTS (SELECT 1 FROM letter_participants
-                         WHERE letter_id = @letterId AND user_id = @userId AND deleted_at IS NULL) THEN 1 ELSE 0 END,
+                         WHERE letter_id = @letterId AND user_id = @userId AND deleted_at IS NULL)
+              OR EXISTS (SELECT 1 FROM letter_actions
+                         WHERE letter_id = @letterId AND actor_id = @userId AND action <> 'READ') THEN 1 ELSE 0 END,
        CASE WHEN EXISTS (SELECT 1 FROM inbox_items
                          WHERE letter_id = @letterId AND user_id = @userId) THEN 1 ELSE 0 END`
 	err = r.q.QueryRowContext(ctx, q, sql.Named("letterId", letterID), sql.Named("userId", userID)).Scan(&participant, &recipient)

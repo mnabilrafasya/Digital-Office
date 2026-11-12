@@ -82,7 +82,7 @@ func (s *Service) LetterLogs(ctx context.Context, user *auth.CurrentUser, letter
 	if !ok {
 		return nil, ErrLetterNotFound
 	}
-	if _, err := s.repo.findLetter(ctx, user.Company.Code, id); err != nil {
+	if _, err := s.repo.findLetter(ctx, user.Company.Code, id, s.today()); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return nil, ErrLetterNotFound
 		}

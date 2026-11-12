@@ -53,7 +53,7 @@ Semua seed aman diulang dan tidak menimpa pengaturan admin. Password akun dummy 
 | `GET /auth/me` | User login: jabatan, unit, perusahaan, role, `permissions` |
 | `GET /lookups?category=` | Pilihan: `LETTER_TYPE`, `LETTER_STATUS`, `CLASSIFICATION`, `CONFIDENTIALITY`, `URGENCY` |
 | `GET /units?q=` | Unit aktif perusahaan (pilihan penerima) |
-| `GET /users/candidates?type=REVIEWER\|APPROVER&q=&limit=` | Calon reviewer/approver |
+| `GET /users/candidates?type=REVIEWER\|APPROVER\|DELEGATE&q=&limit=` | Calon reviewer/approver, atau calon pengganti delegasi (semua user aktif) |
 | `GET /recipients/aliases` | Alias penerima per posisi (VP, AVP, ...) beserta `levelId` |
 
 ## Surat
@@ -72,9 +72,9 @@ Semua seed aman diulang dan tidak menimpa pengaturan admin. Password akun dummy 
 
 | Endpoint | Fungsi |
 |---|---|
-| `GET /letters?scope=mine\|tasks&status=&q=` | Surat saya / tugas saya (menunggu tindakan saya, termasuk `APPROVED` milik approver terakhir) |
+| `GET /letters?scope=mine\|tasks&status=&q=` | Surat saya / tugas saya (menunggu tindakan saya, termasuk `APPROVED` milik approver terakhir dan tugas orang yang sedang saya wakili) |
 | `POST /letters` | Buat draf (body boleh kosong). 201 + ETag |
-| `GET /letters/{id}` | Detail: `steps`, `currentAssignee`, `allowedActions`, `approval`, `external`, ETag |
+| `GET /letters/{id}` | Detail: `steps`, `currentAssignee`, `delegatedTo`, `onBehalfOf`, `allowedActions`, `approval`, `external`, ETag |
 | `PUT /letters/{id}` + `If-Match` | Ganti seluruh isi draf (hanya drafter, saat `DRAFT`/`RETURNED_TO_DRAFTER`) |
 | `GET /letters/{id}/history` | Riwayat aksi alur |
 
@@ -119,6 +119,34 @@ Penanda naskah: `###NoSurat###`, `###TglSurat###`, `###Sifat###`, `###QRCode###`
 Surat masuk: pengunggah mendapat item `DISPOSED`, tiap tujuan (alias dipecah ke anggotanya) mendapat item disposisi `UNREAD` berisi `note`. Selanjutnya diteruskan seperti surat biasa lewat inbox.
 
 Cara cetak surat eksternal keluar: `GET document/filled` → ekspor PDF di editor → `PUT document/final` → `GET document` (ber-watermark) → cetak, tanda tangan basah, scan → `PUT document/signed`.
+
+## Delegasi
+
+Selama periode delegasi pegawai A ke pengganti B:
+- tugas review/approval A (yang sudah ada maupun yang baru datang) **hanya bisa dikerjakan B**, atas nama dan dengan kewenangan A. A tetap tercatat sebagai reviewer/approver tetapi tidak bisa bertindak (409);
+- surat yang masuk ke inbox A (surat terbit, disposisi, pengalihan, surat masuk eksternal) juga dikirim ke B sebagai tembusan (CC); A tetap menerima;
+- setelah periode selesai atau dicabut, tugas kembali ke A. B tetap bisa membuka surat yang pernah ia kerjakan.
+
+| Endpoint | Siapa | Fungsi |
+|---|---|---|
+| `GET /me/delegations` | Semua | `delegations` (jadwal saya) dan `representing` (orang yang saya wakili), yang berlaku dan akan datang |
+| `POST /me/delegations` `{substituteId, from, until, note?}` | Semua | Tambah jadwal sendiri. 201 |
+| `PUT /me/delegations/{id}` `{substituteId, from, until, note?}` | Pemilik | Ubah jadwal |
+| `DELETE /me/delegations/{id}` | Pemilik | Hapus atau cabut jadwal. 204 |
+| `GET /admin/delegations?status=ACTIVE\|UPCOMING\|ENDED&userId=` | Admin (`USER_MANAGE`) | Semua jadwal perusahaan |
+| `POST /admin/delegations` `{userId, substituteId, from, until, note?}` | Admin | Tambah jadwal pegawai mana pun |
+| `PUT`, `DELETE /admin/delegations/{id}` | Admin | Ubah atau hapus jadwal |
+
+Aturan:
+- `from`/`until` format `YYYY-MM-DD`, tanggal penuh menurut `APP_TIMEZONE`. `until` tidak boleh sebelum hari ini; `note` maksimal 200 karakter.
+- Pengganti bebas siapa saja, asal user aktif di perusahaan yang sama dan bukan pegawai itu sendiri.
+- Jadwal satu pegawai tidak boleh beririsan, dan delegasi tidak boleh berantai (pengganti tidak sedang mendelegasikan, pegawai tidak sedang menjadi pengganti) → 409.
+- Jadwal yang sudah selesai tidak bisa diubah atau dihapus. Semua perubahan tercatat di audit log (`DELEGATION_CREATE/UPDATE/DELETE`).
+
+Penanda di respons:
+- `delegatedTo: {delegate, until}`: penerima tugas saat ini sedang mendelegasikan (detail dan daftar surat, lacak `position.delegatedTo`).
+- `onBehalfOf`: yang melihat adalah pengganti, bertindak atas nama orang ini (detail, daftar tugas). Di riwayat dan linimasa lacak: aksi dilakukan pengganti atas nama orang ini.
+- `approval.onBehalfOf`: surat disetujui pengganti. QR berisi "Disetujui oleh: B a.n. A" dan jabatan A.
 
 ## Template naskah
 

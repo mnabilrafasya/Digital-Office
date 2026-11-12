@@ -56,6 +56,7 @@ func (s *Service) List(ctx context.Context, user *auth.CurrentUser, lq LetterLis
 		CompanyCode: user.Company.Code,
 		Statuses:    statuses,
 		Search:      search,
+		Today:       s.today(),
 		Offset:      (lq.Page - 1) * lq.PageSize,
 		Limit:       lq.PageSize,
 	}
@@ -64,7 +65,7 @@ func (s *Service) List(ctx context.Context, user *auth.CurrentUser, lq LetterLis
 	case "", ScopeMine:
 		f.DrafterID = user.ID
 	case ScopeTasks:
-		f.AssigneeID = user.ID
+		f.TaskUserID = user.ID // termasuk tugas orang yang sedang saya wakili (delegasi)
 		f.Statuses = taskStatuses()
 		if len(statuses) > 0 {
 			f.Statuses = slices.DeleteFunc(f.Statuses, func(st string) bool { return !slices.Contains(statuses, st) })
@@ -83,6 +84,10 @@ func (s *Service) List(ctx context.Context, user *auth.CurrentUser, lq LetterLis
 	for i := range items {
 		it := &items[i]
 		it.CurrentStep = currentStep(it.Status, it.AssigneeStep)
+		if lq.Scope == ScopeTasks && it.CurrentAssignee != nil && it.CurrentAssignee.ID != user.ID {
+			owner := *it.CurrentAssignee // tugas sebagai pengganti
+			it.OnBehalfOf = &owner
+		}
 		it.CreatedAt = it.CreatedAt.In(s.loc)
 		it.UpdatedAt = it.UpdatedAt.In(s.loc)
 	}

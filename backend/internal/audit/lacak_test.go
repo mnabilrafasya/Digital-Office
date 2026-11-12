@@ -73,6 +73,7 @@ func TestTimeline(t *testing.T) {
 		{Action: "READ", ActorRole: "REVIEWER", Actor: dewi, ToStatus: statusInReview},
 		{Action: "RETURN", ActorRole: "REVIEWER", Actor: dewi, Target: &andi, ToStatus: statusReturnedToDrafter, Note: ptr("Perbaiki lampiran")},
 		{Action: "SAVE", ActorRole: "DRAFTER", Actor: andi, VersionNumber: &v2},
+		{Action: "SUBMIT", ActorRole: "DRAFTER", Actor: andi, Target: &dewi, ToStatus: statusInReview},
 		{Action: "APPROVE", ActorRole: "REVIEWER", Actor: dewi, Target: &sri, ToStatus: statusInApproval},
 		{Action: "SIGN", ActorRole: "APPROVER", Actor: sri, ToStatus: statusSent},
 	}
@@ -83,7 +84,7 @@ func TestTimeline(t *testing.T) {
 		labels = append(labels, e.Label)
 	}
 	want := "Draf dibuat|Dikirim untuk diperiksa|Membuka surat|Dikembalikan ke pembuat surat|Menyimpan naskah versi 2|" +
-		"Disetujui reviewer, diteruskan ke approver|Disetujui approver, surat terbit"
+		"Dikirim untuk diperiksa|Disetujui reviewer, diteruskan ke approver|Disetujui approver, surat terbit"
 	if got := strings.Join(labels, "|"); got != want {
 		t.Errorf("label =\n%s\nwant\n%s", got, want)
 	}
@@ -135,3 +136,32 @@ func TestBuildDistribution(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+// Aksi oleh orang selain pemegang surat saat itu adalah aksi pengganti delegasi (a.n. pemegang).
+func TestTimelineOnBehalf(t *testing.T) {
+	budi := PersonRef{ID: 20, Name: "Budi"}
+	acts := []letterAction{
+		{Action: "SUBMIT", ActorRole: "DRAFTER", Actor: andi, Target: &dewi, ToStatus: statusInReview},
+		{Action: "READ", ActorRole: "REVIEWER", Actor: budi, ToStatus: statusInReview},
+		{Action: "APPROVE", ActorRole: "REVIEWER", Actor: dewi, Target: &sri, ToStatus: statusInApproval},
+		{Action: "SIGN", ActorRole: "APPROVER", Actor: budi, ToStatus: statusSent},
+	}
+	got := timeline(&letterCore{Drafter: andi}, acts, ScopeFull)
+	if got[2].OnBehalfOf != nil || got[3].OnBehalfOf != nil {
+		t.Errorf("aksi pemegang sendiri ditandai pengganti: %+v", got)
+	}
+	sign := got[4]
+	if sign.OnBehalfOf == nil || sign.OnBehalfOf.ID != sri.ID || sign.Label != "Disetujui approver, surat terbit (oleh Budi a.n. Sri)" {
+		t.Errorf("SIGN pengganti = %+v", sign)
+	}
+}
+
+func TestPositionDelegated(t *testing.T) {
+	step := 1
+	c := &letterCore{Status: statusInApproval, Holder: &sri, HolderStep: &step,
+		HolderDelegate: &DelegationRef{Delegate: PersonRef{ID: 20, Name: "Budi"}, Until: "2026-11-15"}}
+	p := position(c, time.Now())
+	if p.DelegatedTo == nil || p.Label != "Menunggu persetujuan Approver 1 – Sri (didelegasikan ke Budi s.d. 15 November 2026)" {
+		t.Errorf("posisi = %+v", p)
+	}
+}
