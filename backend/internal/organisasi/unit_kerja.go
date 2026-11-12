@@ -12,11 +12,12 @@ import (
 // search "" = tanpa pencarian; selain itu dicari di nama unit.
 func (r *Repository) ListUnits(ctx context.Context, companyCode, search string) ([]Unit, error) {
 	q := `
-SELECT un.id, un.code, un.name, un.unit_type, un.parent_id, head.name
+SELECT un.id, un.code, un.name, un.unit_type, un.parent_id, head.position_name, head.user_name
 FROM units un
 OUTER APPLY (
-    SELECT TOP 1 p.name
+    SELECT TOP 1 p.name AS position_name, u.name AS user_name
     FROM positions p
+    LEFT JOIN users u ON u.position_id = p.id AND u.is_active = 1 AND u.deleted_at IS NULL
     WHERE p.unit_id = un.id AND p.is_unit_head = 1
       AND p.is_active = 1 AND p.deleted_at IS NULL
     ORDER BY p.id
@@ -28,7 +29,7 @@ WHERE un.company_code = @companyCode
 		q += "\n  AND un.name LIKE @pattern ESCAPE '\\'"
 		args = append(args, sql.Named("pattern", db.ContainsPattern(search)))
 	}
-	q += "\nORDER BY un.name"
+	q += "\nORDER BY CASE WHEN head.user_name IS NOT NULL THEN 0 WHEN head.position_name IS NOT NULL THEN 1 ELSE 2 END, un.name"
 
 	rows, err := r.q.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -39,7 +40,7 @@ WHERE un.company_code = @companyCode
 	out := []Unit{}
 	for rows.Next() {
 		var u Unit
-		if err := rows.Scan(&u.ID, &u.Code, &u.Name, &u.UnitType, &u.ParentID, &u.HeadPositionName); err != nil {
+		if err := rows.Scan(&u.ID, &u.Code, &u.Name, &u.UnitType, &u.ParentID, &u.HeadPositionName, &u.HeadUserName); err != nil {
 			return nil, fmt.Errorf("membaca unit: %w", err)
 		}
 		out = append(out, u)

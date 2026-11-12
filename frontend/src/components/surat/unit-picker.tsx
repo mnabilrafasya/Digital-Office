@@ -89,10 +89,16 @@ export function UnitPicker({
     );
   });
 
-  // Filter lokal: sembunyikan unit yang sudah dipilih dan yang di-exclude
-  const filteredUnits = units.filter(
-    (u) => !selectedIds.has(u.id) && !excludeIds.includes(u.id)
-  );
+  // Filter lokal: sembunyikan unit yang sudah dipilih dan yang di-exclude.
+  // Prioritaskan unit yang memiliki pimpinan / pejabat aktif di urutan teratas.
+  const filteredUnits = units
+    .filter((u) => !selectedIds.has(u.id) && !excludeIds.includes(u.id))
+    .sort((a, b) => {
+      const scoreA = a.headUserName ? 0 : a.headPositionName ? 1 : 2;
+      const scoreB = b.headUserName ? 0 : b.headPositionName ? 1 : 2;
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return a.name.localeCompare(b.name, "id");
+    });
 
   function addEntry(entry: UnitEntry) {
     onChange([...value, entry]);
@@ -250,11 +256,19 @@ export function UnitPicker({
                       <Building2 size={14} className="text-primary shrink-0 mt-0.5" />
                       <div className="min-w-0">
                         <div className="font-medium text-text">{unit.name}</div>
-                        <div className="text-[11px] text-text-muted">
-                          {unit.headPositionName
-                            ? `Pimpinan: ${unit.headPositionName}`
-                            : unit.unitType}
-                          {unit.code ? ` · Kode: ${unit.code}` : ""}
+                        <div className="text-[11px] text-text-muted truncate">
+                          {unit.headUserName ? (
+                            <span>
+                              <strong className="text-text font-medium">{unit.headUserName}</strong>
+                              {unit.headPositionName && (
+                                <span className="text-text-muted"> &bull; {unit.headPositionName}</span>
+                              )}
+                            </span>
+                          ) : unit.headPositionName ? (
+                            <span className="text-text-muted">{unit.headPositionName}</span>
+                          ) : (
+                            <span className="text-text-muted/60 italic">(Belum ada pejabat pimpinan)</span>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -282,7 +296,7 @@ export function UnitPicker({
                     <div className="min-w-0">
                       <div className="font-medium text-text">{alias.label}</div>
                       <div className="text-[11px] text-text-muted">
-                        Kode: {alias.code} &bull; {alias.memberCount} pimpinan unit aktif
+                        {alias.memberCount} pimpinan unit aktif
                       </div>
                     </div>
                   </button>

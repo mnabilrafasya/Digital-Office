@@ -23,6 +23,7 @@ export interface UnitItem {
   unitType: string;
   parentId: string | null;
   headPositionName: string | null;
+  headUserName?: string | null;
 }
 
 export interface RecipientAliasItem {
@@ -91,7 +92,7 @@ export async function fetchRecipientAliases(): Promise<RecipientAliasItem[]> {
 // ─── Candidates (Reviewer / Approver) ────────
 
 export interface CandidateQuery {
-  type: "REVIEWER" | "APPROVER" | "R" | "A" | string;
+  type: "REVIEWER" | "APPROVER" | "DELEGATE" | "R" | "A" | string;
   kodeAlias?: "R" | "A" | string;
   kode_alias?: "R" | "A" | string;
   q?: string;
@@ -101,10 +102,14 @@ export interface CandidateQuery {
 export async function fetchCandidates(
   query: CandidateQuery
 ): Promise<CandidateItem[]> {
-  // Normalisasi Kode Alias / type: 'R' -> 'REVIEWER', 'A' -> 'APPROVER'
+  // Normalisasi Kode Alias / type: 'R' -> 'REVIEWER', 'A' -> 'APPROVER', 'DELEGATE' -> 'DELEGATE'
   const rawType = (query.kodeAlias || query.kode_alias || query.type || "REVIEWER").toUpperCase();
   const normalizedType =
-    rawType === "A" || rawType === "APPROVER" ? "APPROVER" : "REVIEWER";
+    rawType === "DELEGATE"
+      ? "DELEGATE"
+      : rawType === "A" || rawType === "APPROVER"
+        ? "APPROVER"
+        : "REVIEWER";
 
   const params = new URLSearchParams({ type: normalizedType });
   if (query.q) params.set("q", query.q);

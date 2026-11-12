@@ -111,10 +111,13 @@ export interface LetterDetail {
   attachments: Attachment[];
   currentVersion: number;
   currentAssignee: PersonRef | null;
+  delegatedTo?: { delegate: PersonRef; until: string } | null;
+  onBehalfOf?: PersonRef | null;
   lastReturnNote: string | null;
   approval: {
     approvedAt: string;
     approvedBy: PersonRef;
+    onBehalfOf?: PersonRef | null;
     qrUrl: string | null;
   } | null;
   allowedActions: string[];
@@ -250,6 +253,7 @@ export interface LetterHistoryEntry {
   action: LetterHistoryAction;
   actorRole: string;
   actor: PersonRef;
+  onBehalfOf?: PersonRef | null;
   target: PersonRef | null;
   fromStatus: string | null;
   toStatus: string;

@@ -8,6 +8,7 @@ type Unit struct {
 	UnitType         string  `json:"unitType"`
 	ParentID         *int64  `json:"parentId,string"`
 	HeadPositionName *string `json:"headPositionName"`
+	HeadUserName     *string `json:"headUserName"`
 }
 
 // Candidate adalah user yang bisa dipilih sebagai reviewer atau approver.

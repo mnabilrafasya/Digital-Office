@@ -666,7 +666,7 @@ export function IncomingExternalForm({
                           <div>
                             <p className="font-medium">{a.label}</p>
                             <p className="text-[11px] text-text-muted">
-                              Kode: {a.code} &bull; {a.memberCount} pejabat aktif
+                              {a.memberCount} pejabat aktif
                             </p>
                           </div>
                           {isSelected && (
