@@ -157,7 +157,7 @@ Hak = **role** + **posisi**. Posisi DIREKTUR, SVP, VP, AVP otomatis bisa approve
 
 | Role | Bisa |
 |---|---|
-| SUPERADMIN | Seluruh permission: perusahaan, organisasi, user, template, surat, review, approve, disposisi, dan audit |
+| SUPERADMIN | Kelola perusahaan, ditambah semua hak ADMIN |
 | ADMIN | Pengaturan perusahaan, unit, jabatan, user, template, audit log |
 | PEGAWAI | Membuat dan me-review surat, membuat template |
 
@@ -184,7 +184,12 @@ Semua di bawah `/api/v1`. Tidak ada hapus permanen (cukup nonaktif), semua perub
 | `GET /company/number-preview?format=` | Contoh nomor surat |
 | `GET /company/watermark-preview?text=` | Gambar watermark |
 
-Token format nomor: `{SEQ}`, `{COMP}`, `{YYYY}` (wajib), `{MM_ROMAN}`.
+**Nomor surat**
+
+- Format bawaan `{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}`, contoh `015/PSP/XI/2026`. Keempat token wajib ada; teks lain bebas (huruf, angka, tanda baca, maks 100 karakter).
+- `{SEQ}` = nomor urut berjalan (minimal 3 digit) per perusahaan, untuk semua jenis surat, dan mulai lagi dari `001` setiap bulan. `{COMP}` = kode perusahaan, `{MM_ROMAN}` = bulan romawi, `{YYYY}` = tahun.
+- Nomor diberikan saat approver terakhir menyetujui; bulan dan tahun mengikuti waktu persetujuan (`APP_TIMEZONE`). Surat masuk eksternal tidak diberi nomor.
+- Format baru hanya berlaku untuk surat yang disetujui sesudahnya. Format tersimpan yang tidak memenuhi aturan otomatis diganti format bawaan.
 
 **ADMIN — unit dan jabatan**
 
@@ -257,5 +262,4 @@ hanya menjalankan seed pengguna dasar dan seed lanjutan yang aman diulang; akun
 hanya ditambahkan bila NIK belum ada. Tidak perlu reset database atau perintah akun khusus.
 Seed development membutuhkan `APP_ENV=development` dan data unit HC sesuai panduan awal.
 
-SUPERADMIN memiliki seluruh 11 permission. Persetujuan surat tetap mengikuti
-reviewer/approver yang ditugaskan dan pemisahan data perusahaan.
+Approve dan disposisi SUPERADMIN tetap mengikuti posisinya, sama seperti role lain.

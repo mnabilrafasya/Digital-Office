@@ -243,10 +243,7 @@ func (s *Service) Settings(ctx context.Context, user *auth.CurrentUser) (*Settin
 }
 
 func (s *Service) settingsOf(c *Company) *Settings {
-	format := c.LetterNumberFormat
-	if format == "" {
-		format = surat.DefaultNumberFormat
-	}
+	format := surat.EffectiveNumberFormat(c.LetterNumberFormat) // format yang benar-benar dipakai
 	return &Settings{
 		Code: c.Code, Name: c.Name, LetterNumberFormat: format, WatermarkText: c.WatermarkText,
 		NumberPreview: surat.NumberPreview(format, c.Code, time.Now().In(s.loc)),

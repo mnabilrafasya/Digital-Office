@@ -46,7 +46,7 @@ type Store interface {
 	SaveAttachments(ctx context.Context, letterID int64, items []Attachment) (rowVersion []byte, err error)
 
 	// Terbit
-	NextNumber(ctx context.Context, letterID int64, year int) (seq int, unitCode, format string, err error)
+	NextNumber(ctx context.Context, letterID int64, period int) (seq int, unitCode, format string, err error)
 	Publish(ctx context.Context, letterID int64, p Publication) error
 
 	// Tampilan

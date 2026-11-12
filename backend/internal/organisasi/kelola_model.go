@@ -4,7 +4,7 @@ import "time"
 
 // Master data organisasi yang dikelola admin perusahaan (ORG_MANAGE untuk unit dan jabatan,
 // USER_MANAGE untuk user), selalu di perusahaan pengguna itu sendiri. SUPERADMIN memiliki seluruh
-// permission dan dapat menambah admin perusahaan lain (kelola_user.go). Tidak ada hapus permanen: surat dan audit
+// akses sistem dan dapat menambah admin perusahaan lain (kelola_user.go). Tidak ada hapus permanen: surat dan audit
 // lama merujuk unit, jabatan, dan user, jadi semuanya cukup dinonaktifkan.
 
 // AdminUnit adalah unit kerja untuk halaman master data.

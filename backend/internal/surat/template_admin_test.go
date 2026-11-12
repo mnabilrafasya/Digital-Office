@@ -9,21 +9,22 @@ import (
 )
 
 func TestValidateNumberFormat(t *testing.T) {
-	for _, ok := range []string{"{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}", "ND-{SEQ}.{COMP}.{YYYY}", "{COMP}/{YYYY}/{SEQ}"} {
+	for _, ok := range []string{"{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}", "ND-{SEQ}.{COMP}.{MM_ROMAN}.{YYYY}", "{COMP}/{YYYY}/{MM_ROMAN}/{SEQ}"} {
 		if err := ValidateNumberFormat(ok); err != nil {
 			t.Errorf("%q ditolak: %v", ok, err)
 		}
 	}
 	bad := map[string]string{
-		"":                           "kosong",
-		"{SEQ}/{COMP}":               "tanpa tahun",
-		"{SEQ}/{YYYY}":               "tanpa perusahaan",
-		"{COMP}/{YYYY}":              "tanpa urutan",
-		"{SEQ}/{UNIT}/{COMP}/{YYYY}": "token UNIT tidak ditawarkan",
-		"{SEQ}/{COMP}/{YYYY}/{X}":    "token tidak dikenal",
-		"{SEQ}/{COMP}/{YYYY}}":       "kurung kurawal liar",
-		"{SEQ}/{COMP}/{YYYY}/é":      "bukan ASCII",
-		"{SEQ}/{COMP}/{YYYY}" + strings.Repeat("x", 80): "terlalu panjang",
+		"":                                      "kosong",
+		"{SEQ}/{COMP}/{MM_ROMAN}":               "tanpa tahun",
+		"{SEQ}/{MM_ROMAN}/{YYYY}":               "tanpa perusahaan",
+		"{COMP}/{MM_ROMAN}/{YYYY}":              "tanpa urutan",
+		"{SEQ}/{COMP}/{YYYY}":                   "tanpa bulan (urutan reset bulanan)",
+		"{SEQ}/{UNIT}/{COMP}/{MM_ROMAN}/{YYYY}": "token UNIT tidak ditawarkan",
+		"{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}/{X}":    "token tidak dikenal",
+		"{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}}":       "kurung kurawal liar",
+		"{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}/é":      "bukan ASCII",
+		"{SEQ}/{COMP}/{MM_ROMAN}/{YYYY}" + strings.Repeat("x", 70): "terlalu panjang",
 	}
 	for format, why := range bad {
 		if err := ValidateNumberFormat(format); err == nil {

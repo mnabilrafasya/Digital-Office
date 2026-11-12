@@ -1,10 +1,10 @@
 -- 002_roles_permissions.sql
 -- Role (1 user = 1 role) dan permission per role. Idempoten (MERGE), aman dijalankan berulang.
 --
--- Hak akses user = permission role + permission dari posisi (level jabatan). SUPERADMIN punya seluruh hak.
--- Pada role lain, approve dan disposisi otomatis dimiliki posisi DIREKTUR, SVP, VP, dan AVP
--- (lihat internal/auth/hakakses.go). Role hanya menentukan akses sistem:
---   SUPERADMIN  seluruh permission: master data, surat, approve, disposisi, audit
+-- Hak akses user = permission role + permission dari posisi (level jabatan). Approve dan disposisi
+-- TIDAK diberikan lewat role (termasuk SUPERADMIN): otomatis dimiliki pemegang posisi DIREKTUR,
+-- SVP, VP, dan AVP (lihat internal/auth/hakakses.go). Role hanya menentukan akses sistem:
+--   SUPERADMIN  seluruh akses sistem: perusahaan, master data, template, audit
 --   ADMIN       kelola internal perusahaannya (pengaturan, unit, jabatan, user, template) + audit
 --   PEGAWAI     pemakai biasa
 SET NOCOUNT ON;
@@ -35,8 +35,6 @@ USING (
         ('SUPERADMIN', 'USER_MANAGE',      N'Mengelola user'),
         ('SUPERADMIN', 'TEMPLATE_MANAGE',  N'Mengelola status template'),
         ('SUPERADMIN', 'AUDIT_VIEW',       N'Melihat log sistem'),
-        ('SUPERADMIN', 'LETTER_APPROVE',   N'Menyetujui surat yang ditugaskan'),
-        ('SUPERADMIN', 'INBOX_DISPOSE',    N'Mendisposisikan surat masuk'),
         ('ADMIN',      'LETTER_CREATE',    N'Membuat dan mengajukan surat'),
         ('ADMIN',      'LETTER_REVIEW',    N'Dapat dipilih sebagai reviewer'),
         ('ADMIN',      'TEMPLATE_CREATE',  N'Membuat template surat'),
@@ -56,6 +54,13 @@ WHEN MATCHED AND t.name <> s.name THEN
     UPDATE SET name = s.name, updated_at = SYSDATETIMEOFFSET()
 WHEN NOT MATCHED BY TARGET THEN
     INSERT (role_id, code, name) VALUES (s.role_id, s.code, s.name);
+
+-- Approve dan disposisi tidak lagi melekat pada role SUPERADMIN (seed versi sebelumnya).
+UPDATE pm
+SET deleted_at = SYSDATETIMEOFFSET(), updated_at = SYSDATETIMEOFFSET()
+FROM permissions pm
+JOIN roles r ON r.id = pm.role_id AND r.code = 'SUPERADMIN'
+WHERE pm.code IN ('LETTER_APPROVE', 'INBOX_DISPOSE') AND pm.deleted_at IS NULL;
 
 -- Role PIMPINAN (versi lama) dihapus: kewenangan pimpinan kini datang dari posisi. Pemegangnya
 -- dipindah ke PEGAWAI, lalu role dan permission-nya dinonaktifkan (tidak dihapus, demi audit lama).
