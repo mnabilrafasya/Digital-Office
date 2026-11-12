@@ -2,26 +2,28 @@
 
 // ─────────────────────────────────────────────
 // components/review/review-modals.tsx
-// Action bar + modal: Setujui/Sahkan, Kembalikan, Batalkan
+// Action bar + modal: Setujui/Sahkan, Kembalikan ke Drafter, Unggah Scan TTD
 // Digunakan oleh Reviewer DAN Approver
 // ─────────────────────────────────────────────
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
   ShieldCheck,
   RotateCcw,
-  XCircle,
   X,
   Loader2,
-  AlertTriangle,
+  Printer,
+  UploadCloud,
+  FileText,
 } from "lucide-react";
 import type { LetterDetail } from "@/lib/api/letter-detail";
-import { reviewAction } from "@/lib/api/letter-detail";
+import { reviewAction, formatBytes } from "@/lib/api/letter-detail";
+import { officialPdfUrl, uploadSignedPdf } from "@/lib/api/letter-document";
 import { cn } from "@/lib/utils";
 
-type ModalType = "approve" | "return" | "cancel" | null;
+type ModalType = "approve" | "return" | "upload_signed" | null;
 
 interface ReviewModalsProps {
   letter: LetterDetail;
@@ -34,31 +36,56 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
 
   const [modal, setModal]  = useState<ModalType>(null);
   const [note, setNote]    = useState("");
+  const [signedFile, setSignedFile] = useState<File | null>(null);
+  const signedFileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoad] = useState(false);
   const [err, setErr]      = useState<string | null>(null);
 
+  const isExternalOutgoing =
+    letter.direction === "OUTGOING" ||
+    letter.letterType?.code === "SURAT_EKSTERNAL";
+
   // ── Info assignee saat ini ──
   const activeStep = letter.steps.find((s) => s.state === "ACTIVE");
-  const isApprover = activeStep?.role === "APPROVER" || letter.status === "IN_APPROVAL";
+  const approverSteps = letter.steps.filter((s) => s.role === "APPROVER");
+  const isApprover =
+    activeStep?.role === "APPROVER" ||
+    letter.status === "IN_APPROVAL" ||
+    letter.status === "APPROVED";
+  const isFinalApprover =
+    isApprover &&
+    (!activeStep ||
+      approverSteps.length <= 1 ||
+      activeStep.order >= approverSteps.length);
   const currentLabel = isApprover
-    ? "Approver"
+    ? approverSteps.length > 1 && activeStep
+      ? `Approver ${activeStep.order}`
+      : "Approver"
     : `Reviewer ${activeStep?.order ?? ""}`;
 
-  // ── Teks konteks aksi ──
-  const returnTarget = isApprover ? "Reviewer terakhir" : "Drafter";
+  // ── Teks konteks aksi (semua pengembalian kembali ke Drafter dan diulang dari Reviewer 1) ──
+  const returnTarget = "Drafter";
 
   const nextPendingStep = letter.steps.find((s) => s.state === "PENDING");
   const approveTarget = isApprover
-    ? "Nomor surat diterbitkan otomatis dan surat dikirim ke inbox penerima."
+    ? isFinalApprover
+      ? isExternalOutgoing
+        ? "Nomor surat diterbitkan otomatis dan tampilan naskah berubah menjadi PDF siap cetak untuk ditandatangani basah (status Menunggu Tanda Tangan)."
+        : "Nomor surat diterbitkan otomatis dan surat dikirim ke inbox penerima."
+      : nextPendingStep?.role === "APPROVER"
+        ? `Surat diteruskan ke Approver ${nextPendingStep.order} (${nextPendingStep.user.name}) untuk persetujuan tahap berikutnya.`
+        : "Surat diteruskan ke Approver berikutnya."
     : nextPendingStep?.role === "APPROVER"
-    ? "Surat diteruskan ke Approver untuk ditandatangani."
-    : nextPendingStep
-    ? `Surat diteruskan ke Reviewer ${nextPendingStep.order}.`
-    : "Surat diteruskan ke tahap berikutnya.";
+      ? approverSteps.length > 1
+        ? `Surat diteruskan ke Approver 1 (${nextPendingStep.user.name}) untuk tahap persetujuan.`
+        : "Surat diteruskan ke Approver untuk ditandatangani."
+      : nextPendingStep
+        ? `Surat diteruskan ke Reviewer ${nextPendingStep.order}.`
+        : "Surat diteruskan ke tahap berikutnya.";
 
   // ── Submit aksi ke backend ──
-  async function submit(action: "APPROVE" | "RETURN" | "CANCEL") {
-    if ((action === "RETURN" || action === "CANCEL") && note.trim().length < 10) {
+  async function submit(action: "APPROVE" | "RETURN") {
+    if (action === "RETURN" && note.trim().length < 10) {
       setErr("Catatan minimal 10 karakter.");
       return;
     }
@@ -79,33 +106,48 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
     setNote("");
 
     if (action === "APPROVE") {
-      const nextStatus = res.data?.status;
-      if (nextStatus === "SENT") {
-        // Approver menyetujui → reload halaman ini untuk tampilkan QR & nomor surat
-        onDone();
-      } else {
-        // Reviewer meneruskan ke tahap berikutnya → reload
-        onDone();
-      }
-    } else if (action === "RETURN") {
-      router.push("/surat/daftar?returned=1");
+      onDone();
     } else {
-      router.push("/surat/daftar?cancelled=1");
+      router.push("/surat/daftar?returned=1");
+    }
+  }
+
+  async function handleUploadSignedSubmit() {
+    if (!signedFile) {
+      setErr("Pilih file PDF hasil scan bertanda tangan basah terlebih dahulu.");
+      return;
+    }
+    setLoad(true);
+    setErr(null);
+    try {
+      await uploadSignedPdf(letter.id, signedFile);
+      setModal(null);
+      setSignedFile(null);
+      onDone();
+    } catch (e) {
+      setErr(
+        e instanceof Error
+          ? e.message
+          : "Gagal mengunggah scan PDF bertanda tangan basah."
+      );
+    } finally {
+      setLoad(false);
     }
   }
 
   function openModal(type: ModalType) {
     setModal(type);
     setNote("");
+    setSignedFile(null);
     setErr(null);
   }
 
   const allowed = (letter.allowedActions ?? []).map((a) => a.toUpperCase());
   const hasApprove = allowed.includes("APPROVE");
   const hasReturn  = allowed.includes("RETURN");
-  const hasCancel  = allowed.includes("CANCEL");
+  const hasUploadSigned = allowed.includes("UPLOAD_SIGNED");
 
-  if (!hasApprove && !hasReturn && !hasCancel) return null;
+  if (!hasApprove && !hasReturn && !hasUploadSigned) return null;
 
   return (
     <>
@@ -127,16 +169,6 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
 
         {/* Tombol aksi */}
         <div className="flex items-center gap-2 shrink-0">
-          {hasCancel && (
-            <button
-              type="button"
-              onClick={() => openModal("cancel")}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border border-status-danger-text/30 text-status-danger-text hover:bg-status-danger-bg transition-colors"
-            >
-              <XCircle size={15} />
-              Batalkan Naskah
-            </button>
-          )}
           {hasReturn && (
             <button
               type="button"
@@ -144,7 +176,7 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border border-border text-text hover:bg-panel transition-colors"
             >
               <RotateCcw size={15} />
-              {isApprover ? "Kembalikan ke Reviewer" : "Kembalikan (Revisi)"}
+              Kembalikan ke Drafter
             </button>
           )}
           {hasApprove && (
@@ -153,9 +185,36 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
               onClick={() => openModal("approve")}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
             >
-              {isApprover ? <ShieldCheck size={15} /> : <CheckCircle2 size={15} />}
-              {isApprover ? "Tanda Tangani & Sahkan" : "Setujui Naskah"}
+              {isFinalApprover ? <ShieldCheck size={15} /> : <CheckCircle2 size={15} />}
+              {isFinalApprover
+                ? isExternalOutgoing
+                  ? "Setujui & Siapkan PDF Cetak"
+                  : "Tanda Tangani & Sahkan"
+                : isApprover
+                  ? "Setujui & Teruskan"
+                  : "Setujui Naskah"}
             </button>
+          )}
+          {hasUploadSigned && (
+            <>
+              <a
+                href={officialPdfUrl(letter.id, true)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border border-border text-text hover:bg-panel transition-colors"
+              >
+                <Printer size={15} className="text-primary" />
+                Cetak / Unduh PDF
+              </a>
+              <button
+                type="button"
+                onClick={() => openModal("upload_signed")}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors"
+              >
+                <UploadCloud size={15} />
+                Unggah Scan PDF &amp; Simpan
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -172,23 +231,28 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div className="flex items-center gap-2">
-                {modal === "approve" && isApprover && (
+                {modal === "approve" && isFinalApprover && (
                   <ShieldCheck size={18} className="text-primary" />
                 )}
-                {modal === "approve" && !isApprover && (
+                {modal === "approve" && !isFinalApprover && (
                   <CheckCircle2 size={18} className="text-primary" />
                 )}
                 {modal === "return" && (
                   <RotateCcw size={18} className="text-status-warn-text" />
                 )}
-                {modal === "cancel" && (
-                  <XCircle size={18} className="text-status-danger-text" />
+                {modal === "upload_signed" && (
+                  <UploadCloud size={18} className="text-primary" />
                 )}
                 <h2 className="text-base font-semibold text-text">
-                  {modal === "approve" && isApprover && "Konfirmasi Penandatanganan"}
-                  {modal === "approve" && !isApprover && "Konfirmasi Persetujuan"}
-                  {modal === "return" && "Kembalikan untuk Revisi"}
-                  {modal === "cancel" && "Batalkan Naskah"}
+                  {modal === "approve" &&
+                    isFinalApprover &&
+                    (isExternalOutgoing
+                      ? "Setujui & Terbitkan PDF Siap Cetak"
+                      : "Konfirmasi Penandatanganan")}
+                  {modal === "approve" && !isFinalApprover && "Konfirmasi Persetujuan"}
+                  {modal === "return" && "Kembalikan ke Drafter untuk Revisi"}
+                  {modal === "upload_signed" &&
+                    "Unggah Scan PDF Bertanda Tangan Basah"}
                 </h2>
               </div>
               <button
@@ -204,13 +268,12 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
             <div className="px-5 py-4 space-y-3">
               {modal === "approve" && (
                 <div className="text-sm text-text-muted space-y-1">
-                  {isApprover && (
+                  {isFinalApprover ? (
                     <p className="text-xs bg-panel border border-border rounded-lg px-3 py-2 text-text-muted leading-relaxed">
                       Setelah ditandatangani:{" "}
                       <span className="font-medium text-text">{approveTarget}</span>
                     </p>
-                  )}
-                  {!isApprover && (
+                  ) : (
                     <p>
                       Dengan menyetujui:{" "}
                       <span className="font-medium text-text">{approveTarget}</span>
@@ -223,24 +286,15 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
                 <p className="text-sm text-text-muted">
                   Naskah akan dikembalikan ke{" "}
                   <strong className="text-text">{returnTarget}</strong> untuk
-                  diperbaiki.
+                  diperbaiki. Setelah diajukan ulang, proses pemeriksaan akan
+                  dimulai kembali dari <strong className="text-text">Reviewer 1</strong>.
                 </p>
               )}
 
-              {modal === "cancel" && (
-                <div className="flex items-start gap-2 text-sm bg-status-danger-bg text-status-danger-text px-3 py-2 rounded-lg">
-                  <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-                  <span>
-                    Naskah yang dibatalkan tidak dapat dikembalikan ke status
-                    sebelumnya.
-                  </span>
-                </div>
-              )}
-
-              {(modal === "return" || modal === "cancel") && (
+              {modal === "return" && (
                 <div>
                   <label className="text-xs font-semibold text-text-muted block mb-1">
-                    {modal === "cancel" ? "Alasan pembatalan" : "Catatan revisi"}{" "}
+                    Catatan revisi{" "}
                     <span className="text-status-danger-text">*</span>
                   </label>
                   <textarea
@@ -266,6 +320,77 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
               {modal === "approve" && err && (
                 <p className="text-xs text-status-danger-text">{err}</p>
               )}
+
+              {modal === "upload_signed" && (
+                <div className="space-y-3">
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    Pastikan dokumen PDF surat eksternal (No.{" "}
+                    <strong className="font-mono text-text">
+                      {letter.letterNumber ?? "—"}
+                    </strong>
+                    ) telah dicetak dan ditandatangani basah. Unggah hasil scan
+                    PDF-nya di bawah ini untuk menyelesaikan surat dan
+                    mengarsipkannya ke halaman{" "}
+                    <strong className="text-text">Surat Eksternal</strong>.
+                  </p>
+
+                  <input
+                    ref={signedFileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setSignedFile(f);
+                        setErr(null);
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+
+                  {!signedFile ? (
+                    <button
+                      type="button"
+                      onClick={() => signedFileInputRef.current?.click()}
+                      className="w-full border-2 border-dashed border-border hover:border-primary/50 rounded-xl p-6 flex flex-col items-center justify-center gap-2 text-center transition-colors"
+                    >
+                      <UploadCloud size={22} className="text-primary" />
+                      <span className="text-xs font-semibold text-text">
+                        Klik untuk memilih file scan PDF (.pdf)
+                      </span>
+                      <span className="text-[11px] text-text-muted">
+                        Maksimal 25 MB
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-panel border border-border">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <FileText size={18} className="text-red-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-text truncate">
+                            {signedFile.name}
+                          </p>
+                          <p className="text-[11px] text-text-muted">
+                            {formatBytes(signedFile.size)}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => signedFileInputRef.current?.click()}
+                        className="text-xs text-primary font-semibold hover:underline shrink-0"
+                      >
+                        Ganti File
+                      </button>
+                    </div>
+                  )}
+
+                  {err && (
+                    <p className="text-xs text-status-danger-text">{err}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -279,28 +404,33 @@ export function ReviewModals({ letter, onDone }: ReviewModalsProps) {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  submit(
-                    modal === "approve"
-                      ? "APPROVE"
-                      : modal === "return"
-                      ? "RETURN"
-                      : "CANCEL"
-                  )
-                }
+                onClick={() => {
+                  if (modal === "upload_signed") {
+                    void handleUploadSignedSubmit();
+                    return;
+                  }
+                  void submit(modal === "approve" ? "APPROVE" : "RETURN");
+                }}
                 disabled={loading}
                 className={cn(
                   "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                  modal === "approve" && "bg-primary text-white hover:bg-primary-dark",
+                  (modal === "approve" || modal === "upload_signed") &&
+                    "bg-primary text-white hover:bg-primary-dark",
                   modal === "return"  && "bg-status-warn-text text-white hover:opacity-90",
-                  modal === "cancel"  && "bg-status-danger-text text-white hover:opacity-90",
                   loading && "opacity-60 cursor-not-allowed"
                 )}
               >
                 {loading && <Loader2 size={14} className="animate-spin" />}
-                {modal === "approve" && (isApprover ? "Ya, Tanda Tangani" : "Ya, Setujui")}
+                {modal === "approve" &&
+                  (isFinalApprover
+                    ? isExternalOutgoing
+                      ? "Ya, Setujui & Terbitkan PDF"
+                      : "Ya, Tanda Tangani"
+                    : isApprover
+                      ? "Ya, Setujui & Teruskan"
+                      : "Ya, Setujui")}
                 {modal === "return"  && "Kembalikan"}
-                {modal === "cancel"  && "Batalkan Naskah"}
+                {modal === "upload_signed" && "Simpan & Selesaikan Surat"}
               </button>
             </div>
           </div>

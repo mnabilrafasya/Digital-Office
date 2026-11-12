@@ -8,6 +8,7 @@
 // - DELETE /api/v1/letters/{id}/attachments/{attachmentId} (hapus lampiran + ETag baru)
 
 import type { LetterAttachment } from "@/lib/types";
+import type { LetterDetail } from "./letter-detail";
 
 const API = "/api/v1";
 
@@ -313,3 +314,36 @@ export async function fetchOfficialStatus(letterId: string): Promise<OfficialSta
   }
   return ((await res.json()) as { data: OfficialStatus }).data;
 }
+
+/**
+ * Mengunggah hasil scan PDF bertanda tangan basah untuk surat eksternal keluar (`PUT /api/v1/letters/{letterId}/document/signed`).
+ * Hanya dapat dilakukan oleh Approver terakhir ketika surat berstatus `APPROVED` (`allowedActions` memiliki `"UPLOAD_SIGNED"`).
+ * Mengubah status surat menjadi `SENT` dan mengarsipkannya ke kotak masuk Eksternal.
+ */
+export async function uploadSignedPdf(
+  letterId: string,
+  file: File
+): Promise<LetterDetail> {
+  const form = new FormData();
+  form.append("file", file, file.name || "Surat_Eksternal_Bertanda_Tangan.pdf");
+  const res = await fetch(
+    `${API}/letters/${encodeURIComponent(letterId)}/document/signed`,
+    {
+      method: "PUT",
+      body: form,
+      credentials: "include",
+    }
+  );
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err.error?.message ??
+        `Gagal mengunggah scan bertanda tangan (HTTP ${res.status})`
+    );
+  }
+  const json = (await res.json()) as { data: LetterDetail };
+  return json.data;
+}
+

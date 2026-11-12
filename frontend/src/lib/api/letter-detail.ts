@@ -76,9 +76,23 @@ export interface Attachment {
   uploadedBy: { id: string; name: string };
 }
 
+export interface ExternalRecipientInfo {
+  name: string;
+  address: string | null;
+  attention: string | null;
+}
+
+export interface ExternalInfo {
+  recipient?: ExternalRecipientInfo;
+  sender?: string;
+  referenceNumber?: string;
+  letterDate?: string;
+}
+
 export interface LetterDetail {
   id: string;
   status: string;
+  direction?: "INTERNAL" | "OUTGOING" | "INCOMING";
   letterNumber: string | null;
   letterDate: string | null;
   title: string | null;
@@ -93,6 +107,7 @@ export interface LetterDetail {
   drafter: PersonRef;
   steps: LetterStep[];
   recipients: { to: LetterRecipient[]; cc: LetterRecipient[] };
+  external?: ExternalInfo | null;
   attachments: Attachment[];
   currentVersion: number;
   currentAssignee: PersonRef | null;
@@ -100,7 +115,7 @@ export interface LetterDetail {
   approval: {
     approvedAt: string;
     approvedBy: PersonRef;
-    qrUrl: string;
+    qrUrl: string | null;
   } | null;
   allowedActions: string[];
   createdAt: string;
@@ -153,7 +168,7 @@ export async function getLetter(id: string): Promise<LetterDetail | null> {
 
 // ─── Aksi workflow ─────────────────────────────────────────────
 
-export type ReviewActionType = "APPROVE" | "RETURN" | "SUBMIT" | "CANCEL";
+export type ReviewActionType = "APPROVE" | "RETURN" | "SUBMIT";
 
 export interface ReviewActionResult {
   ok: boolean;
@@ -177,9 +192,7 @@ export async function reviewAction(
       ? "approve"
       : action === "RETURN"
         ? "return"
-        : action === "CANCEL"
-          ? "cancel"
-          : "submit";
+        : "submit";
 
   const hasBody = action !== "SUBMIT";
   const body = hasBody ? JSON.stringify({ note: note ?? null }) : undefined;
@@ -228,6 +241,8 @@ export type LetterHistoryAction =
   | "RETURN"
   | "READ"
   | "SIGN"
+  | "UPLOAD_SIGNED"
+  | "RECEIVE"
   | "CANCEL"
   | string;
 

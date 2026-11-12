@@ -3,7 +3,7 @@
 // app/(app)/surat/[id]/page.tsx
 // Halaman detail / review surat — real backend
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -19,6 +19,10 @@ import {
   Pencil,
   QrCode,
   CheckCircle2,
+  Printer,
+  UploadCloud,
+  Building2,
+  Inbox,
 } from "lucide-react";
 import {
   getLetter,
@@ -30,6 +34,7 @@ import type { LetterDetail, LetterHistoryEntry } from "@/lib/api/letter-detail";
 import {
   getLetterAttachmentDownloadUrl,
   officialPdfUrl,
+  uploadSignedPdf,
 } from "@/lib/api/letter-document";
 import { StatusBadge } from "@/components/daftar-surat/status-badge";
 import type { LetterStatus } from "@/lib/types";
@@ -112,6 +117,12 @@ export default function SuratDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [pdfReady, setPdfReady] = useState(false);
   const [copyFor, setCopyFor] = useState<string | null>(null);
+  const [signedScanFile, setSignedScanFile] = useState<File | null>(null);
+  const [uploadingSigned, setUploadingSigned] = useState(false);
+  const [uploadSignedError, setUploadSignedError] = useState<string | null>(
+    null
+  );
+  const signedScanInputRef = useRef<HTMLInputElement>(null);
 
   const handlePdfReadyChange = useCallback(
     (ready: boolean, owner: string | null) => {
@@ -220,11 +231,40 @@ export default function SuratDetailPage() {
   const isReturned =
     status === "RETURNED_TO_DRAFTER" || status === "RETURNED_TO_REVIEWER";
   const hasActions = (letter.allowedActions ?? []).some((a) =>
-    ["APPROVE", "RETURN", "CANCEL"].includes(a.toUpperCase())
+    ["APPROVE", "RETURN", "UPLOAD_SIGNED"].includes(a.toUpperCase())
   );
+  const canUploadSigned = (letter.allowedActions ?? [])
+    .map((a) => a.toUpperCase())
+    .includes("UPLOAD_SIGNED");
   const isApprover =
     letter.steps.some((s) => s.state === "ACTIVE" && s.role === "APPROVER") ||
     status === "IN_APPROVAL";
+  const isExternalOutgoing =
+    letter.direction === "OUTGOING" ||
+    letter.letterType?.code === "SURAT_EKSTERNAL";
+  const isExternalIncoming =
+    letter.direction === "INCOMING" ||
+    letter.status === "RECEIVED" ||
+    letter.letterType?.code === "SURAT_MASUK_EKSTERNAL";
+
+  async function handleSaveSignedScan() {
+    if (!signedScanFile || !letter) return;
+    setUploadingSigned(true);
+    setUploadSignedError(null);
+    try {
+      await uploadSignedPdf(letter.id, signedScanFile);
+      setSignedScanFile(null);
+      await load();
+    } catch (e) {
+      setUploadSignedError(
+        e instanceof Error
+          ? e.message
+          : "Gagal menyimpan dokumen scan bertanda tangan basah."
+      );
+    } finally {
+      setUploadingSigned(false);
+    }
+  }
 
   return (
     <div className={cn("space-y-4", hasActions && "pb-20")}>
@@ -334,14 +374,172 @@ export default function SuratDetailPage() {
           {/* Panel info approver (IN_APPROVAL) */}
           {isApprover && hasActions && <ApproverPanel letter={letter} />}
 
-          {/* Kartu Pengesahan & QR — hanya setelah SENT */}
+          {/* Kartu Alur Cetak PDF -> Tanda Tangan Basah -> Unggah Scan PDF (Status APPROVED pada Surat Eksternal Keluar) */}
+          {status === "APPROVED" && (
+            <div className="border-2 border-status-warn-text/30 rounded-xl bg-surface overflow-hidden shadow-xs">
+              <div className="px-4 py-3 border-b border-status-warn-text/20 bg-status-warn-bg/50 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Printer size={16} className="text-status-warn-text" />
+                  <h3 className="text-sm font-bold text-text">
+                    Tahap Tanda Tangan Basah &amp; Unggah Dokumen PDF
+                  </h3>
+                </div>
+                {letter.letterNumber && (
+                  <span className="text-xs font-mono font-semibold px-2.5 py-0.5 rounded-full bg-surface border border-border text-text">
+                    No: {letter.letterNumber}
+                  </span>
+                )}
+              </div>
+
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 rounded-lg bg-panel/50 border border-border space-y-1">
+                    <p className="font-bold text-text">1. Cetak Surat (PDF)</p>
+                    <p className="text-text-muted leading-relaxed">
+                      Unduh atau cetak dokumen PDF ber-watermark di atas yang telah diberi nomor surat resmi.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-panel/50 border border-border space-y-1">
+                    <p className="font-bold text-text">2. Tanda Tangan Basah</p>
+                    <p className="text-text-muted leading-relaxed">
+                      Pejabat penandatangan ({letter.approval?.approvedBy.name ?? "Approver"}) menandatangani basah dokumen cetak lalu di-scan menjadi PDF.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-panel/50 border border-border space-y-1">
+                    <p className="font-bold text-text">3. Unggah Scan &amp; Simpan</p>
+                    <p className="text-text-muted leading-relaxed">
+                      Unggah dokumen scan PDF di bawah lalu klik Simpan agar surat masuk ke halaman Surat Eksternal.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bar tombol Cetak / Unduh PDF */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <a
+                    href={pdfReady ? officialPdfUrl(letter.id, true) : undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled={!pdfReady}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
+                  >
+                    <Printer size={14} /> Cetak Surat (Print / PDF)
+                  </a>
+                  <a
+                    href={pdfReady ? officialPdfUrl(letter.id) : undefined}
+                    aria-disabled={!pdfReady}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-border bg-surface text-xs font-semibold text-text hover:bg-panel transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
+                  >
+                    <Download size={14} /> Unduh PDF Siap Cetak
+                  </a>
+                </div>
+
+                {/* Area Unggah Dokumen Scan PDF Bertanda Tangan Basah */}
+                {canUploadSigned ? (
+                  <div className="pt-3 border-t border-border space-y-3">
+                    <p className="text-xs font-semibold text-text">
+                      Unggah Dokumen Scan PDF Bertanda Tangan Basah:
+                    </p>
+                    <input
+                      ref={signedScanInputRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          setSignedScanFile(f);
+                          setUploadSignedError(null);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+
+                    {!signedScanFile ? (
+                      <div
+                        onClick={() => signedScanInputRef.current?.click()}
+                        className="border-2 border-dashed border-primary/40 hover:border-primary bg-primary/[0.02] hover:bg-primary/[0.05] rounded-xl p-5 text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-1.5"
+                      >
+                        <UploadCloud size={22} className="text-primary" />
+                        <p className="text-xs font-semibold text-text">
+                          Klik untuk memilih file scan PDF (.pdf) yang sudah ditandatangani basah
+                        </p>
+                        <p className="text-[11px] text-text-muted">
+                          Wajib format PDF &bull; Maksimal 25 MB
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-xl bg-panel border border-border">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <File size={18} className="text-red-500 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-text truncate">
+                              {signedScanFile.name}
+                            </p>
+                            <p className="text-[11px] text-text-muted">
+                              {formatBytes(signedScanFile.size)} &bull; Siap disimpan
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => signedScanInputRef.current?.click()}
+                            disabled={uploadingSigned}
+                            className="px-3 py-1.5 rounded-lg border border-border bg-surface text-xs font-medium text-text hover:bg-panel transition-colors"
+                          >
+                            Ganti File
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveSignedScan()}
+                            disabled={uploadingSigned}
+                            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark disabled:opacity-60 transition-colors"
+                          >
+                            {uploadingSigned ? (
+                              <>
+                                <Loader2 size={13} className="animate-spin" />
+                                Menyimpan...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 size={13} />
+                                Simpan &amp; Kirim ke Surat Eksternal
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {uploadSignedError && (
+                      <p className="text-xs text-status-danger-text">
+                        {uploadSignedError}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-text-muted italic pt-2 border-t border-border">
+                    Menunggu pejabat penandatangan ({letter.approval?.approvedBy.name ?? "Approver terakhir"}) mengunggah scan PDF yang telah ditandatangani basah.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Kartu Pengesahan — setelah SENT */}
           {status === "SENT" && letter.approval && (
             <div className="border border-border rounded-xl bg-surface overflow-hidden">
               <div className="px-4 py-3 border-b border-border bg-panel/30 flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <QrCode size={16} className="text-primary" />
+                  {isExternalOutgoing ? (
+                    <CheckCircle2 size={16} className="text-status-success-text" />
+                  ) : (
+                    <QrCode size={16} className="text-primary" />
+                  )}
                   <h3 className="text-sm font-semibold text-text">
-                    Pengesahan & QR Persetujuan
+                    {isExternalOutgoing
+                      ? "Pengesahan Surat Eksternal Keluar (Tanda Tangan Basah)"
+                      : "Pengesahan & QR Persetujuan"}
                   </h3>
                 </div>
                 {copyFor && (
@@ -351,22 +549,24 @@ export default function SuratDetailPage() {
                 )}
               </div>
               <div className="p-4 flex items-start gap-4 flex-wrap">
-                {/* QR image dari backend */}
-                <div className="w-28 h-28 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
-                  <img
-                    src={letter.approval.qrUrl}
-                    alt="QR Persetujuan"
-                    className="w-full h-full object-contain"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display =
-                        "none";
-                    }}
-                  />
-                </div>
+                {/* QR image dari backend (hanya untuk surat internal) */}
+                {!isExternalOutgoing && letter.approval.qrUrl && (
+                  <div className="w-28 h-28 border border-border rounded-lg bg-white p-1 shrink-0 flex items-center justify-center">
+                    <img
+                      src={letter.approval.qrUrl}
+                      alt="QR Persetujuan"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display =
+                          "none";
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0 space-y-2">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-0.5">
-                      Disetujui oleh
+                      Disetujui &amp; Ditandatangani oleh
                     </p>
                     <p className="text-sm font-bold text-text">
                       {letter.approval.approvedBy.name}
@@ -395,21 +595,31 @@ export default function SuratDetailPage() {
                       </strong>
                     </div>
                   )}
-                  <a
-                    href={pdfReady ? officialPdfUrl(letter.id) : undefined}
-                    aria-disabled={!pdfReady}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
-                  >
-                    {pdfReady ? (
-                      <>
-                        <Download size={13} /> Unduh PDF Resmi
-                      </>
-                    ) : (
-                      <>
-                        <Loader2 size={13} className="animate-spin" /> Menyiapkan PDF Resmi...
-                      </>
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <a
+                      href={pdfReady ? officialPdfUrl(letter.id) : undefined}
+                      aria-disabled={!pdfReady}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors aria-disabled:opacity-50 aria-disabled:pointer-events-none"
+                    >
+                      {pdfReady ? (
+                        <>
+                          <Download size={13} /> Unduh PDF Resmi
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 size={13} className="animate-spin" /> Menyiapkan PDF Resmi...
+                        </>
+                      )}
+                    </a>
+                    {isExternalOutgoing && (
+                      <Link
+                        href="/inbox?category=EXTERNAL"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-surface text-text hover:bg-panel transition-colors"
+                      >
+                        <Inbox size={13} className="text-primary" /> Buka Halaman Surat Eksternal
+                      </Link>
                     )}
-                  </a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -501,6 +711,25 @@ export default function SuratDetailPage() {
               {letter.letterType && (
                 <MetaRow label="Jenis Surat">{letter.letterType.name}</MetaRow>
               )}
+              {letter.external?.sender && (
+                <MetaRow label="Pengirim Eksternal">
+                  <span className="font-semibold text-text">
+                    {letter.external.sender}
+                  </span>
+                </MetaRow>
+              )}
+              {letter.external?.referenceNumber && (
+                <MetaRow label="Nomor Surat Asal">
+                  <span className="font-mono text-xs">
+                    {letter.external.referenceNumber}
+                  </span>
+                </MetaRow>
+              )}
+              {letter.external?.letterDate && (
+                <MetaRow label="Tanggal Surat Asal">
+                  {letter.external.letterDate}
+                </MetaRow>
+              )}
               {letter.classification && (
                 <MetaRow label="Klasifikasi">
                   <span className="font-mono text-xs">
@@ -509,7 +738,11 @@ export default function SuratDetailPage() {
                   — {letter.classification.name}
                 </MetaRow>
               )}
-              <MetaRow label="Pejabat Pembuat">
+              <MetaRow
+                label={
+                  isExternalIncoming ? "Dicatat Oleh" : "Pejabat Pembuat"
+                }
+              >
                 {letter.drafter.name}
                 <span className="block text-xs text-text-muted">
                   {letter.drafter.positionName}
@@ -525,6 +758,26 @@ export default function SuratDetailPage() {
                     </span>
                   </MetaRow>
                 ))}
+              {letter.external?.recipient && (
+                <MetaRow label="Tujuan Eksternal">
+                  <div className="mt-0.5 p-2.5 rounded-lg bg-primary/5 border border-primary/20 space-y-1">
+                    <p className="text-xs font-bold text-text flex items-center gap-1.5">
+                      <Building2 size={13} className="text-primary shrink-0" />
+                      <span>{letter.external.recipient.name}</span>
+                    </p>
+                    {letter.external.recipient.attention && (
+                      <p className="text-xs text-text-muted">
+                        U.p. {letter.external.recipient.attention}
+                      </p>
+                    )}
+                    {letter.external.recipient.address && (
+                      <p className="text-xs text-text-muted">
+                        {letter.external.recipient.address}
+                      </p>
+                    )}
+                  </div>
+                </MetaRow>
+              )}
               {letter.recipients.to.length > 0 && (
                 <MetaRow label="Tujuan / Penerima">
                   <div className="flex flex-wrap gap-1.5 mt-0.5">

@@ -47,7 +47,11 @@ const OfficialDocumentInner = dynamic(
 // dalam mode baca; PDF resminya diekspor dari tampilan yang sama. Editor biasa hanya untuk naskah
 // yang masih diproses.
 export function ReviewDocumentViewer(props: ReviewDocumentViewerProps) {
-  if (props.letter.status === "SENT") {
+  if (
+    props.letter.status === "SENT" ||
+    props.letter.status === "APPROVED" ||
+    props.letter.status === "RECEIVED"
+  ) {
     return (
       <OfficialDocumentInner
         letter={props.letter}
